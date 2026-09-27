@@ -1,0 +1,12 @@
+{
+  // The JavaScript and type declarations in dist/ (npm run build, also run on install from git), since
+  // Node does not strip types from files under node_modules.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "exclude": ["src/**/*.test.ts", "src/testing.ts"]
+}

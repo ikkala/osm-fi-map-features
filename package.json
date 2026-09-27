@@ -1,0 +1,33 @@
+{
+  "name": "osm-fi-map-features",
+  "version": "0.1.0",
+  "description": "Map features in meters, a tile at a time, from OpenStreetMap and Finnish open data (Maanmittauslaitos, City of Tampere)",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
+    "test": "node --test \"src/**/*.test.ts\"",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "earcut": "^3.2.3",
+    "proj4": "^2.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.6",
+    "typescript": "^7.0.2"
+  }
+}
