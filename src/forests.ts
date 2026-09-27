@@ -81,18 +81,28 @@ class PointGrid {
   }
 }
 
-/** Things (in square cells by their bounding boxes) that a point may be inside */
+/**
+ * Things (in square cells by their bounding boxes) that a point may be inside. Only the cells over `over`
+ * are kept, so that a lake many kilometres across fills only those; points outside it find nothing.
+ */
 class RectGrid<T> {
   readonly #cell: number;
+  readonly #over: Rect;
   readonly #cells = new Map<string, T[]>();
 
-  constructor(cell: number) {
+  constructor(cell: number, over: Rect) {
     this.#cell = cell;
+    this.#over = over;
   }
 
   add(rect: Rect, item: T): void {
-    for (let i = Math.floor(rect.minX / this.#cell); i <= Math.floor(rect.maxX / this.#cell); i++) {
-      for (let j = Math.floor(rect.minY / this.#cell); j <= Math.floor(rect.maxY / this.#cell); j++) {
+    const over = this.#over;
+    const minI = Math.floor(Math.max(rect.minX, over.minX) / this.#cell);
+    const maxI = Math.floor(Math.min(rect.maxX, over.maxX) / this.#cell);
+    const minJ = Math.floor(Math.max(rect.minY, over.minY) / this.#cell);
+    const maxJ = Math.floor(Math.min(rect.maxY, over.maxY) / this.#cell);
+    for (let i = minI; i <= maxI; i++) {
+      for (let j = minJ; j <= maxJ; j++) {
         const key = `${i},${j}`;
         const list = this.#cells.get(key);
         if (list) {
@@ -136,7 +146,14 @@ export function plantForests(features: MapFeatures, within: Rect): number {
   for (const tree of features.trees) {
     plants.add(tree.point);
   }
-  const blockers = new RectGrid<(p: Point) => boolean>(25);
+  // a plant lands anywhere in its cell, so up to a cell outside `within`
+  const widestCell = Math.max(...Object.values(PLANTINGS).map((planting) => planting.spacing));
+  const blockers = new RectGrid<(p: Point) => boolean>(25, {
+    minX: within.minX - widestCell,
+    minY: within.minY - widestCell,
+    maxX: within.maxX + widestCell,
+    maxY: within.maxY + widestCell,
+  });
   for (const building of features.buildings) {
     const { outer } = building.polygon;
     const box = bounds(outer);

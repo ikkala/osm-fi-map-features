@@ -77,6 +77,15 @@ test("plantForests keeps off roads, buildings, water and existing trees", () => 
   }
 });
 
+test("plantForests keeps off a lake far larger than the area without covering all of it", () => {
+  // hundreds of kilometres across: a grid over all of it would not fit in memory
+  const lake: Area = { osm: "r1", kind: "water", polygon: { outer: square(45, -500_000, 1_000_000), holes: [] } };
+  const map = features({ areas: [wood(0, 0, 90), lake] });
+  plantForests(map, { minX: 0, minY: 0, maxX: 90, maxY: 90 });
+  assert.ok(map.trees.length > 20);
+  assert.ok(map.trees.every(({ point: [e] }) => e < 45), "a tree in the lake");
+});
+
 test("plantForests puts mostly shrubs in scrub, closer together", () => {
   const map = features({ areas: [wood(0, 0, 50, "shrubs")] });
   const count = plantForests(map, EVERYWHERE);
