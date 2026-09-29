@@ -5,7 +5,7 @@
 // come from setBridgeDecks), and the walls of buildings over it open under their floor.
 //
 // A tunnel under a hill or a lake is not in the model as a cut: there the ground over the tunnel is as
-// high as beside it, and the tunnel stays hidden.
+// high as beside it, and tunnels.ts gives the tunnel a floor under it instead.
 import { crossing, openPassages, type MapFeatures, type Rail, type Road } from "./osm.ts";
 import type { Point } from "./geometry.ts";
 

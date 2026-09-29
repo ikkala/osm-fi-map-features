@@ -47,3 +47,14 @@ test("setBuildingBases stands a building at the ground by its OSM entrance, a ma
   setBuildingBases([outline, part], heightAt);
   assert.deepEqual([outline.base, part.base], [105, 105]);
 });
+
+test("setBuildingBases stands a building over a tunnel in a cut on the tunnel's lid", () => {
+  // ground 100 + e / 2 (100 .. 105 under the building), its door at 101, and a lid at 108 .. 110 under it
+  const station = square(0, 10, { entrances: [{ at: [2, 0], kind: "main" }] });
+  const beside = square(40, 10);
+  const lid = { line: [[-10, 5], [20, 5]] satisfies Point[], lid: [108, 110] };
+  setBuildingBases([station, beside], heightAt, [lid]);
+  // the lid's top at the last point sampled inside the building, e = 8 (every 2 m from e = -10)
+  assert.equal(Math.round((station.base ?? 0) * 100) / 100, 109.2);
+  assert.equal(beside.base, 125);
+});

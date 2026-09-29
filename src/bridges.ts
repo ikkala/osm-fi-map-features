@@ -198,7 +198,7 @@ function raiseApproach<T extends BridgeLine>(lines: T[], a: Approach<T>, height:
 }
 
 /** The point d meters along a line from its start, or undefined past its end */
-function pointAlong(points: Point[], d: number): Point | undefined {
+export function pointAlong(points: Point[], d: number): Point | undefined {
   let left = d;
   for (let i = 1; i < points.length; i++) {
     const [a, c] = [points[i - 1], points[i]];

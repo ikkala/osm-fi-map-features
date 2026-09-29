@@ -59,8 +59,8 @@ and the map is only combined from them when it is built. `fileCache(dir)` keeps 
 The Overpass server is `https://overpass-api.de/api/interpreter` unless `overpassUrl` is given; mind its
 [usage policy](https://wiki.openstreetmap.org/wiki/Overpass_API#Public_Overpass_API_instances).
 
-For now the first tile asked for builds the whole area and the rest come from memory: bridge spans, tunnels in
-cuts and multipolygons reach over tile edges, so they are worked out over the whole area. The API is a tile at
+For now the first tile asked for builds the whole area and the rest come from memory: bridge spans, tunnels
+and multipolygons reach over tile edges, so they are worked out over the whole area. The API is a tile at
 a time so that this can change without changing its users.
 
 ## How the map is built
@@ -92,7 +92,8 @@ On a slope a building stands at its highest ground, so its entrance on the uphil
 walls reach down to its lowest ground: a plinth or a basement storey on the downhill side, with windows in it. On a
 steep slope it stands at most 6 m above its lowest ground. The build takes the ground from the elevation model
 along the outline (`base` in the tiles); a building's parts all stand at the building's base, so they line up.
-Without an elevation model buildings stand at their lowest ground.
+Without an elevation model buildings stand at their lowest ground. A building over a tunnel in a cut (see below)
+stands at least at the top of the tunnel's lid, since it really stands on the deck over the cut.
 
 Roofs are flat unless OSM has a pitched `roof:shape`, drawn as gabled (also saltbox, gambrel, round), hipped (also
 half-hipped, mansard), pyramidal (also cone, dome) or skillion. Houses, cabins, sheds, garages, barns, saunas and
@@ -107,6 +108,32 @@ tall as its `maxheight`, else 4 m for vehicles and 3 m for people, leaving at le
 Passages are often tagged `tunnel=yes` or `covered=yes` instead: such a way is taken for a passage when it is at
 most 60 m long and not deeper than `layer=-1`, neither end is more than 1 m inside a building, and at least half
 of it is inside buildings.
+
+Other tunnels get heights from the elevation model, which has the bare ground over them. A tunnel (`layer` -1 or above)
+whose ground rises nowhere more than 3 m over its ends runs at the ground under something built over it, which the
+model leaves out: a railway anywhere (the tracks under Tampere's Kansi and its arena), a road or path when at least
+half of it is under buildings (not open roofs; under a street or a railway the model has their level, not the
+tunnel's). It becomes a way on the ground, the walls of buildings over it open for it (as tall as a tunnel's room,
+below), an open roof over it is raised over that room, and so is the underside of a building raised off the ground
+(`min_height`), its top where it was. Over a railway every building starts over the room (it stands on a deck over
+the tracks), and an open roof becomes a deck 1 m thick over it, without posts. A building is over a way where the
+way's room, 1 m wider than the way on both sides, is under it. A shallow tunnel
+(`layer` -1 or above) that the model has as an open cut, the ground beside it at least 3 m higher on both sides
+along most of it (an underpass under a deck), gets the top of a lid over it at the rim of the cut (`lid`, at
+least 3.5 m and the lid's 1 m over the floor), and the ways over it become bridges. Any other tunnel, under a
+hill or a lake, gets its floor (`floor`, with a point every 10 m): straight between its portals' ground (the
+lowest within 4 m outside, since at the portal the model has the top of its wall), a junction underground
+hanging between its branches' ends by distance, but at least room and a 1 m roof under the ground (3 m of
+room for people, 4.8 m for vehicles, 6 m for trains; reached 30 m in from a portal; under water areas 3 m more, since the model has the water's surface) and no
+steeper than 7 %.
+Where the ground at a portal (the top of its wall) is over the floor, a ramp is split off each way leading on, with
+a `floor` of its own: straight from the portal's floor to where a 7 % slope from it meets the ground, at most 40 m
+on.
+
+Railways (not tramways) that are not bridges or tunnels get a track bed (`bed`): the elevation model has
+platform edges, underpass roofs and the like under the tracks, a metre up and down every few metres, so the bed is
+the ground averaged over 30 m along the line, never more than 0.5 m under the ground right under it. Where lines
+meet, their beds end at the same height: the ground averaged within 10 m, or the deck of a bridge ending there.
 
 Neither OSM nor the register has windows, so ordinary buildings get guessed ones: a row per storey (from
 `building:levels` or the register's storeys, else about every 3 m) and spaced by the kind of building. Houses get

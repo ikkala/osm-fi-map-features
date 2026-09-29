@@ -60,12 +60,20 @@ function tileRange(rect: Rect, size: number): Rect {
   };
 }
 
-/** The deck heights (bridges) and lid heights (tunnels in cuts) of a piece clipped out of a line */
-function clippedDeck(feature: { line: Point[]; deck?: number[]; lid?: number[] }, piece: Point[]): { deck?: number[]; lid?: number[] } {
-  const { deck, lid } = feature;
+/**
+ * The deck heights (bridges), lid heights (tunnels in cuts), floors (other tunnels) and track beds of a
+ * piece clipped out of a line
+ */
+function clippedDeck(
+  feature: { line: Point[]; deck?: number[]; lid?: number[]; floor?: number[]; bed?: number[] },
+  piece: Point[],
+): { deck?: number[]; lid?: number[]; floor?: number[]; bed?: number[] } {
+  const { deck, lid, floor, bed } = feature;
   return {
     ...(deck && { deck: piece.map((p) => deckAt(feature.line, deck, p)) }),
     ...(lid && { lid: piece.map((p) => deckAt(feature.line, lid, p)) }),
+    ...(floor && { floor: piece.map((p) => deckAt(feature.line, floor, p)) }),
+    ...(bed && { bed: piece.map((p) => deckAt(feature.line, bed, p)) }),
   };
 }
 

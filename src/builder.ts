@@ -21,6 +21,8 @@ import { bounds, fetchOverpass, overpassQuery, parseOsm, type GeoBox } from "./o
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { applyRegister, fetchRegister, fetchTreeRegister, TAMPERE_ATTRIBUTION, TAMPERE_TREES_ATTRIBUTION } from "./tampere.ts";
 import { cutIntoTiles, tileHeights, tileName, tilesCovering, type Tile, type TileKey } from "./tiles.ts";
+import { setTrackBeds } from "./trackbeds.ts";
+import { setTunnelFloors, uncoverAtGrade } from "./tunnels.ts";
 import { assignWindows } from "./windows.ts";
 
 export const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
@@ -173,11 +175,16 @@ export class MapBuilder {
       // tunnels in cuts first: the ways over them become bridges
       const covered = coverCutTunnels(features, heightAt);
       logger.log(`${covered.tunnels} tunnels in cuts get lids, ${covered.crossings} ways over them become bridges`);
+      logger.log(`${uncoverAtGrade(features, heightAt)} tunnels run at the ground under buildings`);
+      const tunnels = setTunnelFloors(features, heightAt);
+      logger.log(`${tunnels.floors} tunnel ways under hills and lakes get floors, ${tunnels.ramps} ways out of their portals ramps`);
       // before cutting into tiles, so a bridge's deck goes from end to end
       const ramps = (lines: { bridge: boolean; deck?: number[] }[]) => lines.filter((l) => l.deck && !l.bridge).length;
       setBridgeDecks(features.roads, heightAt);
       setBridgeDecks(features.rails, heightAt);
       logger.log(`${ramps(features.roads) + ramps(features.rails)} bridge approaches raised out of the hollows under bridges`);
+      // after the decks: the railways end at their bridges' and approaches' heights
+      logger.log(`${setTrackBeds(features.rails, heightAt)} railway lines get smoothed track beds`);
     } else {
       logger.log("no MML API key: the tiles get no ground heights");
     }
@@ -243,7 +250,8 @@ export class MapBuilder {
       logger.warn(`warning: no entrances: ${err instanceof Error ? err.message : String(err)}`);
     }
     if (heightAt) {
-      const based = setBuildingBases(features.buildings, heightAt);
+      const lids = [...features.roads, ...features.rails].flatMap((w) => (w.lid ? [{ line: w.line, lid: w.lid }] : []));
+      const based = setBuildingBases(features.buildings, heightAt, lids);
       logger.log(`${based} buildings stand at their OSM entrance or highest ground (at most ${MAX_PLINTH_M} m above their lowest)`);
     }
     // TODO: entrances that are steps up or down from the street, and buildings with entrances on several
