@@ -10,7 +10,7 @@ function road(osm: string, line: Point[], extra: Partial<Road> = {}): Road {
 }
 
 function features(roads: Road[], rails: Rail[] = []): MapFeatures {
-  return { roads, rails, buildings: [], areas: [], trees: [] };
+  return { roads, rails, buildings: [], areas: [], trees: [], lamps: [] };
 }
 
 const round = (values: number[] | undefined) => values?.map((v) => Math.round(v * 10) / 10);

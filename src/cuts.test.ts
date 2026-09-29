@@ -35,7 +35,7 @@ test("coverCutTunnels gives the tunnel a lid, makes the ways over it bridges and
   const deep = rail("w4", [[10, 2], [60, 2]], { layer: -2, tunnel: true });
   const outer: Point[] = [[40, -10], [50, -10], [50, 10], [40, 10]];
   const station: Building = { osm: "w5", kind: "train_station", part: false, hasParts: false, height: 10, minHeight: 0, polygon: { outer, holes: [] } };
-  const features: MapFeatures = { roads: [street], rails: [tram, railway, deep], buildings: [station], areas: [], trees: [] };
+  const features: MapFeatures = { roads: [street], rails: [tram, railway, deep], buildings: [station], areas: [], trees: [], lamps: [] };
   assert.deepEqual(coverCutTunnels(features, cut), { tunnels: 1, crossings: 1 });
   assert.deepEqual(tram.lid, [102, 102]);
   assert.equal(deep.lid, undefined);

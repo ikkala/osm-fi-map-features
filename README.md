@@ -1,7 +1,7 @@
 # osm-fi-map-features
 
 Map features for a 3D map of a Finnish city, in meters around an origin point and a square tile at a time:
-roads, rails, buildings (with 3D parts, roofs, windows and entrances), trees and ground areas from
+roads, rails, buildings (with 3D parts, roofs, windows and entrances), trees, street lamps and ground areas from
 [OpenStreetMap](https://www.openstreetmap.org/), combined with Finnish open data:
 
 - the ground heights of the [National Land Survey of Finland](https://www.maanmittauslaitos.fi/en)'s
@@ -38,13 +38,14 @@ const builder = new MapBuilder({
 });
 const info = await builder.info(); // tiles, OSM timestamp, attributions
 for (const key of info.tiles) {
-  const tile = await builder.tile(key); // roads, rails, buildings, areas, trees, heights
+  const tile = await builder.tile(key); // roads, rails, buildings, areas, trees, lamps, heights
 }
 ```
 
 Coordinates are meters east (first) and north (second) of the origin. Tile `x, y` covers east `x * size ..
 (x + 1) * size` and north `y * size .. (y + 1) * size`. Roads, rails and areas are cut at tile edges; a
-building belongs whole to the tile its centroid is in and a tree to the tile of its trunk. The types are in
+building belongs whole to the tile its centroid is in, a tree to the tile of its trunk and a lamp to the tile of
+its foot. The types are in
 `src/osm.ts` (`MapFeatures`, `Building`, ...) and `src/tiles.ts` (`Tile`, `Heights`).
 
 ### Sources and the cache
@@ -157,6 +158,12 @@ or birch, 10–26 m), leaving 15 % of the cells empty, and in scrub mostly shrub
 from others and clear of buildings, roads, rails, water, parking and pitches. Where it stands and what it is come
 from its grid cell alone, so every build plants the same trees. Around the centre of Tampere that is some 20 000
 trees, at most about 530 in a 250 m tile.
+
+Street lamps are OSM's `highway=street_lamp` nodes (about 2 100 around the centre of Tampere). Their mount comes
+from `lamp_mount` or `support`, or is a catenary mast (`power=catenary_mast`, such as a tram's); in Tampere a tenth
+have one, and none a `height` or a `direction`. A lamp without them faces the nearest street within 15 m, else the
+nearest path within 8 m, and is 10 m tall by a main street (secondary and up), 8 m by another street and 5 m by a
+path or nothing (high masts 20 m, catenary masts 8 m). A lamp on a bridge stands on its deck.
 
 ## Licences
 

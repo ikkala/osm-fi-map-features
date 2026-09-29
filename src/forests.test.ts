@@ -17,7 +17,7 @@ function wood(e: number, n: number, size: number, cover: Area["cover"] = "trees"
 }
 
 function features(extra: Partial<MapFeatures>): MapFeatures {
-  return { roads: [], rails: [], buildings: [], areas: [], trees: [], ...extra };
+  return { roads: [], rails: [], buildings: [], areas: [], trees: [], lamps: [], ...extra };
 }
 
 test("mergeTrees keeps OSM trees only away from register trees", () => {

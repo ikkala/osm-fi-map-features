@@ -5,7 +5,7 @@
 // Wider blocks of flats (around a courtyard, in a city block) get none: their doors are as often in the
 // yard or a gateway. The mapped staircases of Tampere are 18 m apart (the middle half 15 .. 20.5 m), and
 // the street side is right for 66 % of the slabs: a guessed door is often on the wrong side.
-import { distanceToRing, orientedBox, ringArea, ringCentroid, type Point, type Ring } from "./geometry.ts";
+import { distanceToRing, nearestOnSegment, orientedBox, ringArea, ringCentroid, type Point, type Ring } from "./geometry.ts";
 import { bounds, type Building, type Entrance, type GeoBox, type OverpassResponse, type Road } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 
@@ -171,14 +171,6 @@ function nearestOnRings(rings: Ring[], p: Point): Point | undefined {
     }
   }
   return best;
-}
-
-function nearestOnSegment(p: Point, a: Point, c: Point): Point {
-  const dx = c[0] - a[0];
-  const dy = c[1] - a[1];
-  const lengthSquared = dx * dx + dy * dy;
-  const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / lengthSquared));
-  return [a[0] + t * dx, a[1] + t * dy];
 }
 
 /** The point on a street nearest to p, or undefined without streets */

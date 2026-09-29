@@ -172,12 +172,37 @@ export interface Tree {
   trunk?: number;
 }
 
+/**
+ * How a street lamp is held up: on a straight pole (the light on top), on a pole with an arm reaching
+ * out, on a high mast (squares, junctions), on a tram or railway catenary mast (with an arm), on a wall,
+ * or hung from a wire
+ */
+export type LampMount = "straight" | "angled" | "high" | "catenary" | "wall" | "wire";
+
+export interface StreetLamp {
+  /** Meters east and north of the origin */
+  point: Point;
+  /** Meters from its base to the light */
+  height: number;
+  /** Not in OSM: guessed from the mount and the street next to it (see lamps.ts) */
+  heightEstimated?: boolean;
+  /** When OSM tells it (lamp_mount, support, power=catenary_mast) */
+  mount?: LampMount;
+  /** Where the light faces: degrees counter-clockwise from east, toward the street next to it or OSM's direction */
+  toward?: number;
+  /** A lamp on a bridge: the deck's height (m above sea level) it stands on */
+  base?: number;
+  /** lamp_type=* in lower case (led, sodium, mercury, ...), when known */
+  lampType?: string;
+}
+
 export interface MapFeatures {
   roads: Road[];
   rails: Rail[];
   buildings: Building[];
   areas: Area[];
   trees: Tree[];
+  lamps: StreetLamp[];
 }
 
 /**
@@ -248,7 +273,7 @@ const WALKWAY_PASSAGE_HEIGHT_M = 3;
 /** A way crossing a wall at a slant opens it at most this much wider than the way */
 const MAX_PASSAGE_SLANT = 3;
 /** highway=* values that only people walk or cycle on */
-const NOT_FOR_VEHICLES = new Set(["footway", "pedestrian", "cycleway", "path", "track", "bridleway", "steps", "corridor"]);
+export const NOT_FOR_VEHICLES = new Set(["footway", "pedestrian", "cycleway", "path", "track", "bridleway", "steps", "corridor"]);
 /** Houses that are seldom over two storeys */
 const HOUSES = new Set(["house", "detached", "semidetached_house", "terrace", "bungalow"]);
 
@@ -319,7 +344,7 @@ export function estimatedLevels(kind: string, area: number): number {
 }
 
 export function overpassQuery(box: GeoBox): string {
-  const selectors = ["way[highway]", "way[railway]", "way[building]", "way[\"building:part\"]", "node[natural~\"^(tree|shrub)$\"]", "way[natural=tree_row]"];
+  const selectors = ["way[highway]", "way[railway]", "way[building]", "way[\"building:part\"]", "node[natural~\"^(tree|shrub)$\"]", "way[natural=tree_row]", "node[highway=street_lamp]"];
   const relations = ["relation[building][type=multipolygon]", "relation[\"building:part\"][type=multipolygon]"];
   const byKey = new Map<string, string[]>();
   for (const [key, values] of AREA_RULES) {
@@ -451,7 +476,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   const warnings: string[] = [];
   const projection = new LocalProjection(origin);
   const toPoint = (p: LatLon): Point => projection.toMeters({ latitude: p.lat, longitude: p.lon });
-  const features: MapFeatures = { roads: [], rails: [], buildings: [], areas: [], trees: [] };
+  const features: MapFeatures = { roads: [], rails: [], buildings: [], areas: [], trees: [], lamps: [] };
   const passages: Passage[] = [];
   // tunnels and covered ways that may be passages through buildings tagged otherwise
   const maybePassages: { road: Road; passage: Passage }[] = [];
@@ -461,6 +486,9 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
     if (element.type === "node") {
       if ((tags.natural === "tree" || tags.natural === "shrub") && element.lat !== undefined && element.lon !== undefined) {
         features.trees.push(tree(tags, toPoint({ lat: element.lat, lon: element.lon })));
+      }
+      if (tags.highway === "street_lamp" && element.lat !== undefined && element.lon !== undefined) {
+        features.lamps.push(lamp(tags, toPoint({ lat: element.lat, lon: element.lon })));
       }
     } else if (element.type === "way") {
       const osm = `w${element.id}`;
@@ -568,6 +596,46 @@ function tree(tags: Tags, point: Point): Tree {
     height: height !== undefined && height > 0 ? height : DEFAULT_TREE_HEIGHTS[kind],
     ...(genus && { genus }),
     ...(kind !== "shrub" && trunk !== undefined && trunk > 0 && { trunk }),
+  };
+}
+
+/** lamp_mount=* and support=* values and the mount they are */
+const LAMP_MOUNTS = new Map<string, LampMount>([
+  ["straight_mast", "straight"],
+  ["cast_steel_mast", "straight"],
+  ["angled_mast", "angled"],
+  ["bent_mast", "angled"],
+  ["high_mast", "high"],
+  ["wall", "wall"],
+  ["wall_mounted", "wall"],
+  ["suspended", "wire"],
+  ["wire", "wire"],
+  ["catenary", "catenary"],
+]);
+/** Heights of street lamps whose height OSM does not have, until lamps.ts looks at the street */
+export const DEFAULT_LAMP_HEIGHTS: Record<LampMount | "unknown", number> = {
+  straight: 5,
+  angled: 8,
+  high: 20,
+  catenary: 8,
+  wall: 4,
+  wire: 7,
+  unknown: 5,
+};
+
+/** A highway=street_lamp node */
+function lamp(tags: Tags, point: Point): StreetLamp {
+  const mount = tags.power === "catenary_mast" ? "catenary" : (LAMP_MOUNTS.get(tags.lamp_mount ?? "") ?? LAMP_MOUNTS.get(tags.support ?? ""));
+  const height = meters(tags.height);
+  const direction = compassDegrees(tags.direction);
+  const lampType = tags.lamp_type?.trim().toLowerCase();
+  return {
+    point,
+    ...(height !== undefined && height > 0 ? { height } : { height: DEFAULT_LAMP_HEIGHTS[mount ?? "unknown"], heightEstimated: true }),
+    ...(mount && { mount }),
+    // direction is clockwise from north
+    ...(direction !== undefined && { toward: (((90 - direction) % 360) + 360) % 360 }),
+    ...(lampType && { lampType }),
   };
 }
 

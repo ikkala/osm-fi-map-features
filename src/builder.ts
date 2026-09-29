@@ -1,6 +1,6 @@
 // Builds the map a tile at a time from the sources, which stay apart in the SourceCache.
 //
-// The OpenStreetMap roads, rails, buildings, trees and ground areas around the area (from an Overpass
+// The OpenStreetMap roads, rails, buildings, trees, street lamps and ground areas around the area (from an Overpass
 // API server) are laid out in meters around the origin. With an MML API key they get ground heights and
 // bridge decks from the Maanmittauslaitos elevation model and roof colours from its orthophoto; in
 // Tampere, storeys and wall materials from the city's building register and street and park trees from
@@ -16,6 +16,7 @@ import { ELEVATION_ATTRIBUTION, fetchElevation, sampleElevation, toTm35fin } fro
 import { assignEntrances, entranceQuery, guessEntrances, parseEntrances } from "./entrances.ts";
 import { mergeTrees, plantForests } from "./forests.ts";
 import { simplifyLine, type Point } from "./geometry.ts";
+import { placeLamps } from "./lamps.ts";
 import { fetchRoofColours, ORTHO_ATTRIBUTION } from "./ortho.ts";
 import { bounds, fetchOverpass, overpassQuery, parseOsm, type GeoBox } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
@@ -276,6 +277,12 @@ export class MapBuilder {
     } catch (err) {
       logger.warn(`warning: no tree register data: ${err instanceof Error ? err.message : String(err)}`);
     }
+    // after the decks, which lamps on bridges stand on
+    const lamps = placeLamps(features.lamps, features.roads);
+    logger.log(
+      `${features.lamps.length} street lamps: ${lamps.heights} with heights and ${lamps.facing} facing guessed from the street ` +
+        `next to them, ${lamps.onDecks} on bridges`,
+    );
     const tilesRect = { minX: Math.min(...xs) * size, minY: Math.min(...ys) * size, maxX: (Math.max(...xs) + 1) * size, maxY: (Math.max(...ys) + 1) * size };
     const planted = plantForests(features, tilesRect);
     logger.log(`${planted} trees and shrubs planted in woods and scrub`);

@@ -339,6 +339,15 @@ function squaredDistance(a: Point, b: Point): number {
   return (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2;
 }
 
+/** The point on the segment from a to c nearest to p */
+export function nearestOnSegment(p: Point, a: Point, c: Point): Point {
+  const dx = c[0] - a[0];
+  const dy = c[1] - a[1];
+  const lengthSquared = dx * dx + dy * dy;
+  const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / lengthSquared));
+  return [a[0] + t * dx, a[1] + t * dy];
+}
+
 export function distanceToSegment(p: Point, a: Point, b: Point): number {
   const dx = b[0] - a[0];
   const dy = b[1] - a[1];

@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { areaKind, compassDegrees, meters, overpassQuery, parseOsm, type OverpassResponse, type Tree } from "./osm.ts";
+import type { Point } from "./geometry.ts";
 import { LocalProjection } from "./projection.ts";
 import { cutIntoTiles, tilesCovering } from "./tiles.ts";
 import { defined } from "./testing.ts";
@@ -104,13 +105,35 @@ test("parseOsm reads trees, shrubs and tree rows, and what grows in woods and sc
   assert.deepEqual(features.areas.map((a) => [a.kind, a.cover]), [["forest", "trees"], ["forest", "shrubs"], ["grass", undefined]]);
 });
 
-test("trees go to the tile of their trunk, south to north", () => {
+test("parseOsm reads street lamps: their mount, height, direction and lamp type", () => {
+  const { features } = parseOsm(
+    [
+      { type: "node", id: 50, tags: { highway: "street_lamp", lamp_mount: "angled_mast", lamp_type: "LED" }, ...at(1, 2) },
+      { type: "node", id: 51, tags: { highway: "street_lamp", power: "catenary_mast", support: "pole" }, ...at(3, 2) },
+      { type: "node", id: 52, tags: { highway: "street_lamp", support: "wall_mounted", height: "4.5", direction: "NE" }, ...at(5, 2) },
+      { type: "node", id: 53, tags: { highway: "street_lamp", lamp_mount: "constructor" }, ...at(7, 2) },
+    ],
+    origin,
+  );
+  const [angled, catenary, wall, unknown] = features.lamps;
+  assert.deepEqual([angled.mount, angled.height, angled.heightEstimated, angled.lampType], ["angled", 8, true, "led"]);
+  assert.ok(Math.abs(angled.point[0] - 1) < 0.01 && Math.abs(angled.point[1] - 2) < 0.01);
+  assert.deepEqual([catenary.mount, catenary.height], ["catenary", 8]);
+  // north-east is 45° clockwise from north: 45° counter-clockwise from east
+  assert.deepEqual([wall.mount, wall.height, wall.heightEstimated, wall.toward], ["wall", 4.5, undefined, 45]);
+  assert.deepEqual([unknown.mount, unknown.height], [undefined, 5]);
+  assert.equal(features.trees.length, 0);
+});
+
+test("trees go to the tile of their trunk and lamps to the tile of their foot, south to north", () => {
   const tree = (e: number, n: number): Tree => ({ point: [e, n], kind: "broadleaved", height: 8.04 });
   const trees = [tree(50, 60), tree(150, 10), { ...tree(20, 30), genus: "tilia" }, { ...tree(20, 80), trunk: 2.54 }];
-  const features = { roads: [], rails: [], buildings: [], areas: [], trees };
+  const lamps = [{ point: [150, 70] satisfies Point, height: 8 }, { point: [150, 20] satisfies Point, height: 5 }];
+  const features = { roads: [], rails: [], buildings: [], areas: [], trees, lamps };
   const [west, east] = cutIntoTiles(features, [{ x: 0, y: 0 }, { x: 1, y: 0 }], 100);
   assert.deepEqual(west.trees.map((t) => t.point), [[20, 30], [50, 60], [20, 80]]);
   assert.deepEqual(east.trees.map((t) => t.point), [[150, 10]]);
+  assert.deepEqual([west.lamps, east.lamps.map((l) => l.point)], [[], [[150, 20], [150, 70]]]);
 });
 
 test("meters parses OSM lengths", () => {
