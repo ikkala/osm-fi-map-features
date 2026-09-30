@@ -21,11 +21,14 @@ const APPROACH_STEP_M = 2;
 const APPROACH_REACH_M = 12;
 /** The ground has stopped rising steeply where it rises less than this in a step (m) */
 const APPROACH_RISE_M = 0.2;
+/** Junction heights are averaged this many rounds (they settle in far fewer) */
+const JUNCTION_ROUNDS = 1000;
 
 /**
  * Sets `deck` on every bridge line: along each span of bridge lines joined end to end, the height
  * goes linearly by distance from the ground at the span's first end to the ground at its last, and
- * never below the ground under it. The ends' ground is taken up the approaches (see above), which are
+ * never below the ground under it. Where three or more bridge lines meet (a ramp leaving the bridge)
+ * the height hangs between the ends of the spans from there instead. The ends' ground is taken up the approaches (see above), which are
  * split off the lines leading on (added to lines, not bridges) with deck heights of their own.
  * heightAt takes meters east / north of the map origin.
  */
@@ -49,12 +52,13 @@ export function setBridgeDecks<T extends BridgeLine>(lines: T[], heightAt: (e: n
       byEnd.set(key(p), list);
     }
   }
+  // the spans: walk both ways from each bridge line through ends shared by exactly two bridge lines
+  const spans: { span: { bridge: T; reversed: boolean }[]; points: { p: Point; owner: T; index: number }[]; distances: number[] }[] = [];
   const done = new Set<BridgeLine>();
   for (const start of bridges) {
     if (done.has(start)) {
       continue;
     }
-    // the span: walk both ways from `start` through ends shared by exactly two bridge lines
     const span: { bridge: T; reversed: boolean }[] = [{ bridge: start, reversed: false }];
     done.add(start);
     const extend = (atEnd: boolean) => {
@@ -97,15 +101,55 @@ export function setBridgeDecks<T extends BridgeLine>(lines: T[], heightAt: (e: n
     for (let i = 1; i < points.length; i++) {
       distances.push(distances[i - 1] + Math.hypot(points[i].p[0] - points[i - 1].p[0], points[i].p[1] - points[i - 1].p[1]));
     }
-    const total = distances[distances.length - 1];
-    // the approaches at both ends, and the ends' heights up them
-    const ends = [points[0].p, points[points.length - 1].p].map((end) => {
+    spans.push({ span, points, distances });
+  }
+
+  // The spans' ends: a bridge's end has the ground up its approaches; a junction on a bridge (three or
+  // more bridge lines meet: a ramp leaving the bridge) is over whatever the bridge crosses, so its height
+  // is the average of the ends of the spans from it, weighed by how near they are, as a stretched net
+  // would hang
+  const junction = (k: string) => (byEnd.get(k) ?? []).length > 2;
+  const ends = new Map<string, { height: number | undefined; approaches: Approach<T>[] }>();
+  for (const { points } of spans) {
+    for (const end of [points[0].p, points[points.length - 1].p]) {
+      if (ends.has(key(end)) || junction(key(end))) {
+        continue;
+      }
       const approaches = (onward.get(key(end)) ?? []).filter((l) => l.deck === undefined).map((l) => approach(l, key(l.line[0]) === key(end), heightAt));
       const heights = [heightAt(...end), ...approaches.map((a) => a.top)].filter((h) => h !== undefined);
-      return { height: heights.length > 0 ? Math.max(...heights) : undefined, approaches };
-    });
-    const first = ends[0].height;
-    const last = ends[1].height;
+      ends.set(key(end), { height: heights.length > 0 ? Math.max(...heights) : undefined, approaches });
+    }
+  }
+  const junctions = new Map<string, number>();
+  const heightOf = (k: string) => (junction(k) ? junctions.get(k) : ends.get(k)?.height);
+  for (let round = 0; round < JUNCTION_ROUNDS; round++) {
+    let moved = 0;
+    const sums = new Map<string, { sum: number; weight: number }>();
+    for (const { points, distances } of spans) {
+      const total = distances[distances.length - 1];
+      const [k0, k1] = [key(points[0].p), key(points[points.length - 1].p)];
+      for (const [k, other] of [[k0, k1], [k1, k0]]) {
+        const h = heightOf(other);
+        if (junction(k) && k !== other && total > 0 && h !== undefined) {
+          const s = sums.get(k) ?? { sum: 0, weight: 0 };
+          sums.set(k, { sum: s.sum + h / total, weight: s.weight + 1 / total });
+        }
+      }
+    }
+    for (const [k, { sum, weight }] of sums) {
+      const h = sum / weight;
+      moved = Math.max(moved, Math.abs(h - (junctions.get(k) ?? Infinity)));
+      junctions.set(k, h);
+    }
+    if (moved < 0.001) {
+      break;
+    }
+  }
+
+  for (const { span, points, distances } of spans) {
+    const total = distances[distances.length - 1];
+    const first = heightOf(key(points[0].p));
+    const last = heightOf(key(points[points.length - 1].p));
     const a = first ?? last;
     const b = last ?? first;
     const decks = new Map(span.map((s) => [s.bridge, new Array<number>(s.bridge.line.length).fill(0)]));
@@ -120,11 +164,11 @@ export function setBridgeDecks<T extends BridgeLine>(lines: T[], heightAt: (e: n
     for (const [bridge, deck] of decks) {
       bridge.deck = deck;
     }
-    for (const end of ends) {
-      for (const a of end.approaches) {
-        if (end.height !== undefined && a.length > 0) {
-          raiseApproach(lines, a, end.height, heightAt);
-        }
+  }
+  for (const end of ends.values()) {
+    for (const a of end.approaches) {
+      if (end.height !== undefined && a.length > 0) {
+        raiseApproach(lines, a, end.height, heightAt);
       }
     }
   }

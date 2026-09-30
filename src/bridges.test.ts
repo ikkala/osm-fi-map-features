@@ -66,3 +66,15 @@ test("deckAt interpolates along the nearest segment", () => {
   assert.equal(deckAt(line, deck, [10, 5]), 100);
   assert.equal(deckAt(line, deck, [0, 0]), 100);
 });
+
+test("a junction on a bridge (a ramp leaving it) hangs between the bridge's ends, not on the ground under it", () => {
+  // ground 100 at both ends, 80 under the middle, where a ramp leaves the bridge
+  const ground = (e: number) => (e <= 0 || e >= 100 ? 100 : 80);
+  const west: BridgeLine = { bridge: true, line: [[0, 0], [50, 0]] };
+  const east: BridgeLine = { bridge: true, line: [[50, 0], [100, 0]] };
+  const ramp: BridgeLine = { bridge: true, line: [[50, 0], [100, 20]] };
+  const lines = [{ bridge: false, line: [[-20, 0], [0, 0]] satisfies Point[] }, west, east, ramp, { bridge: false, line: [[100, 0], [120, 0]] satisfies Point[] }];
+  setBridgeDecks(lines, ground);
+  const round = (deck: number[] | undefined) => deck?.map((h) => Math.round(h * 100) / 100);
+  assert.deepEqual([round(west.deck), round(east.deck), round(ramp.deck)], [[100, 100], [100, 100], [100, 100]]);
+});
