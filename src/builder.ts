@@ -297,7 +297,8 @@ export class MapBuilder {
     logger.log(
       `footfall on ${footfall.ways} ways (${footfall.separate} streets with their sidewalks drawn apart get none); ` +
         `${footfall.matched} of ${footfall.counts} counts on a way, the estimate ${footfall.model.base} + ${footfall.model.scale} × draw ` +
-        `within a factor of two of ${Math.round(footfall.withinTwo * 100)} % of them`,
+        `within a factor of two of ${Math.round(footfall.withinTwo * 100)} % of them, and pulled towards them within 1.5 of ` +
+        `${Math.round(footfall.atCounts * 100)} %`,
     );
     if (footfall.matched > 0) {
       otherAttributions.push(TAMPERE_COUNTS_ATTRIBUTION);

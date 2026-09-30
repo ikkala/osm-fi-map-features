@@ -213,7 +213,9 @@ offices 0.5, others 0.7; falling off to nothing at 200 m) and the other doors (0
 steps and unclassified roads, 0.35 on paths, 0.3 on service roads and 0.2 on tracks.
 
 Where there are counts, `base` and `scale` are fitted to them and the estimate around each count is pulled towards
-it (within 250 m; to a third on other ways than the counted one). Tampere's are the city's
+it, fading out 80 m away: at a count its way gets about the count (the counts near each other averaged), and so do
+the ways of its name and the walkways of its kind in line with it (OSM cuts a sidewalk into many unnamed pieces);
+other ways get a third of the pull. Tampere's are the city's
 [pedestrian and cycling counts](https://data.tampere.fi/data/dataset/tampereen-jalankulun-ja-pyorailyn-liikennemaaria)
 (WFS layer `liikenneverkot:liikennemaarat_jalankulku_pyoraily_counter_point_TM35`): the current results
 (`tulos_vanhentunut=ei`) along ways (`JKPP`, `Koko poikkileikkaus`), a day's count or the afternoon peak hour's
@@ -222,8 +224,9 @@ for the street. A count is of one day, so it is divided by `FOOTFALL_MONTHS` and
 (a guess at how Nordic cities walk: winter months 0.85, summer 1.1, Sunday 0.75), and multiplying by them turns
 footfall into a given day; `FOOTFALL_HOURS` spreads a weekday's or a weekend day's walking over its hours. Around
 the centre of Tampere (September 2026) 432 counts fit `330 + 21 × draw`, which is also the default without counts,
-and the estimate alone is within a factor of two of 54 % of them: centre sidewalks get 2 000–4 500 a day, suburban
-footways a few hundred, paths and service roads less.
+and the estimate alone is within a factor of two of 54 % of them; pulled towards the counts, the counted ways are
+within a factor of 1.5 of 84 %. Centre sidewalks get 2 000–9 500 a day, suburban footways a few hundred, paths
+and service roads less.
 
 ## Licences
 

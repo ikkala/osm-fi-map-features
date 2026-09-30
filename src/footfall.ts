@@ -85,11 +85,20 @@ export const DEFAULT_FOOTFALL_MODEL = { base: 330, scale: 21 };
 /** A count is on a way this close to it (m) */
 const COUNT_MATCH_M = 25;
 /** A count pulls the estimate within this distance (m) towards it */
-const COUNT_REACH_M = 250;
-/** The pull of counts on ways other than the counted one (a parallel street, a side street) */
+const COUNT_REACH_M = 80;
+/**
+ * The pull of counts on ways other than the counted one (a parallel street, a side street). The counted
+ * way goes on in the ways of its name, and in the walkways of its kind in line with it (OSM cuts sidewalks
+ * into many pieces without names).
+ */
 const OTHER_WAY_PULL = 0.3;
-/** Weight of the estimate against the counts' pull: a lone count far away moves it less than several near */
-const ESTIMATE_WEIGHT = 0.5;
+/** A walkway goes on from the counted one when it is within this (m) of the counted segment's line */
+const IN_LINE_M = 6;
+/**
+ * Weight of the estimate against the counts' pull: at a count its way gets about the count, and a lone
+ * count farther away moves the estimate less than several near
+ */
+const ESTIMATE_WEIGHT = 0.1;
 /** A street has its sidewalks drawn as ways of their own when footway=sidewalk runs this close beside it */
 const SEPARATE_SIDEWALK_M = 8;
 /** ... for this share of its length */
@@ -104,6 +113,8 @@ export interface FootfallResult {
   model: { base: number; scale: number };
   /** Of the matched counts, the share the estimate alone gets within a factor of two */
   withinTwo: number;
+  /** Of the matched counts, the share whose way gets within a factor of 1.5 of them, pulled by the counts */
+  atCounts: number;
   /** Streets whose sidewalks were found drawn as ways of their own without a sidewalk tag */
   separate: number;
 }
@@ -122,7 +133,7 @@ export function estimateFootfall(roads: Road[], buildings: Building[], counts: F
   }
 
   // each count on its way: the draw and the kind factor there, and the count as on that way
-  const matches: { count: FootfallCount; road: Road; at: Point; draw: number; factor: number; daily: number }[] = [];
+  const matches: { count: FootfallCount; road: Road; at: Point; a: Point; b: Point; draw: number; factor: number; daily: number }[] = [];
   for (const count of counts) {
     const nearest = index.nearest(count.point, COUNT_MATCH_M);
     if (!nearest) {
@@ -133,7 +144,7 @@ export function estimateFootfall(roads: Road[], buildings: Building[], counts: F
     const street = !NOT_FOR_VEHICLES.has(nearest.road.kind) && nearest.road.kind !== "living_street";
     const sides = nearest.road.sidewalks === "left" || nearest.road.sidewalks === "right" ? 1 : 2;
     const daily = street && !count.whole ? count.daily * sides : count.daily;
-    matches.push({ count, road: nearest.road, at: nearest.at, draw: draw(nearest.at), factor, daily });
+    matches.push({ count, road: nearest.road, at: nearest.at, a: nearest.a, b: nearest.b, draw: draw(nearest.at), factor, daily });
   }
 
   const model = matches.length >= 5 ? fitModel(matches) : DEFAULT_FOOTFALL_MODEL;
@@ -141,31 +152,45 @@ export function estimateFootfall(roads: Road[], buildings: Building[], counts: F
   const residuals = matches.map((m) => ({ ...m, log: Math.log(Math.max(m.daily, 1) / estimate(m.draw, m.factor)) }));
   const withinTwo = residuals.filter((r) => Math.abs(r.log) <= Math.LN2).length;
 
-  for (const road of walked) {
-    const factor = factors.get(road) ?? 0;
-    road.footfall = road.line.map((p) => {
-      let pull = 0;
-      let weight = ESTIMATE_WEIGHT;
-      for (const r of residuals) {
-        const distance = Math.hypot(r.at[0] - p[0], r.at[1] - p[1]);
-        if (distance < COUNT_REACH_M) {
-          const same = r.road.osm === road.osm || (r.road.name !== undefined && r.road.name === road.name);
-          const w = falloff(distance, COUNT_REACH_M) * (same ? 1 : OTHER_WAY_PULL);
-          pull += w * r.log;
-          weight += w;
-        }
+  const footfallAt = (road: Road, p: Point) => {
+    let pull = 0;
+    let weight = ESTIMATE_WEIGHT;
+    for (const r of residuals) {
+      const distance = Math.hypot(r.at[0] - p[0], r.at[1] - p[1]);
+      if (distance < COUNT_REACH_M) {
+        const w = falloff(distance, COUNT_REACH_M) * (goesOn(r, road, p) ? 1 : OTHER_WAY_PULL);
+        pull += w * r.log;
+        weight += w;
       }
-      return Math.round(estimate(draw(p), factor) * Math.exp(pull / weight));
-    });
+    }
+    return Math.round(estimate(draw(p), factors.get(road) ?? 0) * Math.exp(pull / weight));
+  };
+  for (const road of walked) {
+    road.footfall = road.line.map((p) => footfallAt(road, p));
   }
+  const atCounts = matches.filter((m) => Math.abs(Math.log(Math.max(m.daily, 1) / Math.max(footfallAt(m.road, m.at), 1))) <= Math.log(1.5)).length;
   return {
     ways: walked.length,
     matched: matches.length,
     counts: counts.length,
     model,
     withinTwo: matches.length > 0 ? withinTwo / matches.length : 0,
+    atCounts: matches.length > 0 ? atCounts / matches.length : 0,
     separate,
   };
+}
+
+/** Whether the way at p is the counted way, or goes on from it: of its name, or a walkway of its kind in line with it */
+function goesOn(count: { road: Road; a: Point; b: Point }, road: Road, p: Point): boolean {
+  if (count.road.osm === road.osm || (count.road.name !== undefined && count.road.name === road.name)) {
+    return true;
+  }
+  if (road.kind !== count.road.kind || road.footway !== count.road.footway || !NOT_FOR_VEHICLES.has(road.kind)) {
+    return false;
+  }
+  const [a, b] = [count.a, count.b];
+  const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  return length > 0 && Math.abs((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])) / length <= IN_LINE_M;
 }
 
 /** A count of a day turned into the year's average day */
@@ -314,9 +339,9 @@ class SegmentGrid {
     }
   }
 
-  /** The nearest road within reach of the point, and the nearest point on it */
-  nearest(p: Point, reach: number): { road: Road; at: Point } | undefined {
-    let best: { road: Road; at: Point } | undefined;
+  /** The nearest road within reach of the point, the nearest point on it and its segment there */
+  nearest(p: Point, reach: number): { road: Road; at: Point; a: Point; b: Point } | undefined {
+    let best: { road: Road; at: Point; a: Point; b: Point } | undefined;
     let bestDistance = reach;
     const r = Math.ceil(reach / this.#cell);
     const [i0, j0] = [Math.floor(p[0] / this.#cell), Math.floor(p[1] / this.#cell)];
@@ -326,7 +351,7 @@ class SegmentGrid {
           const distance = distanceToSegment(p, a, b);
           if (distance < bestDistance) {
             bestDistance = distance;
-            best = { road, at: nearestOnSegment(p, a, b) };
+            best = { road, at: nearestOnSegment(p, a, b), a, b };
           }
         }
       }
