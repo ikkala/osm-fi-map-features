@@ -10,6 +10,7 @@
 // For now the first tile asked for builds the whole area and the rest come from memory: bridge spans,
 // tunnels in cuts and multipolygons reach over tile edges, so they are worked out over the whole area.
 import type { SourceCache } from "./cache.ts";
+import { openBarriers } from "./barriers.ts";
 import { MAX_PLINTH_M, setBuildingBases } from "./bases.ts";
 import { setBridgeDecks } from "./bridges.ts";
 import { businessQuery, parseBusinesses, placeBusinesses } from "./businesses.ts";
@@ -23,6 +24,7 @@ import { placeLamps } from "./lamps.ts";
 import { fetchRoofColours, ORTHO_ATTRIBUTION } from "./ortho.ts";
 import { bounds, fetchOverpass, overpassQuery, parseOsm, type GeoBox } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
+import { placeStreetNodes } from "./streets.ts";
 import {
   applyRegister,
   fetchCounts,
@@ -161,12 +163,12 @@ export class MapBuilder {
     const osmTimestamp = response.osm3s?.timestamp_osm_base;
     logger.log(`${response.elements.length} OSM elements (${cached ? "cached, refresh to fetch again" : "fetched"}), data from ${osmTimestamp ?? "?"}`);
 
-    const { features, warnings } = parseOsm(response.elements, origin);
+    const { features, streetNodes, warnings } = parseOsm(response.elements, origin);
     for (const warning of warnings) {
       logger.warn(`warning: ${warning}`);
     }
     // every line point costs something to draw, so drop the ones that barely bend the line
-    for (const feature of [...features.roads, ...features.rails]) {
+    for (const feature of [...features.roads, ...features.rails, ...features.barriers]) {
       feature.line = simplifyLine(feature.line, LINE_TOLERANCE_M);
     }
     let heightAt: ((e: number, n: number) => number | undefined) | undefined;
@@ -325,6 +327,13 @@ export class MapBuilder {
     logger.log(
       `${features.lamps.length} street lamps: ${lamps.heights} with heights and ${lamps.facing} facing guessed from the street ` +
         `next to them, ${lamps.onDecks} on bridges`,
+    );
+    // after the decks too; the gates before the barriers, which open for them
+    const { dropped } = placeStreetNodes(streetNodes, features);
+    const openings = openBarriers(features);
+    logger.log(
+      `${features.crossings.length} crossings, ${features.signals.length} traffic signals and ${features.gates.length} gates on their ways ` +
+        `(${dropped} on none left out); ${openings} openings cut into fences and walls, in ${features.barriers.length} pieces`,
     );
     const tilesRect = { minX: Math.min(...xs) * size, minY: Math.min(...ys) * size, maxX: (Math.max(...xs) + 1) * size, maxY: (Math.max(...ys) + 1) * size };
     const planted = plantForests(features, tilesRect);

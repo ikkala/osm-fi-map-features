@@ -3,7 +3,7 @@
 // next to a street is as tall as that street's lamps usually are and faces it, and a lamp with only a path
 // next to it is a low park lamp facing the path. A lamp on a bridge stands on its deck.
 import { deckAt } from "./bridges.ts";
-import { nearestOnSegment, type Point } from "./geometry.ts";
+import { nearestOnLine, type Point } from "./geometry.ts";
 import { bounds, NOT_FOR_VEHICLES, type Road, type StreetLamp } from "./osm.ts";
 
 /** A lamp faces the nearest street this close to it (m to the centre line), else the nearest path this close */
@@ -43,7 +43,7 @@ export function placeLamps(lamps: StreetLamp[], roads: Road[]): { facing: number
       if (e < box.minX - reach || e > box.maxX + reach || n < box.minY - reach || n > box.maxY + reach) {
         continue;
       }
-      const nearest = nearestOnLine(road, lamp.point);
+      const nearest = { road, ...nearestOnLine(road.line, lamp.point) };
       if (NOT_FOR_VEHICLES.has(road.kind)) {
         path = closer(path, nearest);
       } else {
@@ -70,18 +70,6 @@ export function placeLamps(lamps: StreetLamp[], roads: Road[]): { facing: number
     }
   }
   return counts;
-}
-
-function nearestOnLine(road: Road, p: Point): Nearest {
-  let best: Nearest = { road, distance: Infinity, point: road.line[0] };
-  for (let i = 0; i + 1 < road.line.length; i++) {
-    const q = nearestOnSegment(p, road.line[i], road.line[i + 1]);
-    const distance = Math.hypot(q[0] - p[0], q[1] - p[1]);
-    if (distance < best.distance) {
-      best = { road, distance, point: q };
-    }
-  }
-  return best;
 }
 
 function closer(a: Nearest | undefined, b: Nearest): Nearest {

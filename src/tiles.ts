@@ -3,10 +3,24 @@
 // Tile (x, y) covers east x*size ... (x+1)*size and north y*size ... (y+1)*size meters from the map
 // origin. Roads, rails and areas are cut at tile edges; a building belongs whole to the tile its
 // centroid is in, so it may reach a little into the neighbouring tiles, a tree to the tile of its
-// trunk and a street lamp to the tile of its foot.
+// trunk, a street lamp, crossing, traffic signal or gate to the tile of its point. Fences and walls are cut
+// at tile edges as roads are.
 import { deckAt } from "./bridges.ts";
 import { clipPolygon, clipPolyline, ringCentroid, simplifyRing, type Point, type Polygon, type Rect } from "./geometry.ts";
-import { bounds, type Area, type Building, type MapFeatures, type Rail, type Road, type StreetLamp, type Tree } from "./osm.ts";
+import {
+  bounds,
+  type Area,
+  type Barrier,
+  type Building,
+  type Crossing,
+  type Gate,
+  type MapFeatures,
+  type Rail,
+  type Road,
+  type StreetLamp,
+  type TrafficSignal,
+  type Tree,
+} from "./osm.ts";
 
 export interface TileKey {
   x: number;
@@ -81,7 +95,7 @@ function clippedDeck(
 export function cutIntoTiles(features: MapFeatures, keys: TileKey[], size: number): Tile[] {
   const tiles = new Map<string, Tile>();
   for (const key of keys) {
-    tiles.set(tileName(key), { ...key, roads: [], rails: [], buildings: [], areas: [], trees: [], lamps: [] });
+    tiles.set(tileName(key), { ...key, roads: [], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [] });
   }
   const touched = (points: Point[]) => {
     const range = tileRange(bounds(points), size);
@@ -137,13 +151,29 @@ export function cutIntoTiles(features: MapFeatures, keys: TileKey[], size: numbe
     const [e, n] = tree.point;
     tiles.get(tileName({ x: Math.floor(e / size), y: Math.floor(n / size) }))?.trees.push(tree satisfies Tree);
   }
+  const tileAt = ([e, n]: Point) => tiles.get(tileName({ x: Math.floor(e / size), y: Math.floor(n / size) }));
   for (const lamp of features.lamps) {
-    const [e, n] = lamp.point;
-    tiles.get(tileName({ x: Math.floor(e / size), y: Math.floor(n / size) }))?.lamps.push(lamp satisfies StreetLamp);
+    tileAt(lamp.point)?.lamps.push(lamp satisfies StreetLamp);
+  }
+  for (const crossing of features.crossings) {
+    tileAt(crossing.point)?.crossings.push(crossing satisfies Crossing);
+  }
+  for (const signal of features.signals) {
+    tileAt(signal.point)?.signals.push(signal satisfies TrafficSignal);
+  }
+  for (const gate of features.gates) {
+    tileAt(gate.point)?.gates.push(gate satisfies Gate);
+  }
+  for (const barrier of features.barriers) {
+    for (const tile of touched(barrier.line)) {
+      for (const line of clipPolyline(barrier.line, tileRect(tile, size))) {
+        tile.barriers.push({ ...barrier, line } satisfies Barrier);
+      }
+    }
   }
 
   const byOsmId = (a: { osm: string }, b: { osm: string }) => compareOsmIds(a.osm, b.osm);
-  // trees and lamps have no ids: south to north, then west to east
+  // trees, lamps and the points on ways have no ids: south to north, then west to east
   const byPlace = (a: { point: Point }, b: { point: Point }) => a.point[1] - b.point[1] || a.point[0] - b.point[0];
   for (const tile of tiles.values()) {
     tile.roads.sort(byOsmId);
@@ -152,6 +182,10 @@ export function cutIntoTiles(features: MapFeatures, keys: TileKey[], size: numbe
     tile.areas.sort(byOsmId);
     tile.trees.sort(byPlace);
     tile.lamps.sort(byPlace);
+    tile.crossings.sort(byPlace);
+    tile.signals.sort(byPlace);
+    tile.gates.sort(byPlace);
+    tile.barriers.sort(byOsmId);
   }
   return [...tiles.values()];
 }

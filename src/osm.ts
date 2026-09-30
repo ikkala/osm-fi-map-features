@@ -261,6 +261,53 @@ export interface StreetLamp {
   lampType?: string;
 }
 
+/** A point on a way (see streets.ts): where it is, which way the way runs there, and the way itself */
+export interface WayPoint {
+  /** Meters east and north of the origin, on the way's centre line */
+  point: Point;
+  /** The way's direction there: degrees counter-clockwise from east, along its line */
+  along: number;
+  /** The way's highway=* value and width (m) */
+  kind: string;
+  width: number;
+  /** On a bridge: the deck's height (m above sea level) there */
+  base?: number;
+}
+
+/** A crossing painted on a street (highway=crossing, not unmarked) */
+export type Crossing = WayPoint;
+
+export interface TrafficSignal extends WayPoint {
+  /** The traffic the lights are for: going along the way's line, against it, or both when unset */
+  direction?: "forward" | "backward";
+}
+
+/** A gate (barrier=gate): across the way it is on, or in the fence or wall it is on */
+export interface Gate {
+  point: Point;
+  /** The direction the gate spans, degrees counter-clockwise from east */
+  across: number;
+  /** Meters from post to post */
+  width: number;
+  base?: number;
+}
+
+/** Fences, walls, retaining walls and hedges (barrier=*) */
+export type BarrierKind = "fence" | "wall" | "retaining_wall" | "hedge";
+
+export interface Barrier {
+  osm: string;
+  kind: BarrierKind;
+  /** Meters above the ground */
+  height: number;
+  /** Not in OSM: the usual height of its kind */
+  heightEstimated?: boolean;
+  /** fence_type, material or wall=* in lower case (railing, wire, wood, brick, noise_barrier, ...), when known */
+  material?: string;
+  /** Cut open where ways cross it and at its gates (see barriers.ts) */
+  line: Point[];
+}
+
 export interface MapFeatures {
   roads: Road[];
   rails: Rail[];
@@ -268,6 +315,10 @@ export interface MapFeatures {
   areas: Area[];
   trees: Tree[];
   lamps: StreetLamp[];
+  crossings: Crossing[];
+  signals: TrafficSignal[];
+  gates: Gate[];
+  barriers: Barrier[];
 }
 
 /**
@@ -409,7 +460,8 @@ export function estimatedLevels(kind: string, area: number): number {
 }
 
 export function overpassQuery(box: GeoBox): string {
-  const selectors = ["way[highway]", "way[railway]", "way[building]", "way[\"building:part\"]", "node[natural~\"^(tree|shrub)$\"]", "way[natural=tree_row]", "node[highway=street_lamp]"];
+  const selectors = ["way[highway]", "way[railway]", "way[building]", "way[\"building:part\"]", "node[natural~\"^(tree|shrub)$\"]", "way[natural=tree_row]", "node[highway=street_lamp]",
+    "node[highway~\"^(crossing|traffic_signals)$\"]", "node[barrier=gate]", "way[barrier~\"^(fence|wall|retaining_wall|hedge)$\"]"];
   const relations = ["relation[building][type=multipolygon]", "relation[\"building:part\"][type=multipolygon]"];
   const byKey = new Map<string, string[]>();
   for (const [key, values] of AREA_RULES) {
@@ -532,6 +584,8 @@ export async function fetchOverpass(query: string, options: FetchOptions): Promi
 
 export interface ParseResult {
   features: MapFeatures;
+  /** Crossings, traffic signals and gates, still to be put on their ways (streets.ts) */
+  streetNodes: StreetNode[];
   /** Problems worth reporting, such as multipolygons with rings that do not close */
   warnings: string[];
 }
@@ -541,7 +595,8 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   const warnings: string[] = [];
   const projection = new LocalProjection(origin);
   const toPoint = (p: LatLon): Point => projection.toMeters({ latitude: p.lat, longitude: p.lon });
-  const features: MapFeatures = { roads: [], rails: [], buildings: [], areas: [], trees: [], lamps: [] };
+  const features: MapFeatures = { roads: [], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [] };
+  const streetNodes: StreetNode[] = [];
   const passages: Passage[] = [];
   // tunnels and covered ways that may be passages through buildings tagged otherwise
   const maybePassages: { road: Road; passage: Passage }[] = [];
@@ -554,6 +609,10 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
       }
       if (tags.highway === "street_lamp" && element.lat !== undefined && element.lon !== undefined) {
         features.lamps.push(lamp(tags, toPoint({ lat: element.lat, lon: element.lon })));
+      }
+      const street = element.lat !== undefined && element.lon !== undefined ? streetNode(tags, toPoint({ lat: element.lat, lon: element.lon })) : undefined;
+      if (street) {
+        streetNodes.push(street);
       }
     } else if (element.type === "way") {
       const osm = `w${element.id}`;
@@ -595,6 +654,10 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
       if (tags.natural === "tree_row") {
         features.trees.push(...alongLine(points, TREE_ROW_SPACING_M).map((point) => tree(tags, point)));
       }
+      const kind = BARRIER_KINDS.get(tags.barrier ?? "");
+      if (kind) {
+        features.barriers.push(barrier(osm, kind, tags, points));
+      }
       if (closed && points.length >= 3) {
         addPolygonFeature(features, osm, tags, polygon());
       }
@@ -629,7 +692,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   features.buildings.push(...fillUnderFloatingParts(features));
   openPassages(features.buildings, passages);
   raiseRoofsOverRoads(features);
-  return { features, warnings };
+  return { features, streetNodes, warnings };
 }
 
 function addPolygonFeature(features: MapFeatures, osm: string, tags: Tags, polygon: Polygon): void {
@@ -710,6 +773,62 @@ function lamp(tags: Tags, point: Point): StreetLamp {
     // direction is clockwise from north
     ...(direction !== undefined && { toward: (((90 - direction) % 360) + 360) % 360 }),
     ...(lampType && { lampType }),
+  };
+}
+
+/** A crossing, traffic signal or gate node as OSM has it, before streets.ts puts it on its way */
+export type StreetNode =
+  | { kind: "crossing"; point: Point }
+  | { kind: "signal"; point: Point; direction?: TrafficSignal["direction"] }
+  | { kind: "gate"; point: Point; width?: number };
+
+/**
+ * The street nodes that are drawn: crossings with markings (not crossing=unmarked, crossing:markings=no or
+ * markings other than stripes), traffic signals and gates
+ */
+function streetNode(tags: Tags, point: Point): StreetNode | undefined {
+  if (tags.highway === "crossing") {
+    const markings = tags["crossing:markings"];
+    const striped = markings === undefined ? !UNMARKED_CROSSINGS.has(tags.crossing ?? "") : STRIPED_MARKINGS.has(markings);
+    return striped ? { kind: "crossing", point } : undefined;
+  }
+  if (tags.highway === "traffic_signals") {
+    const direction = tags["traffic_signals:direction"];
+    return { kind: "signal", point, ...((direction === "forward" || direction === "backward") && { direction }) };
+  }
+  if (tags.barrier === "gate") {
+    const width = meters(tags.width);
+    return { kind: "gate", point, ...(width !== undefined && width > 0 && { width }) };
+  }
+  return undefined;
+}
+/** crossing=* values without markings, when crossing:markings does not tell */
+const UNMARKED_CROSSINGS = new Set(["unmarked", "no", "informal"]);
+/** crossing:markings values drawn as stripes */
+const STRIPED_MARKINGS = new Set(["yes", "zebra", "zebra:double", "zebra:paired", "zebra:bicolour", "lines", "ladder"]);
+
+/** barrier=* values drawn as fences and walls, and their kinds */
+const BARRIER_KINDS = new Map<string, BarrierKind>([
+  ["fence", "fence"],
+  ["wall", "wall"],
+  ["retaining_wall", "retaining_wall"],
+  ["hedge", "hedge"],
+]);
+/** Heights (m) of fences and walls whose height OSM does not have; a noise barrier is a tall wall */
+export const DEFAULT_BARRIER_HEIGHTS: Record<BarrierKind, number> = { fence: 1.2, wall: 1.5, retaining_wall: 1, hedge: 1.2 };
+const NOISE_BARRIER_HEIGHT_M = 3;
+
+/** A barrier=fence, wall, retaining_wall or hedge way */
+function barrier(osm: string, kind: BarrierKind, tags: Tags, line: Point[]): Barrier {
+  const material = (tags.fence_type ?? tags.material ?? tags.wall)?.trim().toLowerCase();
+  const height = meters(tags.height);
+  const guess = material === "noise_barrier" ? NOISE_BARRIER_HEIGHT_M : DEFAULT_BARRIER_HEIGHTS[kind];
+  return {
+    osm,
+    kind,
+    ...(height !== undefined && height > 0 ? { height } : { height: guess, heightEstimated: true }),
+    ...(material && { material }),
+    line,
   };
 }
 

@@ -125,11 +125,38 @@ test("parseOsm reads street lamps: their mount, height, direction and lamp type"
   assert.equal(features.trees.length, 0);
 });
 
+test("parseOsm reads the painted crossings, traffic signals and gates, and fences, walls and hedges", () => {
+  const { features, streetNodes } = parseOsm(
+    [
+      { type: "node", id: 60, tags: { highway: "crossing", crossing: "uncontrolled", "crossing:markings": "zebra" }, ...at(1, 0) },
+      { type: "node", id: 61, tags: { highway: "crossing", crossing: "traffic_signals" }, ...at(2, 0) },
+      { type: "node", id: 62, tags: { highway: "crossing", crossing: "unmarked" }, ...at(3, 0) },
+      { type: "node", id: 63, tags: { highway: "crossing", "crossing:markings": "no" }, ...at(4, 0) },
+      { type: "node", id: 64, tags: { highway: "traffic_signals", "traffic_signals:direction": "backward" }, ...at(5, 0) },
+      { type: "node", id: 65, tags: { barrier: "gate", width: "4" }, ...at(6, 0) },
+      { type: "way", id: 66, tags: { barrier: "fence", fence_type: "Wood" }, geometry: [at(0, 10), at(20, 10)] },
+      { type: "way", id: 67, tags: { barrier: "wall", wall: "noise_barrier" }, geometry: [at(0, 20), at(20, 20)] },
+      { type: "way", id: 68, tags: { barrier: "hedge", height: "2" }, geometry: [at(0, 30), at(20, 30)] },
+      { type: "way", id: 69, tags: { barrier: "kerb" }, geometry: [at(0, 40), at(20, 40)] },
+    ],
+    origin,
+  );
+  assert.deepEqual(
+    streetNodes.map((s) => [s.kind, s.point[0].toFixed(1)]),
+    [["crossing", "1.0"], ["crossing", "2.0"], ["signal", "5.0"], ["gate", "6.0"]],
+  );
+  assert.deepEqual([streetNodes[2], streetNodes[3]].map((s) => (s.kind === "signal" ? s.direction : s.kind === "gate" ? s.width : undefined)), ["backward", 4]);
+  assert.deepEqual(
+    features.barriers.map((b) => [b.osm, b.kind, b.height, b.heightEstimated, b.material]),
+    [["w66", "fence", 1.2, true, "wood"], ["w67", "wall", 3, true, "noise_barrier"], ["w68", "hedge", 2, undefined, undefined]],
+  );
+});
+
 test("trees go to the tile of their trunk and lamps to the tile of their foot, south to north", () => {
   const tree = (e: number, n: number): Tree => ({ point: [e, n], kind: "broadleaved", height: 8.04 });
   const trees = [tree(50, 60), tree(150, 10), { ...tree(20, 30), genus: "tilia" }, { ...tree(20, 80), trunk: 2.54 }];
   const lamps = [{ point: [150, 70] satisfies Point, height: 8 }, { point: [150, 20] satisfies Point, height: 5 }];
-  const features = { roads: [], rails: [], buildings: [], areas: [], trees, lamps };
+  const features = { roads: [], rails: [], buildings: [], areas: [], trees, lamps, crossings: [], signals: [], gates: [], barriers: [] };
   const [west, east] = cutIntoTiles(features, [{ x: 0, y: 0 }, { x: 1, y: 0 }], 100);
   assert.deepEqual(west.trees.map((t) => t.point), [[20, 30], [50, 60], [20, 80]]);
   assert.deepEqual(east.trees.map((t) => t.point), [[150, 10]]);

@@ -348,6 +348,19 @@ export function nearestOnSegment(p: Point, a: Point, c: Point): Point {
   return [a[0] + t * dx, a[1] + t * dy];
 }
 
+/** The point on a line nearest to p, how far it is, and the segment (from point `segment` to the next) it is on */
+export function nearestOnLine(line: Point[], p: Point): { point: Point; distance: number; segment: number } {
+  let best = { point: line[0], distance: Math.hypot(line[0][0] - p[0], line[0][1] - p[1]), segment: 0 };
+  for (let i = 0; i + 1 < line.length; i++) {
+    const q = nearestOnSegment(p, line[i], line[i + 1]);
+    const distance = Math.hypot(q[0] - p[0], q[1] - p[1]);
+    if (distance < best.distance) {
+      best = { point: q, distance, segment: i };
+    }
+  }
+  return best;
+}
+
 export function distanceToSegment(p: Point, a: Point, b: Point): number {
   const dx = b[0] - a[0];
   const dy = b[1] - a[1];

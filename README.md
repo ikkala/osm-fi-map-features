@@ -1,7 +1,8 @@
 # osm-fi-map-features
 
 Map features for a 3D map of a Finnish city, in meters around an origin point and a square tile at a time:
-roads, rails, buildings (with 3D parts, roofs, windows, entrances and the businesses in them), trees, street lamps and ground areas from
+roads, rails, buildings (with 3D parts, roofs, windows, entrances and the businesses in them), trees, street
+lamps, crossings, traffic signals, gates, fences and walls, and ground areas from
 [OpenStreetMap](https://www.openstreetmap.org/), combined with Finnish open data:
 
 - the ground heights of the [National Land Survey of Finland](https://www.maanmittauslaitos.fi/en)'s
@@ -38,7 +39,7 @@ const builder = new MapBuilder({
 });
 const info = await builder.info(); // tiles, OSM timestamp, attributions
 for (const key of info.tiles) {
-  const tile = await builder.tile(key); // roads, rails, buildings, areas, trees, lamps, heights
+  const tile = await builder.tile(key); // roads, rails, buildings, areas, trees, lamps, crossings, signals, gates, barriers, heights
 }
 ```
 
@@ -170,6 +171,21 @@ from `lamp_mount` or `support`, or is a catenary mast (`power=catenary_mast`, su
 have one, and none a `height` or a `direction`. A lamp without them faces the nearest street within 15 m, else the
 nearest path within 8 m, and is 10 m tall by a main street (secondary and up), 8 m by another street and 5 m by a
 path or nothing (high masts 20 m, catenary masts 8 m). A lamp on a bridge stands on its deck.
+
+Crossings, traffic signals and gates are nodes of the ways they are on (`src/streets.ts`): a crossing
+(`highway=crossing`) is on the street and on the footway across it, so it and a traffic signal
+(`highway=traffic_signals`) are put on the nearest street (not a footway or a path) within 1 m, with the street's
+direction there, kind, width and deck height; a gate (`barrier=gate`) spans the way it is on, or else lies in its
+fence or wall, 1.2 m wide unless tagged. Only crossings with markings are kept: not `crossing=unmarked` or
+`crossing:markings=no`, and of the markings only stripes (`zebra`, `yes`, ...). A traffic signal's
+`traffic_signals:direction` (forward or backward along the way) tells which traffic it is for. Around the centre of
+Tampere there are about 1 100 painted crossings, 200 signals and 200 gates on their ways.
+
+Fences, walls, retaining walls and hedges (`barrier=*` ways, about 1 000 around the centre) get OSM's `height`, or
+1.2 m for fences and hedges, 1.5 m for walls (3 m for noise barriers) and 1 m for retaining walls, and their
+`fence_type`, `material` or `wall` as a material. A path through a fence often has no gate or opening in OSM, so
+each barrier is cut open where a way (not a bridge or a tunnel) crosses it, 0.4 m wider than the way, and at its
+gates (`src/barriers.ts`).
 
 Businesses (`Building.businesses`) are the OSM elements with `shop`, `office`, `craft` or `healthcare`, or with an
 `amenity`, `tourism` or `leisure` value that is a business (restaurants, cafes, pharmacies, banks, cinemas, hotels,

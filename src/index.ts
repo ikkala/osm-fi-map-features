@@ -7,11 +7,15 @@ export { ORTHO_ATTRIBUTION } from "./ortho.ts";
 export type {
   Area,
   AreaKind,
+  Barrier,
+  BarrierKind,
   Building,
   Business,
   BusinessCategory,
   BusinessFront,
+  Crossing,
   Entrance,
+  Gate,
   GeoBox,
   LampMount,
   MapFeatures,
@@ -22,8 +26,10 @@ export type {
   RoofShape,
   Sidewalks,
   StreetLamp,
+  TrafficSignal,
   Tree,
   TreeKind,
+  WayPoint,
   WindowStyle,
 } from "./osm.ts";
 export { isValidGeoPoint, LocalProjection, type GeoPoint } from "./projection.ts";
