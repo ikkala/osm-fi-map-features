@@ -15,12 +15,16 @@ export const MAX_PLINTH_M = 6;
 const SAMPLE_M = 2;
 /** Entrances that say nothing of the floor: often down to a basement or up a ramp */
 const NOT_FLOOR_ENTRANCES = new Set(["service", "emergency", "exit", "garage", "underground"]);
+/** A door has at least this much room over the ground by it under the roof (m) */
+const ROOM_OVER_DOOR_M = 2.5;
 
 /**
  * Sets every building's base (m above sea level): the ground at its OSM entrance (a main one first), or
  * else its highest ground; at most MAX_PLINTH_M above its lowest ground and not above its highest; and
  * at least the top of the lids of the tunnels in cuts under it. A part gets the base of the building it
- * is in, so its parts stand on one floor. Open shelters stand on their lowest ground and get none,
+ * is in, so its parts stand on one floor. A building (not a part) whose roof would be lower than
+ * ROOM_OVER_DOOR_M over the ground at one of its doors in OSM (a stair hall from a street up a slope to a
+ * platform, with a door at each end) is as tall as it is over the ground at that door, and goes into raised. Open shelters stand on their lowest ground and get none,
  * unless they are over a lid: then they stand on its top.
  * heightAt gives the ground height at map meters (undefined outside the elevation model). Returns how
  * many buildings got a base.
@@ -29,6 +33,7 @@ export function setBuildingBases(
   buildings: Building[],
   heightAt: (e: number, n: number) => number | undefined,
   lids: { line: Point[]; lid: number[] }[] = [],
+  raised: Building[] = [],
 ): number {
   const baseOf = (b: Building, entrances: Entrance[]) => {
     const range = groundRange(b.polygon.outer, heightAt);
@@ -75,6 +80,14 @@ export function setBuildingBases(
     if (base !== undefined) {
       b.base = base;
       count++;
+      if (!b.part) {
+        const doors = (b.entrances ?? []).filter((e) => !e.guessed).map((e) => heightAt(...e.at)).filter((h) => h !== undefined);
+        const door = Math.max(...doors);
+        if (doors.length > 0 && base + b.height < door + ROOM_OVER_DOOR_M) {
+          b.height = door - base + b.height;
+          raised.push(b);
+        }
+      }
     }
   }
   return count;

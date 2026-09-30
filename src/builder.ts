@@ -23,7 +23,7 @@ import { mergeTrees, plantForests } from "./forests.ts";
 import { pointKey, simplifyLine, type Point } from "./geometry.ts";
 import { placeLamps } from "./lamps.ts";
 import { fetchRoofColours, ORTHO_ATTRIBUTION } from "./ortho.ts";
-import { bounds, fetchOverpass, overpassQuery, parseOsm, type GeoBox } from "./osm.ts";
+import { bounds, fetchOverpass, openDoorways, overpassQuery, parseOsm, type Building, type GeoBox } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { placeStreetNodes } from "./streets.ts";
 import {
@@ -164,7 +164,7 @@ export class MapBuilder {
     const osmTimestamp = response.osm3s?.timestamp_osm_base;
     logger.log(`${response.elements.length} OSM elements (${cached ? "cached, refresh to fetch again" : "fetched"}), data from ${osmTimestamp ?? "?"}`);
 
-    const { features, streetNodes, bridgeOutlines, warnings, levels } = parseOsm(response.elements, origin);
+    const { features, streetNodes, bridgeOutlines, warnings, levels, covered } = parseOsm(response.elements, origin);
     for (const warning of warnings) {
       logger.warn(`warning: ${warning}`);
     }
@@ -294,8 +294,12 @@ export class MapBuilder {
     }
     if (heightAt) {
       const lids = [...features.roads, ...features.rails].flatMap((w) => (w.lid ? [{ line: w.line, lid: w.lid }] : []));
-      const based = setBuildingBases(features.buildings, heightAt, lids);
+      const raised: Building[] = [];
+      const based = setBuildingBases(features.buildings, heightAt, lids, raised);
       logger.log(`${based} buildings stand at their OSM entrance or highest ground (at most ${MAX_PLINTH_M} m above their lowest)`);
+      // the ones raised over a door up a slope are stair halls: their walls open where covered ways come in at their doors
+      const openings = openDoorways(raised, covered, heightAt);
+      logger.log(`${raised.length} buildings raised over a door up a slope, ${openings} openings where covered ways come in at their doors`);
     }
     // TODO: entrances that are steps up or down from the street, and buildings with entrances on several
     // floors (a slope with an entrance at each level), stand at the wrong one.

@@ -199,6 +199,11 @@ export interface Opening {
   from: Point;
   to: Point;
   height: number;
+  /**
+   * Where the opening does not start at the building's base (a door up a slope, into a stair hall): the
+   * ground there (m above sea level), which its height counts from
+   */
+  ground?: number;
 }
 
 /**
@@ -419,6 +424,8 @@ const ROOF_OVER_ROAD_M = 5;
 /** How tall a passage through a building is when its way has no maxheight: for vehicles, and for people */
 const PASSAGE_HEIGHT_M = 4;
 const WALKWAY_PASSAGE_HEIGHT_M = 3;
+/** A covered way comes in at a door in OSM when one of its points is this close to it (m) */
+const DOOR_ON_WAY_M = 0.5;
 /** Ways indoors are kept this far on from a tunnel's end (m) */
 const INDOOR_REACH_M = 30;
 /** The passage of a way indoors out of a tunnel starts this far on from the tunnel's end (m) */
@@ -629,6 +636,8 @@ export interface ParseResult {
   warnings: string[];
   /** The storeys (level=*) of the roads and rails that OSM tells them for, to tell where tunnels come out */
   levels: Map<Road | Rail, number[]>;
+  /** Covered ways (covered=yes) that are no passages through buildings: they may come in at a door (see openDoorways) */
+  covered: Road[];
 }
 
 /** Turns Overpass elements into features in meters east / north of origin. */
@@ -642,6 +651,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   const passages: Passage[] = [];
   // tunnels and covered ways that may be passages through buildings tagged otherwise
   const maybePassages: { road: Road; passage: Passage }[] = [];
+  const covered: Road[] = [];
   const levels = new Map<Road | Rail, number[]>();
   // ways indoors, kept where they come out of a tunnel's end (the stairs up out of an underpass)
   const indoors: Road[] = [];
@@ -699,6 +709,9 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
             passages.push(passage);
           } else if ((way.tunnel || road.covered === "yes") && way.layer >= -1) {
             maybePassages.push({ road: way, passage });
+            if (road.covered === "yes" && !way.tunnel) {
+              covered.push(way);
+            }
           }
         }
       }
@@ -779,16 +792,18 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   }
 
   markBuildingsWithParts(features.buildings);
+  const through = new Set<Road>();
   for (const { road, passage } of maybePassages) {
     if (runsThroughBuildings(passage.line, features.buildings)) {
       road.tunnel = false;
       passages.push(passage);
+      through.add(road);
     }
   }
   features.buildings.push(...fillUnderFloatingParts(features));
   openPassages(features.buildings, passages);
   raiseRoofsOverRoads(features);
-  return { features, streetNodes, bridgeOutlines, warnings, levels };
+  return { features, streetNodes, bridgeOutlines, warnings, levels, covered: covered.filter((r) => !through.has(r)) };
 }
 
 function addPolygonFeature(features: MapFeatures, bridgeOutlines: BridgeOutline[], osm: string, tags: Tags, polygon: Polygon): void {
@@ -1101,9 +1116,9 @@ export interface Passage {
 /**
  * Opens the walls of the buildings (and parts reaching the ground) where passages cross them: as wide
  * as the way along the wall, wider where it crosses at a slant. A passage taller than 0 also gets a
- * room through the building (see PassageRoom).
+ * room through the building (see PassageRoom), unless rooms is false.
  */
-export function openPassages(buildings: Building[], passages: Passage[]): void {
+export function openPassages(buildings: Building[], passages: Passage[], rooms = true): void {
   const roomed = new Set<Building>();
   for (const passage of passages) {
     const reach = bounds(passage.line);
@@ -1129,10 +1144,10 @@ export function openPassages(buildings: Building[], passages: Passage[]): void {
           }
         }
       }
-      if (passage.height > 0) {
-        const rooms = roomsThrough(b.polygon, passage);
-        if (rooms.length > 0) {
-          (b.passageRooms ??= []).push(...rooms);
+      if (passage.height > 0 && rooms) {
+        const through = roomsThrough(b.polygon, passage);
+        if (through.length > 0) {
+          (b.passageRooms ??= []).push(...through);
           roomed.add(b);
         }
       }
@@ -1141,6 +1156,39 @@ export function openPassages(buildings: Building[], passages: Passage[]): void {
   for (const b of roomed) {
     setRoomWalls(b.passageRooms ?? []);
   }
+}
+
+/**
+ * Opens the walls of stair halls (buildings with doors up a slope, see bases.ts) where a covered way (a
+ * stair up the slope under their roof) comes in at one of their doors in OSM: as openPassages, from the
+ * ground there, without a room (the hall is the room; the way inside rises under its roof). heightAt
+ * gives the ground at map meters. Returns how many openings there are.
+ */
+export function openDoorways(buildings: Building[], ways: Road[], heightAt: (e: number, n: number) => number | undefined): number {
+  let count = 0;
+  for (const way of ways) {
+    const reach = bounds(way.line);
+    for (const b of buildings) {
+      const box = bounds(b.polygon.outer);
+      if (box.maxX < reach.minX - DOOR_ON_WAY_M || box.minX > reach.maxX + DOOR_ON_WAY_M || box.maxY < reach.minY - DOOR_ON_WAY_M || box.minY > reach.maxY + DOOR_ON_WAY_M) {
+        continue;
+      }
+      const atDoor = (b.entrances ?? []).some((e) => !e.guessed && way.line.some((p) => Math.hypot(p[0] - e.at[0], p[1] - e.at[1]) < DOOR_ON_WAY_M));
+      if (!atDoor) {
+        continue;
+      }
+      const before = b.passages?.length ?? 0;
+      openPassages([b], [{ line: way.line, width: way.width, height: NOT_FOR_VEHICLES.has(way.kind) ? WALKWAY_PASSAGE_HEIGHT_M : PASSAGE_HEIGHT_M }], false);
+      for (const opening of (b.passages ?? []).slice(before)) {
+        const ground = heightAt((opening.from[0] + opening.to[0]) / 2, (opening.from[1] + opening.to[1]) / 2);
+        if (ground !== undefined) {
+          opening.ground = ground;
+        }
+        count++;
+      }
+    }
+  }
+  return count;
 }
 
 /** A room's side turning at a corner of its way reaches at most this many half-widths from the way */

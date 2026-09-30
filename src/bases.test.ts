@@ -24,6 +24,18 @@ test("setBuildingBases stands buildings at their highest ground, at most MAX_PLI
   assert.deepEqual([shelter.base, outside.base], [undefined, undefined]);
 });
 
+test("setBuildingBases raises a building whose roof would be under a door of its to its height over that door", () => {
+  // a stair hall up the slope, 3.5 m tall, with a door at the street (100) and one up at the platform (105)
+  const hall = square(0, 10, { height: 3.5, entrances: [{ at: [0, 5], kind: "yes" }, { at: [10, 5], kind: "yes" }] });
+  // a house as tall as its doors want, and one with a guessed door up the slope, left as they are
+  const house = square(0, 10, { height: 9, entrances: [{ at: [0, 5], kind: "yes" }, { at: [10, 5], kind: "yes" }] });
+  const guessed = square(0, 10, { height: 3.5, entrances: [{ at: [0, 5], kind: "yes" }, { at: [10, 5], kind: "yes", guessed: true }] });
+  const raised: Building[] = [];
+  setBuildingBases([hall, house, guessed], heightAt, [], raised);
+  assert.deepEqual([hall.base, hall.height, raised], [100, 8.5, [hall]]);
+  assert.deepEqual([house.height, guessed.height], [9, 3.5]);
+});
+
 test("setBuildingBases gives parts the base of their building", () => {
   const outline = square(0, 30, { hasParts: true });
   const low = square(0, 5, { part: true });

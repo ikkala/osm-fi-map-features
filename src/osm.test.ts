@@ -1,7 +1,7 @@
 // OSM parsing and tiling together, on a small hand-made Overpass response.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { areaKind, compassDegrees, meters, openPassages, overpassQuery, parseOsm, type Building, type OverpassResponse, type Tree } from "./osm.ts";
+import { areaKind, compassDegrees, meters, openDoorways, openPassages, overpassQuery, parseOsm, type Building, type OverpassResponse, type Road, type Tree } from "./osm.ts";
 import type { Point } from "./geometry.ts";
 import { LocalProjection } from "./projection.ts";
 import { cutIntoTiles, tilesCovering } from "./tiles.ts";
@@ -124,6 +124,26 @@ test("parseOsm leaves out ways indoors, but not the ones on from a tunnel's end,
   // the wall is open where the corridor goes out, not where the stairs come in from under the ground
   const openings = defined(features.buildings[0].passages).map((o) => [o.from, o.to].map(([e, n]) => [Math.round(e), Math.round(n)]));
   assert.deepEqual(openings, [[[8, 19], [8, 21]]]);
+});
+
+test("openDoorways opens a building's walls where a covered way comes in at its door, from the ground there, without a room", () => {
+  // a stair hall (e 0 .. 4, n 0 .. 20): stairs from its door at n 0 up inside, and a way on out at its door at n 20
+  const hall: Building = {
+    osm: "w1", kind: "yes", part: false, hasParts: false, height: 8, minHeight: 0,
+    polygon: { outer: [[0, 0], [4, 0], [4, 20], [0, 20]], holes: [] },
+    entrances: [{ at: [2, 0], kind: "yes" }, { at: [2, 20], kind: "yes" }],
+  };
+  const way = (osm: string, line: Point[], kind: string): Road => ({ osm, kind, width: 2, layer: 0, bridge: false, tunnel: false, line });
+  const stairs = way("w2", [[2, 0], [2, 14]], "steps");
+  const on = way("w3", [[2, 14], [2, 20], [2, 30]], "footway");
+  // a covered way past the building, at no door
+  const past = way("w4", [[5, 0], [5, 20]], "footway");
+  assert.equal(openDoorways([hall], [stairs, on, past], (_e, n) => 100 + n / 4), 2);
+  assert.deepEqual(defined(hall.passages).map((o) => [o.from, o.to, o.height, o.ground]), [
+    [[1, 0], [3, 0], 3, 100],
+    [[3, 20], [1, 20], 3, 105],
+  ]);
+  assert.equal(hall.passageRooms, undefined);
 });
 
 test("parseOsm reads street lamps: their mount, height, direction and lamp type", () => {
