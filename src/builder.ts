@@ -3,8 +3,9 @@
 // The OpenStreetMap roads, rails, buildings (with the businesses in them), trees, street lamps and ground areas
 // around the area (from an Overpass API server) are laid out in meters around the origin. With an MML API key they get ground heights and
 // bridge decks from the Maanmittauslaitos elevation model and roof colours from its orthophoto; in
-// Tampere, storeys and wall materials from the city's building register and street and park trees from
-// its tree register. Every tile touching the area can be built.
+// Tampere, storeys and wall materials from the city's building register, street and park trees from
+// its tree register and pedestrian counts from its counts. The ways get the people walking on them
+// (footfall.ts). Every tile touching the area can be built.
 //
 // For now the first tile asked for builds the whole area and the rest come from memory: bridge spans,
 // tunnels in cuts and multipolygons reach over tile edges, so they are worked out over the whole area.
@@ -15,13 +16,22 @@ import { businessQuery, parseBusinesses, placeBusinesses } from "./businesses.ts
 import { coverCutTunnels } from "./cuts.ts";
 import { ELEVATION_ATTRIBUTION, fetchElevation, sampleElevation, toTm35fin } from "./elevation.ts";
 import { assignEntrances, entranceQuery, guessEntrances, parseEntrances } from "./entrances.ts";
+import { estimateFootfall, type FootfallCount } from "./footfall.ts";
 import { mergeTrees, plantForests } from "./forests.ts";
 import { simplifyLine, type Point } from "./geometry.ts";
 import { placeLamps } from "./lamps.ts";
 import { fetchRoofColours, ORTHO_ATTRIBUTION } from "./ortho.ts";
 import { bounds, fetchOverpass, overpassQuery, parseOsm, type GeoBox } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
-import { applyRegister, fetchRegister, fetchTreeRegister, TAMPERE_ATTRIBUTION, TAMPERE_TREES_ATTRIBUTION } from "./tampere.ts";
+import {
+  applyRegister,
+  fetchCounts,
+  fetchRegister,
+  fetchTreeRegister,
+  TAMPERE_ATTRIBUTION,
+  TAMPERE_COUNTS_ATTRIBUTION,
+  TAMPERE_TREES_ATTRIBUTION,
+} from "./tampere.ts";
 import { cutIntoTiles, tileHeights, tileName, tilesCovering, type Tile, type TileKey } from "./tiles.ts";
 import { setTrackBeds } from "./trackbeds.ts";
 import { setTunnelFloors, uncoverAtGrade } from "./tunnels.ts";
@@ -270,6 +280,26 @@ export class MapBuilder {
     }
     // TODO: entrances that are steps up or down from the street, and buildings with entrances on several
     // floors (a slope with an entrance at each level), stand at the wrong one.
+
+    // people walking on the ways, after the businesses and doors that draw them: counted in Tampere (the
+    // counts are empty elsewhere), estimated elsewhere
+    let counts: FootfallCount[] = [];
+    try {
+      const { counts: register, cached: countsCached } = await fetchCounts(fetchBox, { cache, refresh });
+      counts = register.map(({ latitude, longitude, ...count }) => ({ point: toMeters(latitude, longitude), ...count }));
+      logger.log(`Tampere pedestrian counts: ${counts.length} current counts along ways (${countsCached ? "cached" : "fetched"})`);
+    } catch (err) {
+      logger.warn(`warning: no pedestrian counts: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const footfall = estimateFootfall(features.roads, features.buildings, counts);
+    logger.log(
+      `footfall on ${footfall.ways} ways (${footfall.separate} streets with their sidewalks drawn apart get none); ` +
+        `${footfall.matched} of ${footfall.counts} counts on a way, the estimate ${footfall.model.base} + ${footfall.model.scale} × draw ` +
+        `within a factor of two of ${Math.round(footfall.withinTwo * 100)} % of them`,
+    );
+    if (footfall.matched > 0) {
+      otherAttributions.push(TAMPERE_COUNTS_ATTRIBUTION);
+    }
 
     // street and park trees from the city's register (empty outside Tampere), OSM's trees where it has none
     // of its own, and trees planted in woods and scrub

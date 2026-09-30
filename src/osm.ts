@@ -39,6 +39,10 @@ export interface Road {
   name?: string;
   /** One-way roads: 1 when traffic goes along line, -1 against it */
   oneway?: 1 | -1;
+  /** Roads for vehicles: which sides have a sidewalk, when OSM tells (separate: drawn as ways of their own) */
+  sidewalks?: Sidewalks;
+  /** Walkways: footway=* value, e.g. sidewalk (beside a street) or crossing */
+  footway?: string;
   line: Point[];
   /** Bridges: deck height (meters above sea level) at every point of line, when heights are known */
   deck?: number[];
@@ -49,7 +53,14 @@ export interface Road {
    * level) at every point of line, when heights are known
    */
   floor?: number[];
+  /**
+   * People walking along the way (on its sidewalks for a street) on an average day of the year, both
+   * directions together, at every point of line; unset where no one walks (see footfall.ts)
+   */
+  footfall?: number[];
 }
+
+export type Sidewalks = "both" | "left" | "right" | "none" | "separate";
 
 export interface Rail {
   osm: string;
@@ -559,9 +570,18 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
         addArea(features, osm, "paved", polygon());
       } else if (road.highway && ROAD_WIDTHS[road.highway] !== undefined && road.indoor !== "yes") {
         const width = roadWidth(road);
-        const way: Road = { osm, kind: road.highway, width, ...levels(road), ...optionalName(road), ...oneway(road), line: points };
-        features.roads.push(way);
         const walkway = NOT_FOR_VEHICLES.has(road.highway);
+        const way: Road = {
+          osm,
+          kind: road.highway,
+          width,
+          ...levels(road),
+          ...optionalName(road),
+          ...oneway(road),
+          ...(walkway ? (road.footway ? { footway: road.footway } : {}) : sidewalks(road)),
+          line: points,
+        };
+        features.roads.push(way);
         const passage = { line: points, width, height: meters(road.maxheight) ?? (walkway ? WALKWAY_PASSAGE_HEIGHT_M : PASSAGE_HEIGHT_M) };
         if (road.tunnel === "building_passage") {
           passages.push(passage);
@@ -1395,6 +1415,30 @@ function oneway(tags: Tags): { oneway?: 1 | -1 } {
     return { oneway: 1 };
   }
   return {};
+}
+
+/** A road's sidewalks from sidewalk=*, sidewalk:both=* or sidewalk:left=* and sidewalk:right=* */
+export function sidewalks(tags: Tags): { sidewalks?: Sidewalks } {
+  const side = (value: string | undefined) => (value === "yes" ? "yes" : value === "no" || value === "none" ? "no" : value === "separate" ? "separate" : undefined);
+  const both = tags.sidewalk ?? tags["sidewalk:both"];
+  if (both === "both" || both === "yes") {
+    return { sidewalks: "both" };
+  }
+  if (both === "left" || both === "right" || both === "separate") {
+    return { sidewalks: both };
+  }
+  if (both === "no" || both === "none") {
+    return { sidewalks: "none" };
+  }
+  const left = side(tags["sidewalk:left"]);
+  const right = side(tags["sidewalk:right"]);
+  if (left === "yes" || right === "yes") {
+    return { sidewalks: left === "yes" && right === "yes" ? "both" : left === "yes" ? "left" : "right" };
+  }
+  if (left === "separate" || right === "separate") {
+    return { sidewalks: "separate" };
+  }
+  return left === "no" && right === "no" ? { sidewalks: "none" } : {};
 }
 
 /** Parses an OSM length such as "12", "12.5 m" or "40'" into meters. */
