@@ -122,6 +122,8 @@ export interface Building {
   passages?: Opening[];
   /** Doors on the outline: OSM's entrance nodes, or guessed (see entrances.ts) */
   entrances?: Entrance[];
+  /** Shops, restaurants, offices, ... inside the building (see businesses.ts) */
+  businesses?: Business[];
   polygon: Polygon;
 }
 
@@ -132,6 +134,37 @@ export interface Entrance {
   kind: string;
   /** Not in OSM: guessed from the building's shape and the street next to it */
   guessed?: boolean;
+}
+
+/** The OSM key that tells what a business is */
+export type BusinessCategory = "shop" | "office" | "craft" | "amenity" | "healthcare" | "tourism" | "leisure";
+
+/** A shop, restaurant, office or the like in a building */
+export interface Business {
+  osm: string;
+  category: BusinessCategory;
+  /** The category's value: supermarket, restaurant, hairdresser, ... (shop=vacant is an empty shop) */
+  kind: string;
+  name?: string;
+  /** The chain it belongs to (brand=*), e.g. "K-Market" */
+  brand?: string;
+  /** What a restaurant or cafe serves (cuisine=*), e.g. "pizza;burger" */
+  cuisine?: string;
+  /** The storey it is on (level=*, 0 the ground floor; the lowest of several), when OSM has it */
+  level?: number;
+  /** Meters east and north of the origin: OSM's node, or the centre of the element */
+  point: Point;
+  /** Where on the building's outline it shows, when it is near enough to a wall (see businesses.ts) */
+  front?: BusinessFront;
+}
+
+/** A point on a building's outline where a business shows, e.g. for its sign */
+export interface BusinessFront {
+  at: Point;
+  /** Degrees counter-clockwise from east: straight out of the wall */
+  toward: number;
+  /** At an OSM entrance of the building (entrance=shop, restaurant, main or yes) */
+  entrance?: boolean;
 }
 
 /**
@@ -374,8 +407,8 @@ type Tags = Record<string, string>;
 
 type OsmElement =
   | { type: "node"; id: number; tags?: Tags; lat?: number; lon?: number }
-  | { type: "way"; id: number; tags?: Tags; geometry?: LatLon[] }
-  | { type: "relation"; id: number; tags?: Tags; members?: { type: string; role: string; geometry?: LatLon[] }[] };
+  | { type: "way"; id: number; tags?: Tags; geometry?: LatLon[]; center?: LatLon }
+  | { type: "relation"; id: number; tags?: Tags; members?: { type: string; role: string; geometry?: LatLon[] }[]; center?: LatLon };
 
 export interface FetchOptions extends CacheOptions {
   url: string;
@@ -391,17 +424,19 @@ export function parseOverpassResponse(value: unknown): OverpassResponse {
       continue;
     }
     const tags = parseTags(field(item, "tags"));
+    // "out center" gives ways and relations their centre instead of their geometry
+    const center = parseLatLon(field(item, "center"));
     if (type === "node") {
       elements.push({ type, id, tags, lat: optionalNumber(field(item, "lat")), lon: optionalNumber(field(item, "lon")) });
     } else if (type === "way") {
-      elements.push({ type, id, tags, geometry: parseGeometry(field(item, "geometry")) });
+      elements.push({ type, id, tags, geometry: parseGeometry(field(item, "geometry")), ...(center && { center }) });
     } else if (type === "relation") {
       const members = items(field(item, "members")).map((member) => ({
         type: String(field(member, "type")),
         role: String(field(member, "role") ?? ""),
         geometry: parseGeometry(field(member, "geometry")),
       }));
-      elements.push({ type, id, tags, members });
+      elements.push({ type, id, tags, members, ...(center && { center }) });
     }
   }
   return {
@@ -428,15 +463,13 @@ function parseGeometry(value: unknown): LatLon[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
   }
-  const points: LatLon[] = [];
-  for (const point of items(value)) {
-    const lat = optionalNumber(field(point, "lat"));
-    const lon = optionalNumber(field(point, "lon"));
-    if (lat !== undefined && lon !== undefined) {
-      points.push({ lat, lon });
-    }
-  }
-  return points;
+  return items(value).flatMap((point) => parseLatLon(point) ?? []);
+}
+
+function parseLatLon(value: unknown): LatLon | undefined {
+  const lat = optionalNumber(field(value, "lat"));
+  const lon = optionalNumber(field(value, "lon"));
+  return lat !== undefined && lon !== undefined ? { lat, lon } : undefined;
 }
 
 /** Runs an Overpass query, caching the response by query text. */

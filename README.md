@@ -1,7 +1,7 @@
 # osm-fi-map-features
 
 Map features for a 3D map of a Finnish city, in meters around an origin point and a square tile at a time:
-roads, rails, buildings (with 3D parts, roofs, windows and entrances), trees, street lamps and ground areas from
+roads, rails, buildings (with 3D parts, roofs, windows, entrances and the businesses in them), trees, street lamps and ground areas from
 [OpenStreetMap](https://www.openstreetmap.org/), combined with Finnish open data:
 
 - the ground heights of the [National Land Survey of Finland](https://www.maanmittauslaitos.fi/en)'s
@@ -166,6 +166,20 @@ from `lamp_mount` or `support`, or is a catenary mast (`power=catenary_mast`, su
 have one, and none a `height` or a `direction`. A lamp without them faces the nearest street within 15 m, else the
 nearest path within 8 m, and is 10 m tall by a main street (secondary and up), 8 m by another street and 5 m by a
 path or nothing (high masts 20 m, catenary masts 8 m). A lamp on a bridge stands on its deck.
+
+Businesses (`Building.businesses`) are the OSM elements with `shop`, `office`, `craft` or `healthcare`, or with an
+`amenity`, `tourism` or `leisure` value that is a business (restaurants, cafes, pharmacies, banks, cinemas, hotels,
+museums, gyms, ...; not benches, parking or parks), with their `name`, `brand`, `cuisine` and lowest `level`.
+Around the centre of Tampere there are about 1 400, nearly all named. They are mostly points inside a building, so
+each goes to the building (or the part on the ground) its point is in, or it is tagged on, or whose wall is within
+2 m; the rest are left out. OSM seldom has their doors, so where a business shows (`front`: a point on the outline
+and the direction out of the wall) is a guess: an `entrance=shop` or `restaurant` within 20 m of it, else a
+`main` or `yes` entrance within 8 m, else the nearest wall within 20 m that faces a street (one within 25 m out in
+front) and is not against another building, else the nearest such wall facing no street. The shops inside a
+building tagged `shop=mall` show only at their own doors. Businesses often share a door or a spot, so the fronts of a
+building are then moved apart along their wall, 6 m from each other (those at doors stay), and a front that finds
+no room on its wall is dropped. Around the centre of Tampere 77 % of the businesses in buildings get a front, a
+tenth of them at a door.
 
 ## Licences
 

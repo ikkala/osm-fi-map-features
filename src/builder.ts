@@ -1,7 +1,7 @@
 // Builds the map a tile at a time from the sources, which stay apart in the SourceCache.
 //
-// The OpenStreetMap roads, rails, buildings, trees, street lamps and ground areas around the area (from an Overpass
-// API server) are laid out in meters around the origin. With an MML API key they get ground heights and
+// The OpenStreetMap roads, rails, buildings (with the businesses in them), trees, street lamps and ground areas
+// around the area (from an Overpass API server) are laid out in meters around the origin. With an MML API key they get ground heights and
 // bridge decks from the Maanmittauslaitos elevation model and roof colours from its orthophoto; in
 // Tampere, storeys and wall materials from the city's building register and street and park trees from
 // its tree register. Every tile touching the area can be built.
@@ -11,6 +11,7 @@
 import type { SourceCache } from "./cache.ts";
 import { MAX_PLINTH_M, setBuildingBases } from "./bases.ts";
 import { setBridgeDecks } from "./bridges.ts";
+import { businessQuery, parseBusinesses, placeBusinesses } from "./businesses.ts";
 import { coverCutTunnels } from "./cuts.ts";
 import { ELEVATION_ATTRIBUTION, fetchElevation, sampleElevation, toTm35fin } from "./elevation.ts";
 import { assignEntrances, entranceQuery, guessEntrances, parseEntrances } from "./entrances.ts";
@@ -249,6 +250,18 @@ export class MapBuilder {
       );
     } catch (err) {
       logger.warn(`warning: no entrances: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    // shops, restaurants, offices, ... in the buildings, after the entrances they show at
+    try {
+      const { response: businessResponse, cached: businessesCached } = await fetchOverpass(businessQuery(fetchBox), { url: overpassUrl, cache, refresh });
+      const businesses = parseBusinesses(businessResponse.elements, origin);
+      const placed = placeBusinesses(features.buildings, businesses, features.roads);
+      logger.log(
+        `${businesses.length} OSM businesses (${businessesCached ? "cached" : "fetched"}), ${placed.placed} in a building, ` +
+          `${placed.fronts} of them showing on a wall (${placed.atDoors} at their door)`,
+      );
+    } catch (err) {
+      logger.warn(`warning: no businesses: ${err instanceof Error ? err.message : String(err)}`);
     }
     if (heightAt) {
       const lids = [...features.roads, ...features.rails].flatMap((w) => (w.lid ? [{ line: w.line, lid: w.lid }] : []));
