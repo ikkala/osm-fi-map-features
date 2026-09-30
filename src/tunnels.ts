@@ -8,7 +8,7 @@
 //
 // Tunnels in cuts (cuts.ts) are drawn in their cut and are not given floors here.
 import { pointAlong } from "./bridges.ts";
-import { pointInPolygon, type Point } from "./geometry.ts";
+import { pointInPolygon, pointKey, type Point } from "./geometry.ts";
 import { bounds, openPassages, type MapFeatures, type Rail, type Road } from "./osm.ts";
 
 /** Room over the floor for people, vehicles and trains (m) */
@@ -25,6 +25,8 @@ const WALKWAYS = new Set(["footway", "pedestrian", "cycleway", "path", "track", 
 const FLOOR_STEP_M = 10;
 /** The floor rises or falls at most this much a meter */
 const MAX_GRADE = 0.07;
+/** Stairs out of a tunnel rise at most this much a meter */
+const STAIRS_GRADE = 0.6;
 /** A portal's floor is the lowest ground at the tunnel's end and this far out along the ways leading on (m) */
 const PORTAL_REACH_M = 4;
 const PORTAL_STEP_M = 2;
@@ -62,6 +64,10 @@ interface Node {
   depth: number;
   /** The floor at a portal */
   portal?: number;
+  /** Stairs lead up out of the tunnel here (in a tunnel with no other way out, a portal as deep as the way needs) */
+  stairs?: boolean;
+  /** The storeys (level=*) of the tunnel ways through it, when OSM tells */
+  storeys?: number[];
   floor: number;
 }
 
@@ -158,22 +164,33 @@ export function uncoverAtGrade(features: MapFeatures, heightAt: (e: number, n: n
 
 /**
  * Sets `floor` on every tunnel that is not in a cut (no lid), adding points to its line, and on ramps
- * split off the ways leading on from its portals (not tunnels). heightAt gives the ground at map meters.
- * Returns how many tunnel ways got floors and how many ramps there are.
+ * split off the ways leading on from its portals (not tunnels). heightAt gives the ground at map meters,
+ * levels the storeys OSM tells for ways (osm.ts's). Returns how many tunnel ways got floors and how many
+ * ramps there are.
+ *
+ * A way leads on from a tunnel's end on the tunnel's storey (when both tell theirs): one on another storey
+ * goes on from a lift. Stairs leading on go up out of the tunnel (from an underpass to a platform over it):
+ * they rise from the floor at their foot to the ground, as steep as stairs. Their foot is no portal the floor
+ * hangs from, but in a tunnel with no other way out, where it is as deep under the ground as the way needs.
  */
 export function setTunnelFloors(
   features: MapFeatures,
   heightAt: (e: number, n: number) => number | undefined,
+  levels: ReadonlyMap<Way, number[]> = new Map(),
 ): { floors: number; ramps: number } {
   const tunnels: Way[] = [...features.roads, ...features.rails].filter((w) => w.tunnel && !w.lid && w.line.length >= 2);
-  const key = (p: Point) => `${p[0]},${p[1]}`;
+  const key = pointKey;
   const nodes = new Map<string, Node>();
   for (const way of tunnels) {
     way.line = densify(way.line, FLOOR_STEP_M);
     const depth = ROOF_M + ("width" in way ? (WALKWAYS.has(way.kind) ? WALK_CLEARANCE_M : ROAD_CLEARANCE_M) : RAIL_CLEARANCE_M);
+    const storeys = levels.get(way);
     way.line.forEach((p, i) => {
       const node = nodes.get(key(p)) ?? { p, next: [], depth: 0, floor: Infinity };
       node.depth = Math.max(node.depth, depth);
+      if (storeys) {
+        node.storeys = [...(node.storeys ?? []), ...storeys];
+      }
       for (const q of [way.line[i - 1], way.line[i + 1]]) {
         if (q && !node.next.some((n) => n.key === key(q))) {
           node.next.push({ key: key(q), length: Math.hypot(q[0] - p[0], q[1] - p[1]) });
@@ -189,9 +206,21 @@ export function setTunnelFloors(
     if (inTunnels.has(way) || way.line.length < 2) {
       continue;
     }
+    const storeys = levels.get(way);
     for (const outward of [way.line, [...way.line].reverse()]) {
       const node = nodes.get(key(outward[0]));
-      if (node && node.next.length === 1) {
+      if (node && node.storeys && storeys && !storeys.some((s) => node.storeys?.includes(s))) {
+        continue;
+      }
+      if (node && node.next.length === 1 && "width" in way && way.kind === "steps") {
+        // stairs up out of the tunnel: its floor is as deep under the ground at their foot as the way
+        // needs, and they rise the rest
+        const ground = heightAt(...node.p);
+        if (ground !== undefined) {
+          node.portal = Math.min(node.portal ?? Infinity, ground - node.depth);
+          node.stairs = true;
+        }
+      } else if (node && node.next.length === 1) {
         const heights = [heightAt(...node.p)];
         for (let d = PORTAL_STEP_M; d <= PORTAL_REACH_M; d += PORTAL_STEP_M) {
           const p = pointAlong(outward, d);
@@ -205,11 +234,19 @@ export function setTunnelFloors(
     }
   }
 
+  // stairs' feet are portals only in tunnels with no other way out: the stairs rise from the floor that
+  // the portals give (a network's floor would hang toward their feet, which are deep enough already)
+  const fromPortal = spread(nodes, [...nodes].filter(([, node]) => node.portal !== undefined && !node.stairs).map(([k]) => [k, 0]), (length) => length);
+  for (const [k, node] of nodes) {
+    if (node.stairs && fromPortal.has(k)) {
+      node.portal = undefined;
+    }
+  }
+
   hang(nodes);
 
   // deep enough under the ground: at the point and halfway to its neighbours. The elevation model
   // smooths the portal's wall into a slope, so the depth is reached PORTAL_EASE_M in from the portal.
-  const fromPortal = spread(nodes, [...nodes].filter(([, node]) => node.portal !== undefined).map(([k]) => [k, 0]), (length) => length);
   const waters = features.areas.filter((a) => a.kind === "water").map((a) => ({ polygon: a.polygon, box: bounds(a.polygon.outer) }));
   const inWater = ([e, n]: Point) =>
     waters.some(({ polygon, box }) => e >= box.minX && e <= box.maxX && n >= box.minY && n <= box.maxY && pointInPolygon([e, n], polygon));
@@ -247,7 +284,7 @@ export function setTunnelFloors(
   // top of its wall, and a slope from it down to the way outside
   const portalFloor = (p: Point) => {
     const node = nodes.get(key(p));
-    return node?.portal !== undefined && Number.isFinite(node.floor) ? node.floor : undefined;
+    return (node?.portal !== undefined || node?.stairs) && Number.isFinite(node.floor) ? node.floor : undefined;
   };
   const ramps = rampOut(features.roads, inTunnels, portalFloor, heightAt) + rampOut(features.rails, inTunnels, portalFloor, heightAt);
   return { floors, ramps };
@@ -255,8 +292,8 @@ export function setTunnelFloors(
 
 /**
  * Splits off the stretches of ways leading on from portals where the ground by the portal is over its
- * floor, and gives them floors: straight from the portal's floor to where a way rising MAX_GRADE from it
- * meets the ground (at most RAMP_REACH_M on). Returns how many ramps there are.
+ * floor, and gives them floors: straight from the portal's floor to where a way rising MAX_GRADE (stairs:
+ * STAIRS_GRADE) from it meets the ground (at most RAMP_REACH_M on). Returns how many ramps there are.
  */
 function rampOut<T extends Way>(
   ways: T[],
@@ -282,11 +319,12 @@ function rampOut<T extends Way>(
       }
       const length = along[along.length - 1];
       const reach = Math.min(RAMP_REACH_M, length);
+      const grade = "width" in way && way.kind === "steps" ? STAIRS_GRADE : MAX_GRADE;
       let end = reach;
       for (let d = RAMP_STEP_M; d < reach; d += RAMP_STEP_M) {
         const p = pointAlong(outward, d);
         const h = p && heightAt(...p);
-        if (h !== undefined && h <= floor + MAX_GRADE * d) {
+        if (h !== undefined && h <= floor + grade * d) {
           end = d;
           break;
         }

@@ -85,6 +85,40 @@ test("a way out of a portal comes down to the floor where the ground by the port
   assert.deepEqual([out.line, out.floor], [[[-20, 0], [-4, 0]], undefined]);
 });
 
+test("stairs up out of an underpass rise from its floor to the ground, and a lift's way is no portal", () => {
+  // an underpass between portals at 100 under ground at 106 (a railway yard); stairs and a lift from a
+  // branch up to a platform at 106
+  const ground = (e: number) => (e <= 0 || e >= 100 ? 100 : 106);
+  const hall = road("w1", [[0, 0], [50, 0], [100, 0]], { tunnel: true, layer: -1, kind: "footway", width: 4 });
+  const branch = road("w2", [[50, 0], [50, -6]], { tunnel: true, layer: -1, kind: "footway", width: 2 });
+  const stairs = road("w3", [[50, -6], [50, -20]], { kind: "steps", width: 2 });
+  const shaft = road("w4", [[20, 0], [20, -3]], { tunnel: true, layer: -1, kind: "footway", width: 2 });
+  const fromLift = road("w5", [[20, -3], [25, -3]], { kind: "footway", width: 2 });
+  const outs = [road("w6", [[-20, 0], [0, 0]]), road("w7", [[100, 0], [120, 0]])];
+  const map = features([hall, branch, stairs, shaft, fromLift, ...outs]);
+  const levels = new Map([[hall, [0]], [branch, [0]], [stairs, [0, 1]], [shaft, [0]], [fromLift, [1]]]);
+  setTunnelFloors(map, ground, levels);
+  // the hall hangs from its portals, not from the stairs' foot, which is as deep as the hall
+  assert.deepEqual([round(hall.floor), round(branch.floor)], [hall.line.map(() => 100), [100, 100]]);
+  // the stairs rise from it to the ground as stairs do, 0.6 a meter: to 10 m of the 14 on
+  const ramp = defined(map.roads.find((r) => r.osm === "w3" && r.floor));
+  assert.deepEqual([ramp.line, round(ramp.floor)], [[[50, -6], [50, -16]], [100, 106]]);
+  // the lift's way goes on from another storey: the shaft is a dead end, as deep as the hall there
+  assert.equal(fromLift.floor, undefined);
+  assert.equal(round(shaft.floor)?.at(-1), round(shaft.floor)?.[0]);
+});
+
+test("stairs are the portals of an underpass with no other way out, their foot as deep as the way needs", () => {
+  const tunnel = road("w1", [[0, 0], [30, 0]], { tunnel: true, layer: -1, kind: "footway", width: 2 });
+  const stairs = [road("w2", [[0, 0], [-10, 0]], { kind: "steps", width: 2 }), road("w3", [[30, 0], [40, 0]], { kind: "steps", width: 2 })];
+  const map = features([tunnel, ...stairs]);
+  setTunnelFloors(map, () => 100);
+  assert.deepEqual(round(tunnel.floor), tunnel.line.map(() => 100 - 3 - ROOF_M));
+  // rising 0.6 a meter, to the ground 8 m on
+  const ramps = map.roads.filter((r) => r.kind === "steps" && r.floor);
+  assert.deepEqual(ramps.map((r) => [r.line, round(r.floor)]), [[[[0, 0], [-8, 0]], [96, 100]], [[[30, 0], [38, 0]], [96, 100]]]);
+});
+
 test("under water the floor is deeper by the water's depth", () => {
   // the elevation model has the water's surface, 100, over the middle of the tunnel
   const tunnel = road("w1", [[0, 0], [300, 0]], { tunnel: true, layer: -2 });

@@ -49,6 +49,8 @@ test("pointInPolygon honours holes", () => {
 
 test("simplifyLine drops points closer than the tolerance", () => {
   assert.deepEqual(simplifyLine([[0, 0], [5, 0.1], [10, 0], [10, 10]], 0.5), [[0, 0], [10, 0], [10, 10]]);
+  // but not the ones it is told to keep, such as where other lines join
+  assert.deepEqual(simplifyLine([[0, 0], [5, 0], [10, 0], [20, 0.1], [30, 0]], 0.5, ([e]) => e === 5), [[0, 0], [5, 0], [30, 0]]);
 });
 
 test("simplifyRing keeps the shape of a ring", () => {

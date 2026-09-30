@@ -132,6 +132,11 @@ export function clipPolygon(polygon: Polygon, rect: Rect): Polygon | undefined {
   return { outer, holes };
 }
 
+/** A point as a key: ways that join share the point exactly */
+export function pointKey(p: Point): string {
+  return `${p[0]},${p[1]}`;
+}
+
 /** Drops consecutive duplicate points, including a closing point equal to the first. */
 export function dedupe(points: Point[]): Point[] {
   const result: Point[] = [];
@@ -289,15 +294,22 @@ export function triangulate(polygon: Polygon): number[] {
   return earcut(rings.flat(2), holeStarts);
 }
 
-/** Douglas–Peucker simplification of an open line; the endpoints are kept. */
-export function simplifyLine(line: Point[], tolerance: number): Point[] {
+/**
+ * Douglas–Peucker simplification of an open line; the endpoints are kept, and so are the points kept(p)
+ * tells to (such as the ones other lines join at).
+ */
+export function simplifyLine(line: Point[], tolerance: number, kept: (p: Point) => boolean = () => false): Point[] {
   if (line.length <= 2 || tolerance <= 0) {
     return line;
   }
-  const keep = new Array<boolean>(line.length).fill(false);
-  keep[0] = true;
-  keep[line.length - 1] = true;
-  const stack: [number, number][] = [[0, line.length - 1]];
+  const keep = line.map((p, i) => i === 0 || i === line.length - 1 || kept(p));
+  const stack: [number, number][] = [];
+  for (let first = 0, i = 1; i < line.length; i++) {
+    if (keep[i]) {
+      stack.push([first, i]);
+      first = i;
+    }
+  }
   for (let range = stack.pop(); range !== undefined; range = stack.pop()) {
     const [first, last] = range;
     let maxDistance = 0;

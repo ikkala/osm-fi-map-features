@@ -105,6 +105,19 @@ test("parseOsm reads trees, shrubs and tree rows, and what grows in woods and sc
   assert.deepEqual(features.areas.map((a) => [a.kind, a.cover]), [["forest", "trees"], ["forest", "shrubs"], ["grass", undefined]]);
 });
 
+test("parseOsm leaves out ways indoors, but not stairs out of a tunnel's end, and tells the ways' storeys", () => {
+  const { features, levels } = parseOsm(
+    [
+      { type: "way", id: 60, tags: { highway: "footway", tunnel: "yes", layer: "-1", level: "0.5" }, geometry: [at(0, 0), at(0, 10)] },
+      { type: "way", id: 61, tags: { highway: "steps", indoor: "yes", level: "0.5;1" }, geometry: [at(0, 10), at(0, 20)] },
+      { type: "way", id: 62, tags: { highway: "corridor", indoor: "yes", level: "1" }, geometry: [at(0, 20), at(10, 20)] },
+    ],
+    origin,
+  );
+  assert.deepEqual(features.roads.map((r) => [r.osm, r.tunnel]), [["w60", true], ["w61", false]]);
+  assert.deepEqual(features.roads.map((r) => levels.get(r)), [[0.5], [0.5, 1]]);
+});
+
 test("parseOsm reads street lamps: their mount, height, direction and lamp type", () => {
   const { features } = parseOsm(
     [

@@ -136,7 +136,12 @@ room for people, 4.8 m for vehicles, 6 m for trains; reached 30 m in from a port
 steeper than 7 %.
 Where the ground at a portal (the top of its wall) is over the floor, a ramp is split off each way leading on, with
 a `floor` of its own: straight from the portal's floor to where a 7 % slope from it meets the ground, at most 40 m
-on.
+on. A way leads on from a tunnel's end only on the tunnel's storey (`level`, when both have one): one on another
+goes on from a lift. Stairs leading on (`highway=steps`, also indoors, which is otherwise left out) go up out of the
+tunnel, such as from an underpass to the platforms over it: they rise from its floor to the ground at 60 %, and
+their foot is no portal the floor hangs from, unless the tunnel has no other way out (then it is as deep as the
+room and the roof need). Lines are simplified to 0.3 m, but not where other ways join them, so a tunnel's branches
+stay joined to it.
 
 A bridge's ways (the road, its sidewalks, a cycleway) each get a `deck` (`src/bridges.ts`): ways meeting end to end
 are one span, straight from the ground at one end to the other. Many bridges are also drawn as an outline

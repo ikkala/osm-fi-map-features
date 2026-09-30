@@ -20,7 +20,7 @@ import { ELEVATION_ATTRIBUTION, fetchElevation, sampleElevation, toTm35fin } fro
 import { assignEntrances, entranceQuery, guessEntrances, parseEntrances } from "./entrances.ts";
 import { estimateCycling, estimateFootfall, type FootfallCount, type FootfallResult } from "./footfall.ts";
 import { mergeTrees, plantForests } from "./forests.ts";
-import { simplifyLine, type Point } from "./geometry.ts";
+import { pointKey, simplifyLine, type Point } from "./geometry.ts";
 import { placeLamps } from "./lamps.ts";
 import { fetchRoofColours, ORTHO_ATTRIBUTION } from "./ortho.ts";
 import { bounds, fetchOverpass, overpassQuery, parseOsm, type GeoBox } from "./osm.ts";
@@ -164,13 +164,25 @@ export class MapBuilder {
     const osmTimestamp = response.osm3s?.timestamp_osm_base;
     logger.log(`${response.elements.length} OSM elements (${cached ? "cached, refresh to fetch again" : "fetched"}), data from ${osmTimestamp ?? "?"}`);
 
-    const { features, streetNodes, bridgeOutlines, warnings } = parseOsm(response.elements, origin);
+    const { features, streetNodes, bridgeOutlines, warnings, levels } = parseOsm(response.elements, origin);
     for (const warning of warnings) {
       logger.warn(`warning: ${warning}`);
     }
-    // every line point costs something to draw, so drop the ones that barely bend the line
-    for (const feature of [...features.roads, ...features.rails, ...features.barriers]) {
-      feature.line = simplifyLine(feature.line, LINE_TOLERANCE_M);
+    // every line point costs something to draw, so drop the ones that barely bend the line, but not where
+    // other ways join it (a tunnel's branches are found by the points they share with it)
+    const ways = [...features.roads, ...features.rails];
+    const uses = new Map<string, number>();
+    for (const way of ways) {
+      for (const k of new Set(way.line.map(pointKey))) {
+        uses.set(k, (uses.get(k) ?? 0) + 1);
+      }
+    }
+    const joined = (p: Point) => (uses.get(pointKey(p)) ?? 0) > 1;
+    for (const way of ways) {
+      way.line = simplifyLine(way.line, LINE_TOLERANCE_M, joined);
+    }
+    for (const barrier of features.barriers) {
+      barrier.line = simplifyLine(barrier.line, LINE_TOLERANCE_M);
     }
     let heightAt: ((e: number, n: number) => number | undefined) | undefined;
     if (mmlApiKey) {
@@ -191,7 +203,7 @@ export class MapBuilder {
       const covered = coverCutTunnels(features, heightAt);
       logger.log(`${covered.tunnels} tunnels in cuts get lids, ${covered.crossings} ways over them become bridges`);
       logger.log(`${uncoverAtGrade(features, heightAt)} tunnels run at the ground under buildings`);
-      const tunnels = setTunnelFloors(features, heightAt);
+      const tunnels = setTunnelFloors(features, heightAt, levels);
       logger.log(`${tunnels.floors} tunnel ways under hills and lakes get floors, ${tunnels.ramps} ways out of their portals ramps`);
       // before cutting into tiles, so a bridge's deck goes from end to end
       const ramps = (lines: { bridge: boolean; deck?: number[] }[]) => lines.filter((l) => l.deck && !l.bridge).length;

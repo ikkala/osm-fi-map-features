@@ -11,6 +11,7 @@ import {
   orientedBox,
   pointInPolygon,
   pointInRing,
+  pointKey,
   ringArea,
   ringCentroid,
   stitchRings,
@@ -622,6 +623,8 @@ export interface ParseResult {
   bridgeOutlines: BridgeOutline[];
   /** Problems worth reporting, such as multipolygons with rings that do not close */
   warnings: string[];
+  /** The storeys (level=*) of the roads and rails that OSM tells them for, to tell where tunnels come out */
+  levels: Map<Road | Rail, number[]>;
 }
 
 /** Turns Overpass elements into features in meters east / north of origin. */
@@ -635,6 +638,9 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   const passages: Passage[] = [];
   // tunnels and covered ways that may be passages through buildings tagged otherwise
   const maybePassages: { road: Road; passage: Passage }[] = [];
+  const levels = new Map<Road | Rail, number[]>();
+  // ways indoors, kept where they come out of a tunnel's end (the stairs up out of an underpass)
+  const indoors: Road[] = [];
 
   for (const element of elements) {
     const tags = element.tags ?? {};
@@ -662,30 +668,43 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
       if (road.highway && closed && road.area === "yes") {
         // a square or a plaza drawn as an area, not a line
         addArea(features, osm, "paved", polygon());
-      } else if (road.highway && ROAD_WIDTHS[road.highway] !== undefined && road.indoor !== "yes") {
+      } else if (road.highway && ROAD_WIDTHS[road.highway] !== undefined) {
         const width = roadWidth(road);
         const walkway = NOT_FOR_VEHICLES.has(road.highway);
         const way: Road = {
           osm,
           kind: road.highway,
           width,
-          ...levels(road),
+          ...layering(road),
           ...optionalName(road),
           ...oneway(road),
           ...(walkway ? (road.footway ? { footway: road.footway } : {}) : sidewalks(road)),
           ...access(road),
           line: points,
         };
-        features.roads.push(way);
-        const passage = { line: points, width, height: meters(road.maxheight) ?? (walkway ? WALKWAY_PASSAGE_HEIGHT_M : PASSAGE_HEIGHT_M) };
-        if (road.tunnel === "building_passage") {
-          passages.push(passage);
-        } else if ((way.tunnel || road.covered === "yes") && way.layer >= -1) {
-          maybePassages.push({ road: way, passage });
+        const storeys = storeysOf(road);
+        if (storeys) {
+          levels.set(way, storeys);
+        }
+        if (road.indoor === "yes") {
+          indoors.push(way);
+        } else {
+          features.roads.push(way);
+          const passage = { line: points, width, height: meters(road.maxheight) ?? (walkway ? WALKWAY_PASSAGE_HEIGHT_M : PASSAGE_HEIGHT_M) };
+          if (road.tunnel === "building_passage") {
+            passages.push(passage);
+          } else if ((way.tunnel || road.covered === "yes") && way.layer >= -1) {
+            maybePassages.push({ road: way, passage });
+          }
         }
       }
       if (tags.railway && RAIL_KINDS.has(tags.railway)) {
-        features.rails.push({ osm, kind: tags.railway, ...levels(tags), line: points });
+        const rail: Rail = { osm, kind: tags.railway, ...layering(tags), line: points };
+        const storeys = storeysOf(tags);
+        if (storeys) {
+          levels.set(rail, storeys);
+        }
+        features.rails.push(rail);
       }
       if (tags.natural === "tree_row") {
         features.trees.push(...alongLine(points, TREE_ROW_SPACING_M).map((point) => tree(tags, point)));
@@ -718,6 +737,11 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
     }
   }
 
+  // the ways indoors are left out (they are inside buildings), but not where they lead on from a tunnel's
+  // end: stairs up out of an underpass into a building over it are how the tunnel comes out there
+  const tunnelEnds = new Set(features.roads.filter((r) => r.tunnel).flatMap((r) => [pointKey(r.line[0]), pointKey(r.line[r.line.length - 1])]));
+  features.roads.push(...indoors.filter((r) => tunnelEnds.has(pointKey(r.line[0])) || tunnelEnds.has(pointKey(r.line[r.line.length - 1]))));
+
   markBuildingsWithParts(features.buildings);
   for (const { road, passage } of maybePassages) {
     if (runsThroughBuildings(passage.line, features.buildings)) {
@@ -728,7 +752,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   features.buildings.push(...fillUnderFloatingParts(features));
   openPassages(features.buildings, passages);
   raiseRoofsOverRoads(features);
-  return { features, streetNodes, bridgeOutlines, warnings };
+  return { features, streetNodes, bridgeOutlines, warnings, levels };
 }
 
 function addPolygonFeature(features: MapFeatures, bridgeOutlines: BridgeOutline[], osm: string, tags: Tags, polygon: Polygon): void {
@@ -1547,7 +1571,13 @@ function roadWidth(tags: Tags): number {
   return lanes !== undefined && lanes > 0 && fallback >= 6 ? Math.max(fallback, lanes * LANE_WIDTH_M) : fallback;
 }
 
-function levels(tags: Tags): { layer: number; bridge: boolean; tunnel: boolean } {
+/** The storeys a way is on (level=*, such as "0" or "0.5;1"), when OSM tells */
+function storeysOf(tags: Tags): number[] | undefined {
+  const storeys = (tags.level ?? "").split(";").map((s) => Number.parseFloat(s)).filter(Number.isFinite);
+  return storeys.length > 0 ? storeys : undefined;
+}
+
+function layering(tags: Tags): { layer: number; bridge: boolean; tunnel: boolean } {
   const layer = Number.parseInt(tags.layer ?? "0", 10);
   return {
     layer: Number.isFinite(layer) ? layer : 0,
