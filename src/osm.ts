@@ -235,6 +235,30 @@ export interface Tree {
   genus?: string;
   /** Meters around the trunk at chest height, when known */
   trunk?: number;
+  /** A tree on a bridge: the deck's height (m above sea level) it stands on */
+  base?: number;
+}
+
+/** A bridge's outline (man_made=bridge): the whole deck, of which OSM's ways on the bridge are lines */
+export interface BridgeOutline {
+  osm: string;
+  name?: string;
+  polygon: Polygon;
+}
+
+/**
+ * A piece of a bridge's deck: its outline cut across the bridge into short pieces (see decks.ts), as
+ * triangles with the height of the deck's top at their corners
+ */
+export interface BridgeDeck {
+  osm: string;
+  name?: string;
+  /** Meters east and north of the origin */
+  vertices: Point[];
+  /** Three vertex numbers (from 0) each */
+  triangles: number[];
+  /** The deck's top (m above sea level) at each vertex */
+  heights: number[];
 }
 
 /**
@@ -319,6 +343,7 @@ export interface MapFeatures {
   signals: TrafficSignal[];
   gates: Gate[];
   barriers: Barrier[];
+  bridgeDecks: BridgeDeck[];
 }
 
 /**
@@ -461,8 +486,8 @@ export function estimatedLevels(kind: string, area: number): number {
 
 export function overpassQuery(box: GeoBox): string {
   const selectors = ["way[highway]", "way[railway]", "way[building]", "way[\"building:part\"]", "node[natural~\"^(tree|shrub)$\"]", "way[natural=tree_row]", "node[highway=street_lamp]",
-    "node[highway~\"^(crossing|traffic_signals)$\"]", "node[barrier=gate]", "way[barrier~\"^(fence|wall|retaining_wall|hedge)$\"]"];
-  const relations = ["relation[building][type=multipolygon]", "relation[\"building:part\"][type=multipolygon]"];
+    "node[highway~\"^(crossing|traffic_signals)$\"]", "node[barrier=gate]", "way[barrier~\"^(fence|wall|retaining_wall|hedge)$\"]", "way[man_made=bridge]"];
+  const relations = ["relation[building][type=multipolygon]", "relation[\"building:part\"][type=multipolygon]", "relation[man_made=bridge][type=multipolygon]"];
   const byKey = new Map<string, string[]>();
   for (const [key, values] of AREA_RULES) {
     byKey.set(key, [...(byKey.get(key) ?? []), ...Object.keys(values)]);
@@ -586,6 +611,8 @@ export interface ParseResult {
   features: MapFeatures;
   /** Crossings, traffic signals and gates, still to be put on their ways (streets.ts) */
   streetNodes: StreetNode[];
+  /** Bridges' outlines, still to get the heights of their ways' decks (decks.ts) */
+  bridgeOutlines: BridgeOutline[];
   /** Problems worth reporting, such as multipolygons with rings that do not close */
   warnings: string[];
 }
@@ -595,8 +622,9 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   const warnings: string[] = [];
   const projection = new LocalProjection(origin);
   const toPoint = (p: LatLon): Point => projection.toMeters({ latitude: p.lat, longitude: p.lon });
-  const features: MapFeatures = { roads: [], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [] };
+  const features: MapFeatures = { roads: [], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], bridgeDecks: [] };
   const streetNodes: StreetNode[] = [];
+  const bridgeOutlines: BridgeOutline[] = [];
   const passages: Passage[] = [];
   // tunnels and covered ways that may be passages through buildings tagged otherwise
   const maybePassages: { road: Road; passage: Passage }[] = [];
@@ -659,7 +687,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
         features.barriers.push(barrier(osm, kind, tags, points));
       }
       if (closed && points.length >= 3) {
-        addPolygonFeature(features, osm, tags, polygon());
+        addPolygonFeature(features, bridgeOutlines, osm, tags, polygon());
       }
     } else if (element.type === "relation" && tags.type === "multipolygon") {
       const osm = `r${element.id}`;
@@ -677,7 +705,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
       const holes = inner.rings.map((ring) => dedupe(ring.map(toPoint))).filter((ring) => ring.length >= 3);
       for (const ring of outers) {
         const polygon = normalize({ outer: ring, holes: holes.filter((hole) => pointInRing(hole[0], ring)) });
-        addPolygonFeature(features, osm, tags, polygon);
+        addPolygonFeature(features, bridgeOutlines, osm, tags, polygon);
       }
     }
   }
@@ -692,10 +720,14 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   features.buildings.push(...fillUnderFloatingParts(features));
   openPassages(features.buildings, passages);
   raiseRoofsOverRoads(features);
-  return { features, streetNodes, warnings };
+  return { features, streetNodes, bridgeOutlines, warnings };
 }
 
-function addPolygonFeature(features: MapFeatures, osm: string, tags: Tags, polygon: Polygon): void {
+function addPolygonFeature(features: MapFeatures, bridgeOutlines: BridgeOutline[], osm: string, tags: Tags, polygon: Polygon): void {
+  if (tags.man_made === "bridge") {
+    bridgeOutlines.push({ osm, ...optionalName(tags), polygon });
+    return;
+  }
   const buildingKind = tags.building && tags.building !== "no" ? tags.building : undefined;
   const partKind = tags["building:part"] && tags["building:part"] !== "no" ? tags["building:part"] : undefined;
   const buildingOrPart = partKind ?? buildingKind;

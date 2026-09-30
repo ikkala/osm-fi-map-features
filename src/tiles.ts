@@ -4,13 +4,14 @@
 // origin. Roads, rails and areas are cut at tile edges; a building belongs whole to the tile its
 // centroid is in, so it may reach a little into the neighbouring tiles, a tree to the tile of its
 // trunk, a street lamp, crossing, traffic signal or gate to the tile of its point. Fences and walls are cut
-// at tile edges as roads are.
+// at tile edges as roads are. A piece of a bridge deck (a few meters long) belongs to the tile of the middle of its vertices.
 import { deckAt } from "./bridges.ts";
 import { clipPolygon, clipPolyline, ringCentroid, simplifyRing, type Point, type Polygon, type Rect } from "./geometry.ts";
 import {
   bounds,
   type Area,
   type Barrier,
+  type BridgeDeck,
   type Building,
   type Crossing,
   type Gate,
@@ -95,7 +96,7 @@ function clippedDeck(
 export function cutIntoTiles(features: MapFeatures, keys: TileKey[], size: number): Tile[] {
   const tiles = new Map<string, Tile>();
   for (const key of keys) {
-    tiles.set(tileName(key), { ...key, roads: [], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [] });
+    tiles.set(tileName(key), { ...key, roads: [], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], bridgeDecks: [] });
   }
   const touched = (points: Point[]) => {
     const range = tileRange(bounds(points), size);
@@ -172,6 +173,11 @@ export function cutIntoTiles(features: MapFeatures, keys: TileKey[], size: numbe
     }
   }
 
+  for (const deck of features.bridgeDecks) {
+    const [e, n] = deck.vertices.reduce(([se, sn], [ve, vn]) => [se + ve, sn + vn], [0, 0]);
+    tileAt([e / deck.vertices.length, n / deck.vertices.length])?.bridgeDecks.push(deck satisfies BridgeDeck);
+  }
+
   const byOsmId = (a: { osm: string }, b: { osm: string }) => compareOsmIds(a.osm, b.osm);
   // trees, lamps and the points on ways have no ids: south to north, then west to east
   const byPlace = (a: { point: Point }, b: { point: Point }) => a.point[1] - b.point[1] || a.point[0] - b.point[0];
@@ -186,6 +192,7 @@ export function cutIntoTiles(features: MapFeatures, keys: TileKey[], size: numbe
     tile.signals.sort(byPlace);
     tile.gates.sort(byPlace);
     tile.barriers.sort(byOsmId);
+    tile.bridgeDecks.sort(byOsmId);
   }
   return [...tiles.values()];
 }

@@ -39,7 +39,7 @@ const builder = new MapBuilder({
 });
 const info = await builder.info(); // tiles, OSM timestamp, attributions
 for (const key of info.tiles) {
-  const tile = await builder.tile(key); // roads, rails, buildings, areas, trees, lamps, crossings, signals, gates, barriers, heights
+  const tile = await builder.tile(key); // roads, rails, buildings, areas, trees, lamps, crossings, signals, gates, barriers, bridgeDecks, heights
 }
 ```
 
@@ -138,6 +138,19 @@ Where the ground at a portal (the top of its wall) is over the floor, a ramp is 
 a `floor` of its own: straight from the portal's floor to where a 7 % slope from it meets the ground, at most 40 m
 on.
 
+A bridge's ways (the road, its sidewalks, a cycleway) each get a `deck` (`src/bridges.ts`): ways meeting end to end
+are one span, straight from the ground at one end to the other. Many bridges are also drawn as an outline
+(`man_made=bridge`, a way or a multipolygon): the whole deck, with what is between the ways, such as planted strips
+(`src/decks.ts`). The bridge ways at least half inside an outline get one deck: along the bridge the highest of
+their decks every 4 m (a way ending in the middle of another took its end's height from the ground under the
+bridge), except within 15 m of their free ends (not at another way on the outline), where they keep their own to
+meet the ways leading on. They get a point every 5 m for that. The outline is then cut across the bridge into
+pieces 4 m long, as triangles with the height of the nearest way's deck at each corner (`bridgeDecks`), so the
+deck can be drawn between the ways too. The outline's triangles are cut rather than the outline itself, and each
+piece's cuts joined again, since a cut ring would run back over a gap in the outline (Näsinsillat in Tampere is two
+decks side by side, joined in the middle); a triangle steeper than 45° (a sliver whose corners are at different
+heights) is left out. Trees and street lamps on the deck stand on it (`base`).
+
 Railways (not tramways) that are not bridges or tunnels get a track bed (`bed`): the elevation model has
 platform edges, underpass roofs and the like under the tracks, a metre up and down every few metres, so the bed is
 the ground averaged over 30 m along the line, never more than 0.5 m under the ground right under it. Where lines
@@ -170,7 +183,7 @@ Street lamps are OSM's `highway=street_lamp` nodes (about 2 100 around the centr
 from `lamp_mount` or `support`, or is a catenary mast (`power=catenary_mast`, such as a tram's); in Tampere a tenth
 have one, and none a `height` or a `direction`. A lamp without them faces the nearest street within 15 m, else the
 nearest path within 8 m, and is 10 m tall by a main street (secondary and up), 8 m by another street and 5 m by a
-path or nothing (high masts 20 m, catenary masts 8 m). A lamp on a bridge stands on its deck.
+path or nothing (high masts 20 m, catenary masts 8 m). A lamp on a bridge stands on its deck: the deck of the way next to it, or of the bridge outline it is on.
 
 Crossings, traffic signals and gates are nodes of the ways they are on (`src/streets.ts`): a crossing
 (`highway=crossing`) is on the street and on the footway across it, so it and a traffic signal

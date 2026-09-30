@@ -13,6 +13,7 @@ import type { SourceCache } from "./cache.ts";
 import { openBarriers } from "./barriers.ts";
 import { MAX_PLINTH_M, setBuildingBases } from "./bases.ts";
 import { setBridgeDecks } from "./bridges.ts";
+import { setOutlineDecks, standOnDecks } from "./decks.ts";
 import { businessQuery, parseBusinesses, placeBusinesses } from "./businesses.ts";
 import { coverCutTunnels } from "./cuts.ts";
 import { ELEVATION_ATTRIBUTION, fetchElevation, sampleElevation, toTm35fin } from "./elevation.ts";
@@ -163,7 +164,7 @@ export class MapBuilder {
     const osmTimestamp = response.osm3s?.timestamp_osm_base;
     logger.log(`${response.elements.length} OSM elements (${cached ? "cached, refresh to fetch again" : "fetched"}), data from ${osmTimestamp ?? "?"}`);
 
-    const { features, streetNodes, warnings } = parseOsm(response.elements, origin);
+    const { features, streetNodes, bridgeOutlines, warnings } = parseOsm(response.elements, origin);
     for (const warning of warnings) {
       logger.warn(`warning: ${warning}`);
     }
@@ -197,6 +198,10 @@ export class MapBuilder {
       setBridgeDecks(features.roads, heightAt);
       setBridgeDecks(features.rails, heightAt);
       logger.log(`${ramps(features.roads) + ramps(features.rails)} bridge approaches raised out of the hollows under bridges`);
+      // the ways on a bridge's outline get one deck, and the outline is drawn as the deck between them
+      const outlined = setOutlineDecks(bridgeOutlines, [...features.roads, ...features.rails]);
+      features.bridgeDecks = outlined.decks;
+      logger.log(`${bridgeOutlines.length} bridge outlines, ${new Set(outlined.decks.map((d) => d.osm)).size} with decks for the ${outlined.ways} ways on them`);
       // after the decks: the railways end at their bridges' and approaches' heights
       logger.log(`${setTrackBeds(features.rails, heightAt)} railway lines get smoothed track beds`);
     } else {
@@ -339,6 +344,8 @@ export class MapBuilder {
     const tilesRect = { minX: Math.min(...xs) * size, minY: Math.min(...ys) * size, maxX: (Math.max(...xs) + 1) * size, maxY: (Math.max(...ys) + 1) * size };
     const planted = plantForests(features, tilesRect);
     logger.log(`${planted} trees and shrubs planted in woods and scrub`);
+    const onDecks = standOnDecks(features.bridgeDecks, features.trees, features.lamps);
+    logger.log(`${onDecks.trees} trees and ${onDecks.lamps} more street lamps on bridge decks`);
 
     const tiles = new Map(cutIntoTiles(features, keys, size).map((tile) => [tileName(tile), tile]));
     const attributions = [OSM_ATTRIBUTION, ...(heightAt ? [ELEVATION_ATTRIBUTION] : []), ...otherAttributions];

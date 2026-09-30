@@ -9,6 +9,7 @@ export type {
   AreaKind,
   Barrier,
   BarrierKind,
+  BridgeDeck,
   Building,
   Business,
   BusinessCategory,

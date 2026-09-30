@@ -35,7 +35,7 @@ test("coverCutTunnels gives the tunnel a lid, makes the ways over it bridges and
   const deep = rail("w4", [[10, 2], [60, 2]], { layer: -2, tunnel: true });
   const outer: Point[] = [[40, -10], [50, -10], [50, 10], [40, 10]];
   const station: Building = { osm: "w5", kind: "train_station", part: false, hasParts: false, height: 10, minHeight: 0, polygon: { outer, holes: [] } };
-  const features: MapFeatures = { roads: [street], rails: [tram, railway, deep], buildings: [station], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [] };
+  const features: MapFeatures = { roads: [street], rails: [tram, railway, deep], buildings: [station], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], bridgeDecks: [] };
   assert.deepEqual(coverCutTunnels(features, cut), { tunnels: 1, crossings: 1 });
   assert.deepEqual(tram.lid, [102, 102]);
   assert.equal(deep.lid, undefined);
@@ -56,7 +56,7 @@ test("a tunnel beside one in a cut is in the same cut, under the same lid", () =
   const tram = rail("w1", [[10, 0], [60, 0]], { kind: "light_rail", layer: -1, tunnel: true });
   const pavement = road("w2", [[10, -5], [60, -5]], { kind: "footway", width: 2.5, layer: -1, tunnel: true });
   const apart = road("w3", [[10, -40], [60, -40]], { kind: "footway", width: 2.5, layer: -1, tunnel: true });
-  const features: MapFeatures = { roads: [pavement, apart], rails: [tram], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [] };
+  const features: MapFeatures = { roads: [pavement, apart], rails: [tram], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], bridgeDecks: [] };
   const wide = (e: number, n: number) => (e >= 0 && Math.abs(n) <= 4 ? 95 : e >= 0 && n < -4 && n > -7 ? 101 : 102);
   assert.equal(cutLid(pavement.line, wide), undefined);
   assert.equal(coverCutTunnels(features, wide).tunnels, 2);

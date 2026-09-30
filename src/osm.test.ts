@@ -156,7 +156,7 @@ test("trees go to the tile of their trunk and lamps to the tile of their foot, s
   const tree = (e: number, n: number): Tree => ({ point: [e, n], kind: "broadleaved", height: 8.04 });
   const trees = [tree(50, 60), tree(150, 10), { ...tree(20, 30), genus: "tilia" }, { ...tree(20, 80), trunk: 2.54 }];
   const lamps = [{ point: [150, 70] satisfies Point, height: 8 }, { point: [150, 20] satisfies Point, height: 5 }];
-  const features = { roads: [], rails: [], buildings: [], areas: [], trees, lamps, crossings: [], signals: [], gates: [], barriers: [] };
+  const features = { roads: [], rails: [], buildings: [], areas: [], trees, lamps, crossings: [], signals: [], gates: [], barriers: [], bridgeDecks: [] };
   const [west, east] = cutIntoTiles(features, [{ x: 0, y: 0 }, { x: 1, y: 0 }], 100);
   assert.deepEqual(west.trees.map((t) => t.point), [[20, 30], [50, 60], [20, 80]]);
   assert.deepEqual(east.trees.map((t) => t.point), [[150, 10]]);
@@ -444,4 +444,22 @@ test("a road under construction is drawn as the road it will be", () => {
     features.roads.map((r) => [r.osm, r.kind, r.width, r.tunnel, r.layer]),
     [["w40", "secondary", 8, true, -1]],
   );
+});
+
+test("a bridge's outline (man_made=bridge) is kept apart for its deck, not drawn as an area", () => {
+  const { features, bridgeOutlines } = parseOsm(
+    [
+      { type: "way", id: 1, tags: { man_made: "bridge", name: "Silta", layer: "1" }, geometry: square(0, 0, 10) },
+      {
+        type: "relation",
+        id: 2,
+        tags: { type: "multipolygon", man_made: "bridge" },
+        members: [{ type: "way", role: "outer", geometry: square(20, 0, 10) }],
+      },
+    ],
+    origin,
+  );
+  assert.deepEqual(bridgeOutlines.map((b) => [b.osm, b.name, b.polygon.outer.length]), [["w1", "Silta", 4], ["r2", undefined, 4]]);
+  assert.deepEqual([features.areas, features.buildings, features.bridgeDecks], [[], [], []]);
+  assert.match(overpassQuery({ south: 0, west: 0, north: 1, east: 1 }), /way\[man_made=bridge\];[\s\S]*relation\[man_made=bridge\]\[type=multipolygon\];/);
 });

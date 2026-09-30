@@ -14,7 +14,7 @@ function fence(osm: string, line: Point[]): Barrier {
 }
 
 function features(roads: Road[], barriers: Barrier[] = []): MapFeatures {
-  return { roads, rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers };
+  return { roads, rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers, bridgeDecks: [] };
 }
 
 test("a crossing and a traffic signal go on the street, not on the footway across it", () => {
