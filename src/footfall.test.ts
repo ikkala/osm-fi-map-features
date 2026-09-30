@@ -127,6 +127,11 @@ test("people cycle on cycleways and streets, not where bicycles may not go, and 
   assert.equal(noBicycles.cycling, undefined);
   assert.equal(steps.cycling, undefined);
   assert.ok(at(noWalking.cycling) > 0);
+  // a main street with a cycleway beside it: a few still ride in its carriageway
+  const sidepath = road("w9", "secondary", [[0, 400], [100, 400]], { bicycle: "use_sidepath" });
+  const plain = road("w10", "secondary", [[0, 450], [100, 450]]);
+  estimateCycling([sidepath, plain], [], []);
+  assert.ok(at(sidepath.cycling) > 0 && at(sidepath.cycling) < at(plain.cycling) / 4);
 });
 
 test("cycling counts are made average days by cycling's own months", () => {

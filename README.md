@@ -237,8 +237,9 @@ cycleways, 0.7 on footways and pedestrian streets shared with bicycles (`bicycle
 `permissive`), 0.1 and 0.2 on other footways and pedestrian streets (in Finland only children may cycle there), 0.4
 on paths, 0.3 on tracks, and on streets, in their carriageway, 0.7 on tertiary, 0.6 on secondary and residential,
 0.5 on primary, unclassified and living streets and 0.3 on service roads; a street with its sidewalks drawn apart
-gets 30 % of that (a cycleway beside it takes most). No one cycles on steps, motorways, trunk roads and their links,
-roads in tunnels, or where `bicycle=no`, `use_sidepath` or `private`. Ways have their `foot`, `bicycle` and
+gets 30 % of that and one with `bicycle=use_sidepath` (in Tampere most main streets) 15 %, as a cycleway beside it
+takes most of its cyclists. No one cycles on steps, motorways, trunk roads and their links, roads in tunnels, or
+where `bicycle=no` or `private`. Ways have their `foot`, `bicycle` and
 `segregated` (`segregated=yes`: people walking and cycling each have a side of their own; OSM does not tell which).
 
 Where there are counts, `base` and `scale` are fitted to them and the estimate around each count is pulled towards

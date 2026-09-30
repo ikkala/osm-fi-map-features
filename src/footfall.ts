@@ -122,6 +122,11 @@ const WITHOUT_SIDEWALKS = new Set(["motorway", "motorway_link", "trunk", "trunk_
 const TAGGED_SIDEWALK_FACTOR = 0.7;
 /** foot=* and bicycle=* values that keep people walking or cycling off a way */
 const NOT_ALLOWED = new Set(["no", "use_sidepath", "private"]);
+/**
+ * A street with bicycle=use_sidepath (in Tampere most main streets) has a cycleway beside it, which takes
+ * most of its cyclists; this share of them still rides in the carriageway
+ */
+const SIDEPATH_CYCLING = 0.15;
 const ALLOWED = new Set(["yes", "designated", "permissive"]);
 
 /** Businesses draw people from this far (m), and homes' doors send them this far */
@@ -294,7 +299,10 @@ function kindFactors(roads: Road[], mode: Mode): { factors: Map<Road, number>; s
     const walkway = NOT_FOR_VEHICLES.has(road.kind);
     const access = mode === "walking" ? road.foot : road.bicycle;
     let factor = mode === "walking" ? (WALKING_FACTORS[road.kind] ?? 0) : (CYCLING_FACTORS[road.kind] ?? 0);
-    if (access !== undefined && NOT_ALLOWED.has(access)) {
+    const sidepath = mode === "cycling" && access === "use_sidepath" && !walkway;
+    if (sidepath) {
+      factor *= SIDEPATH_CYCLING;
+    } else if (access !== undefined && NOT_ALLOWED.has(access)) {
       factor = 0;
     } else if (mode === "walking" && road.kind === "cycleway" && !(access !== undefined && ALLOWED.has(access))) {
       factor = CYCLEWAY_ONLY_WALKING;
@@ -312,7 +320,8 @@ function kindFactors(roads: Road[], mode: Mode): { factors: Map<Road, number>; s
       if (road.tunnel) {
         factor = 0;
       } else if (mode === "cycling") {
-        if (road.sidewalks === "separate" || beside()) {
+        // (a use_sidepath street has its share already)
+        if (!sidepath && (road.sidewalks === "separate" || beside())) {
           factor *= SEPARATE_CYCLING;
         }
       } else if (road.sidewalks === "none" || road.sidewalks === "separate") {
