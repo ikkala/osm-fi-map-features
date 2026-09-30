@@ -61,5 +61,7 @@ test("a tunnel beside one in a cut is in the same cut, under the same lid", () =
   assert.equal(cutLid(pavement.line, wide), undefined);
   assert.equal(coverCutTunnels(features, wide).tunnels, 2);
   assert.deepEqual(pavement.lid, tram.lid);
+  // on the cut's floor beside it, not on the platform's edge it is mapped on
+  assert.deepEqual(pavement.floor, [95, 95]);
   assert.equal(apart.lid, undefined);
 });

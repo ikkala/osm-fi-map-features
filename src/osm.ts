@@ -45,8 +45,8 @@ export interface Road {
   /** A tunnel in a cut in the elevation model: its lid's top (m above sea level) at every point of line */
   lid?: number[];
   /**
-   * Other tunnels, and ramps down to their portals: the floor (m above sea level) at every point of line,
-   * when heights are known
+   * Other tunnels, ramps down to their portals and tunnels beside tunnels in cuts: the floor (m above sea
+   * level) at every point of line, when heights are known
    */
   floor?: number[];
 }
@@ -64,8 +64,8 @@ export interface Rail {
   /** A tunnel in a cut in the elevation model: its lid's top (m above sea level) at every point of line */
   lid?: number[];
   /**
-   * Other tunnels, and ramps down to their portals: the floor (m above sea level) at every point of line,
-   * when heights are known
+   * Other tunnels, ramps down to their portals and tunnels beside tunnels in cuts: the floor (m above sea
+   * level) at every point of line, when heights are known
    */
   floor?: number[];
   /** Other railways: the track bed (m above sea level) at every point of line, the ground smoothed along it */

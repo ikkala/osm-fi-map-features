@@ -58,13 +58,15 @@ export function coverCutTunnels(features: MapFeatures, heightAt: (e: number, n: 
     }
   }
   // a tunnel beside one in a cut (a pavement beside a tramway) is in the same cut: the elevation model
-  // has the cut's floor beside it too, so its own rims are not found
+  // has the cut's floor beside it too, so its own rims are not found. It is often mapped at the cut's
+  // edge, where the model has the cut's wall, so its floor is the cut's floor beside it.
   const cuts = [...tunnels];
   for (const { way, width } of ways) {
     if (way.tunnel && !way.lid && way.layer >= -1 && way.line.length >= 2) {
-      const lid = besideCut(way.line, width, cuts);
-      if (lid) {
-        way.lid = lid;
+      const beside = besideCut(way.line, width, cuts, heightAt);
+      if (beside) {
+        way.lid = beside.lid;
+        way.floor = beside.floor;
         tunnels.push({ way, width: width + 2 * LID_EDGE_M });
       }
     }
@@ -136,17 +138,24 @@ export function cutLid(line: Point[], heightAt: (e: number, n: number) => number
 }
 
 /**
- * The lid of a tunnel beside tunnels in cuts, or undefined when it is not: along most of it (CUT_SHARE of
- * the points every SAMPLE_M) it is within BESIDE_M of a cut tunnel's lid (widths are lids' and the way's).
- * Its lid is at the nearest cut tunnel's lid at every point of its line.
+ * The lid and the floor of a tunnel beside tunnels in cuts, or undefined when it is not: along most of it
+ * (CUT_SHARE of the points every SAMPLE_M) it is within BESIDE_M of a cut tunnel's lid (widths are lids'
+ * and the way's). At every point of its line its lid is at the nearest cut tunnel's lid, and its floor at
+ * the ground at the nearest point of that tunnel.
  */
-function besideCut(line: Point[], width: number, cuts: { way: Way; width: number }[]): number[] | undefined {
+function besideCut(
+  line: Point[],
+  width: number,
+  cuts: { way: Way; width: number }[],
+  heightAt: (e: number, n: number) => number | undefined,
+): { lid: number[]; floor: number[] } | undefined {
   const nearest = (p: Point) => {
-    let best: { d: number; way: Way } | undefined;
+    let best: { d: number; way: Way; at: Point } | undefined;
     for (const cut of cuts) {
-      const d = distanceToLine(p, cut.way.line) - cut.width / 2 - width / 2;
+      const { distance, at } = nearestOnLine(p, cut.way.line);
+      const d = distance - cut.width / 2 - width / 2;
       if (!best || d < best.d) {
-        best = { d, way: cut.way };
+        best = { d, way: cut.way, at };
       }
     }
     return best;
@@ -168,25 +177,32 @@ function besideCut(line: Point[], width: number, cuts: { way: Way; width: number
     return undefined;
   }
   const lid: number[] = [];
+  const floor: number[] = [];
   for (const p of line) {
-    const way = nearest(p)?.way;
-    if (!way?.lid) {
+    const near = nearest(p);
+    const ground = near && heightAt(...near.at);
+    if (!near?.way.lid || ground === undefined) {
       return undefined;
     }
-    lid.push(deckAt(way.line, way.lid, p));
+    lid.push(deckAt(near.way.line, near.way.lid, p));
+    floor.push(ground);
   }
-  return lid;
+  return { lid, floor };
 }
 
-/** The distance from p to the nearest point of a line */
-function distanceToLine(p: Point, line: Point[]): number {
-  let best = Infinity;
+/** The nearest point of a line to p, and how far it is */
+function nearestOnLine(p: Point, line: Point[]): { distance: number; at: Point } {
+  let best = { distance: Infinity, at: line[0] };
   for (let i = 0; i + 1 < line.length; i++) {
     const [a, c] = [line[i], line[i + 1]];
     const [dx, dy] = [c[0] - a[0], c[1] - a[1]];
     const lengthSq = dx * dx + dy * dy;
     const t = lengthSq > 0 ? Math.min(Math.max(((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / lengthSq, 0), 1) : 0;
-    best = Math.min(best, Math.hypot(a[0] + dx * t - p[0], a[1] + dy * t - p[1]));
+    const at: Point = [a[0] + dx * t, a[1] + dy * t];
+    const distance = Math.hypot(at[0] - p[0], at[1] - p[1]);
+    if (distance < best.distance) {
+      best = { distance, at };
+    }
   }
   return best;
 }
