@@ -105,17 +105,25 @@ test("parseOsm reads trees, shrubs and tree rows, and what grows in woods and sc
   assert.deepEqual(features.areas.map((a) => [a.kind, a.cover]), [["forest", "trees"], ["forest", "shrubs"], ["grass", undefined]]);
 });
 
-test("parseOsm leaves out ways indoors, but not stairs out of a tunnel's end, and tells the ways' storeys", () => {
+test("parseOsm leaves out ways indoors, but not the ones on from a tunnel's end, and tells the ways' storeys", () => {
+  // stairs up out of an underpass into a stair house (e -2 .. 8, n 10.5 .. 24), and a corridor on to its
+  // door at e 8 and outside; a way on from 40 m on is too far from the tunnel
   const { features, levels } = parseOsm(
     [
       { type: "way", id: 60, tags: { highway: "footway", tunnel: "yes", layer: "-1", level: "0.5" }, geometry: [at(0, 0), at(0, 10)] },
       { type: "way", id: 61, tags: { highway: "steps", indoor: "yes", level: "0.5;1" }, geometry: [at(0, 10), at(0, 20)] },
-      { type: "way", id: 62, tags: { highway: "corridor", indoor: "yes", level: "1" }, geometry: [at(0, 20), at(10, 20)] },
+      { type: "way", id: 62, tags: { highway: "footway", indoor: "yes", level: "1" }, geometry: [at(0, 20), at(10, 20)] },
+      { type: "way", id: 63, tags: { highway: "footway", indoor: "yes", level: "1" }, geometry: [at(10, 20), at(30, 20)] },
+      { type: "way", id: 65, tags: { highway: "footway", indoor: "yes", level: "1" }, geometry: [at(30, 20), at(40, 20)] },
+      { type: "way", id: 64, tags: { building: "yes" }, geometry: [at(-2, 10.5), at(8, 10.5), at(8, 24), at(-2, 24), at(-2, 10.5)] },
     ],
     origin,
   );
-  assert.deepEqual(features.roads.map((r) => [r.osm, r.tunnel]), [["w60", true], ["w61", false]]);
-  assert.deepEqual(features.roads.map((r) => levels.get(r)), [[0.5], [0.5, 1]]);
+  assert.deepEqual(features.roads.map((r) => [r.osm, r.tunnel]), [["w60", true], ["w61", false], ["w62", false], ["w63", false]]);
+  assert.deepEqual(features.roads.map((r) => levels.get(r)), [[0.5], [0.5, 1], [1], [1]]);
+  // the wall is open where the corridor goes out, not where the stairs come in from under the ground
+  const openings = defined(features.buildings[0].passages).map((o) => [o.from, o.to].map(([e, n]) => [Math.round(e), Math.round(n)]));
+  assert.deepEqual(openings, [[[8, 19], [8, 21]]]);
 });
 
 test("parseOsm reads street lamps: their mount, height, direction and lamp type", () => {

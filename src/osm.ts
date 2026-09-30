@@ -419,6 +419,10 @@ const ROOF_OVER_ROAD_M = 5;
 /** How tall a passage through a building is when its way has no maxheight: for vehicles, and for people */
 const PASSAGE_HEIGHT_M = 4;
 const WALKWAY_PASSAGE_HEIGHT_M = 3;
+/** Ways indoors are kept this far on from a tunnel's end (m) */
+const INDOOR_REACH_M = 30;
+/** The passage of a way indoors out of a tunnel starts this far on from the tunnel's end (m) */
+const OUT_OF_TUNNEL_M = 1;
 /** A way crossing a wall at a slant opens it at most this much wider than the way */
 const MAX_PASSAGE_SLANT = 3;
 /** highway=* values that only people walk or cycle on */
@@ -737,10 +741,42 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
     }
   }
 
-  // the ways indoors are left out (they are inside buildings), but not where they lead on from a tunnel's
-  // end: stairs up out of an underpass into a building over it are how the tunnel comes out there
-  const tunnelEnds = new Set(features.roads.filter((r) => r.tunnel).flatMap((r) => [pointKey(r.line[0]), pointKey(r.line[r.line.length - 1])]));
-  features.roads.push(...indoors.filter((r) => tunnelEnds.has(pointKey(r.line[0])) || tunnelEnds.has(pointKey(r.line[r.line.length - 1]))));
+  // the ways indoors are left out (they are inside buildings), but not the ones that lead on from a
+  // tunnel's end, up to INDOOR_REACH_M on: stairs up out of an underpass into a stair house over it, and
+  // on to its door, are how the tunnel comes out there. They are passages through the buildings they are
+  // in, so the walls are open where they go out, and their rooms open into one another. A way out of the
+  // tunnel comes into the building from under the ground: its passage starts OUT_OF_TUNNEL_M on, so the
+  // wall stays whole there.
+  const reached = new Map<string, number>();
+  for (const r of features.roads.filter((r) => r.tunnel)) {
+    for (const p of [r.line[0], r.line[r.line.length - 1]]) {
+      reached.set(pointKey(p), 0);
+    }
+  }
+  const kept = new Set<Road>();
+  for (let grown = true; grown; ) {
+    grown = false;
+    for (const r of indoors) {
+      const ends = [r.line[0], r.line[r.line.length - 1]].map(pointKey);
+      const from = Math.min(...ends.map((k) => reached.get(k) ?? Infinity));
+      if (kept.has(r) || from >= INDOOR_REACH_M) {
+        continue;
+      }
+      kept.add(r);
+      grown = true;
+      const to = from + r.line.slice(1).reduce((sum, q, i) => sum + Math.hypot(q[0] - r.line[i][0], q[1] - r.line[i][1]), 0);
+      for (const k of ends) {
+        reached.set(k, Math.min(reached.get(k) ?? Infinity, to));
+      }
+      features.roads.push(r);
+      const height = NOT_FOR_VEHICLES.has(r.kind) ? WALKWAY_PASSAGE_HEIGHT_M : PASSAGE_HEIGHT_M;
+      const outward = reached.get(ends[1]) === 0 && reached.get(ends[0]) !== 0 ? [...r.line].reverse() : r.line;
+      const line = from === 0 ? withoutStart(outward, OUT_OF_TUNNEL_M) : outward;
+      if (line.length >= 2) {
+        passages.push({ line, width: r.width, height });
+      }
+    }
+  }
 
   markBuildingsWithParts(features.buildings);
   for (const { road, passage } of maybePassages) {
@@ -1569,6 +1605,21 @@ function roadWidth(tags: Tags): number {
   const lanes = number(tags.lanes);
   const fallback = ROAD_WIDTHS[tags.highway];
   return lanes !== undefined && lanes > 0 && fallback >= 6 ? Math.max(fallback, lanes * LANE_WIDTH_M) : fallback;
+}
+
+/** The line from `length` meters on (fewer than 2 points when it is no longer) */
+function withoutStart(line: Point[], length: number): Point[] {
+  let left = length;
+  for (let i = 1; i < line.length; i++) {
+    const [a, b] = [line[i - 1], line[i]];
+    const step = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (step > left) {
+      const t = left / step;
+      return [[a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], ...line.slice(i)];
+    }
+    left -= step;
+  }
+  return [];
 }
 
 /** The storeys a way is on (level=*, such as "0" or "0.5;1"), when OSM tells */
