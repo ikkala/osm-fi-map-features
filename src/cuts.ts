@@ -5,8 +5,10 @@
 // come from setBridgeDecks), and the walls of buildings over it open under their floor.
 //
 // A tunnel under a hill or a lake is not in the model as a cut: there the ground over the tunnel is as
-// high as beside it, and tunnels.ts gives the tunnel a floor under it instead.
+// high as beside it, and tunnels.ts gives the tunnel a floor under it instead. A tunnel beside one in a
+// cut (a pavement beside a tramway) is in the same cut and gets the same lid.
 import { crossing, openPassages, type MapFeatures, type Rail, type Road } from "./osm.ts";
+import { deckAt } from "./bridges.ts";
 import type { Point } from "./geometry.ts";
 
 /** How far beyond its way a tunnel's lid reaches on both sides (m), and how thick it is */
@@ -29,6 +31,8 @@ const RIM_RISE_M = 0.2;
  * underpass is often 3.5 m tall.
  */
 const CLEARANCE_M = 3.5;
+/** A tunnel this close to the lid of a tunnel in a cut (m, edge to edge) is beside it, in the same cut */
+const BESIDE_M = 2;
 /** A way meeting a tunnel this close to the tunnel's end (m) leads on from it */
 const AT_PORTAL_M = 1;
 
@@ -47,6 +51,18 @@ export function coverCutTunnels(features: MapFeatures, heightAt: (e: number, n: 
   for (const { way, width } of ways) {
     if (way.tunnel && way.layer >= -1 && way.line.length >= 2) {
       const lid = cutLid(way.line, heightAt);
+      if (lid) {
+        way.lid = lid;
+        tunnels.push({ way, width: width + 2 * LID_EDGE_M });
+      }
+    }
+  }
+  // a tunnel beside one in a cut (a pavement beside a tramway) is in the same cut: the elevation model
+  // has the cut's floor beside it too, so its own rims are not found
+  const cuts = [...tunnels];
+  for (const { way, width } of ways) {
+    if (way.tunnel && !way.lid && way.layer >= -1 && way.line.length >= 2) {
+      const lid = besideCut(way.line, width, cuts);
       if (lid) {
         way.lid = lid;
         tunnels.push({ way, width: width + 2 * LID_EDGE_M });
@@ -117,6 +133,62 @@ export function cutLid(line: Point[], heightAt: (e: number, n: number) => number
     const floor = heightAt(...p) ?? 0;
     return Math.max(beside(p, along), floor + CLEARANCE_M + LID_THICKNESS_M);
   });
+}
+
+/**
+ * The lid of a tunnel beside tunnels in cuts, or undefined when it is not: along most of it (CUT_SHARE of
+ * the points every SAMPLE_M) it is within BESIDE_M of a cut tunnel's lid (widths are lids' and the way's).
+ * Its lid is at the nearest cut tunnel's lid at every point of its line.
+ */
+function besideCut(line: Point[], width: number, cuts: { way: Way; width: number }[]): number[] | undefined {
+  const nearest = (p: Point) => {
+    let best: { d: number; way: Way } | undefined;
+    for (const cut of cuts) {
+      const d = distanceToLine(p, cut.way.line) - cut.width / 2 - width / 2;
+      if (!best || d < best.d) {
+        best = { d, way: cut.way };
+      }
+    }
+    return best;
+  };
+  let samples = 0;
+  let beside = 0;
+  for (let i = 0; i + 1 < line.length; i++) {
+    const [a, c] = [line[i], line[i + 1]];
+    const steps = Math.max(1, Math.ceil(Math.hypot(c[0] - a[0], c[1] - a[1]) / SAMPLE_M));
+    for (let k = 0; k < steps; k++) {
+      const p: Point = [a[0] + ((c[0] - a[0]) * (k + 0.5)) / steps, a[1] + ((c[1] - a[1]) * (k + 0.5)) / steps];
+      samples++;
+      if ((nearest(p)?.d ?? Infinity) <= BESIDE_M) {
+        beside++;
+      }
+    }
+  }
+  if (samples === 0 || beside < samples * CUT_SHARE) {
+    return undefined;
+  }
+  const lid: number[] = [];
+  for (const p of line) {
+    const way = nearest(p)?.way;
+    if (!way?.lid) {
+      return undefined;
+    }
+    lid.push(deckAt(way.line, way.lid, p));
+  }
+  return lid;
+}
+
+/** The distance from p to the nearest point of a line */
+function distanceToLine(p: Point, line: Point[]): number {
+  let best = Infinity;
+  for (let i = 0; i + 1 < line.length; i++) {
+    const [a, c] = [line[i], line[i + 1]];
+    const [dx, dy] = [c[0] - a[0], c[1] - a[1]];
+    const lengthSq = dx * dx + dy * dy;
+    const t = lengthSq > 0 ? Math.min(Math.max(((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / lengthSq, 0), 1) : 0;
+    best = Math.min(best, Math.hypot(a[0] + dx * t - p[0], a[1] + dy * t - p[1]));
+  }
+  return best;
 }
 
 /**

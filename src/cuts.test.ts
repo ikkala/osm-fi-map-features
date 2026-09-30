@@ -49,3 +49,17 @@ test("coverCutTunnels gives the tunnel a lid, makes the ways over it bridges and
   // the station's walls are open over the tunnel, below its floor
   assert.deepEqual(station.passages?.map((o) => o.height), [0, 0]);
 });
+
+test("a tunnel beside one in a cut is in the same cut, under the same lid", () => {
+  // the pavement 5 m beside the tramway is not in a cut of its own in the elevation model (it has the
+  // platform over it, 101), only beside the tramway's
+  const tram = rail("w1", [[10, 0], [60, 0]], { kind: "light_rail", layer: -1, tunnel: true });
+  const pavement = road("w2", [[10, -5], [60, -5]], { kind: "footway", width: 2.5, layer: -1, tunnel: true });
+  const apart = road("w3", [[10, -40], [60, -40]], { kind: "footway", width: 2.5, layer: -1, tunnel: true });
+  const features: MapFeatures = { roads: [pavement, apart], rails: [tram], buildings: [], areas: [], trees: [], lamps: [] };
+  const wide = (e: number, n: number) => (e >= 0 && Math.abs(n) <= 4 ? 95 : e >= 0 && n < -4 && n > -7 ? 101 : 102);
+  assert.equal(cutLid(pavement.line, wide), undefined);
+  assert.equal(coverCutTunnels(features, wide).tunnels, 2);
+  assert.deepEqual(pavement.lid, tram.lid);
+  assert.equal(apart.lid, undefined);
+});

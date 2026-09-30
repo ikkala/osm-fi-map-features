@@ -20,7 +20,8 @@ const NOT_FLOOR_ENTRANCES = new Set(["service", "emergency", "exit", "garage", "
  * Sets every building's base (m above sea level): the ground at its OSM entrance (a main one first), or
  * else its highest ground; at most MAX_PLINTH_M above its lowest ground and not above its highest; and
  * at least the top of the lids of the tunnels in cuts under it. A part gets the base of the building it
- * is in, so its parts stand on one floor. Open shelters stand on their lowest ground and get none.
+ * is in, so its parts stand on one floor. Open shelters stand on their lowest ground and get none,
+ * unless they are over a lid: then they stand on its top.
  * heightAt gives the ground height at map meters (undefined outside the elevation model). Returns how
  * many buildings got a base.
  */
@@ -60,6 +61,13 @@ export function setBuildingBases(
   for (const b of buildings) {
     delete b.base;
     if (b.shelter !== undefined) {
+      // an open shelter stands on a lid under it (a platform's roof over a tunnel in a cut): its posts
+      // would reach down through the lid into the tunnel
+      const lid = lidUnder(b, lids);
+      if (Number.isFinite(lid)) {
+        b.base = lid;
+        count++;
+      }
       continue;
     }
     const outline = partOutline.get(b) ?? outlines.find((o) => o.b === b);

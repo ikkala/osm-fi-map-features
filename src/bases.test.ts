@@ -58,3 +58,11 @@ test("setBuildingBases stands a building over a tunnel in a cut on the tunnel's 
   assert.equal(Math.round((station.base ?? 0) * 100) / 100, 109.2);
   assert.equal(beside.base, 125);
 });
+
+test("setBuildingBases stands an open shelter over a tunnel in a cut on the lid, and others get no base", () => {
+  const platformRoof = square(0, 10, { kind: "roof", shelter: "roof" });
+  const busShelter = square(40, 4, { kind: "roof", shelter: "public_transport" });
+  const lid = { line: [[-10, 5], [20, 5]] satisfies Point[], lid: [108, 108] };
+  setBuildingBases([platformRoof, busShelter], heightAt, [lid]);
+  assert.deepEqual([platformRoof.base, busShelter.base], [108, undefined]);
+});

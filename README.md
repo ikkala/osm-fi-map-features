@@ -94,7 +94,8 @@ walls reach down to its lowest ground: a plinth or a basement storey on the down
 steep slope it stands at most 6 m above its lowest ground. The build takes the ground from the elevation model
 along the outline (`base` in the tiles); a building's parts all stand at the building's base, so they line up.
 Without an elevation model buildings stand at their lowest ground. A building over a tunnel in a cut (see below)
-stands at least at the top of the tunnel's lid, since it really stands on the deck over the cut.
+stands at least at the top of the tunnel's lid, since it really stands on the deck over the cut, and so does an open
+roof over a lid (a platform's roof), which otherwise stands on its lowest ground.
 
 Roofs are flat unless OSM has a pitched `roof:shape`, drawn as gabled (also saltbox, gambrel, round), hipped (also
 half-hipped, mansard), pyramidal (also cone, dome) or skillion. Houses, cabins, sheds, garages, barns, saunas and
@@ -121,7 +122,8 @@ the tracks), and an open roof becomes a deck 1 m thick over it, without posts. A
 way's room, 1 m wider than the way on both sides, is under it. A shallow tunnel
 (`layer` -1 or above) that the model has as an open cut, the ground beside it at least 3 m higher on both sides
 along most of it (an underpass under a deck), gets the top of a lid over it at the rim of the cut (`lid`, at
-least 3.5 m and the lid's 1 m over the floor), and the ways over it become bridges. Any other tunnel, under a
+least 3.5 m and the lid's 1 m over the floor), and the ways over it become bridges. A tunnel beside it (within 2 m of
+the lid along most of it, such as a pavement beside a tramway) is in the same cut, under the same lid. Any other tunnel, under a
 hill or a lake, gets its floor (`floor`, with a point every 10 m): straight between its portals' ground (the
 lowest within 4 m outside, since at the portal the model has the top of its wall), a junction underground
 hanging between its branches' ends by distance, but at least room and a 1 m roof under the ground (3 m of
