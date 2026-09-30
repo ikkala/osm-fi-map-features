@@ -97,7 +97,10 @@ steep slope it stands at most 6 m above its lowest ground. The build takes the g
 along the outline (`base` in the tiles); a building's parts all stand at the building's base, so they line up.
 Without an elevation model buildings stand at their lowest ground. A building over a tunnel in a cut (see below)
 stands at least at the top of the tunnel's lid, since it really stands on the deck over the cut, and so does an open
-roof over a lid (a platform's roof), which otherwise stands on its lowest ground.
+roof over a lid (a platform's roof), which otherwise stands on its lowest ground. A building or part raised off
+the ground (`min_height`) with nothing under it, such as a canopy on a building that stands at its door down the
+slope, counts its `min_height` from its own highest ground, so the rising ground does not come up to it; its top
+stays, unless that would leave it thinner than a storey (or than it was).
 
 Roofs are flat unless OSM has a pitched `roof:shape`, drawn as gabled (also saltbox, gambrel, round), hipped (also
 half-hipped, mansard), pyramidal (also cone, dome) or skillion. Houses, cabins, sheds, garages, barns, saunas and

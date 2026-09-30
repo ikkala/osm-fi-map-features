@@ -78,3 +78,19 @@ test("setBuildingBases stands an open shelter over a tunnel in a cut on the lid,
   setBuildingBases([platformRoof, busShelter], heightAt, [lid]);
   assert.deepEqual([platformRoof.base, busShelter.base], [108, undefined]);
 });
+
+test("setBuildingBases counts the minHeight of a raised part with nothing under it from its own highest ground", () => {
+  // the building stands at its door down the slope (101), the ground rising 0.5 m for every meter east
+  const outline = square(0, 30, { hasParts: true, entrances: [{ at: [2, 0], kind: "main" }] });
+  // a canopy 3-4 m up, whose highest ground is at its east edge (112.5): lifted whole
+  const canopy = square(20, 5, { part: true, minHeight: 3, height: 4 });
+  // floors over a passage, whose highest ground is 107.5: their top stays
+  const arcade = square(10, 5, { part: true, minHeight: 3, height: 20 });
+  // a storey on another part stays on it
+  const lower = square(0, 5, { part: true, minHeight: 0, height: 6 });
+  const upper = square(0, 5, { part: true, minHeight: 6, height: 20 });
+  setBuildingBases([outline, canopy, arcade, lower, upper], heightAt);
+  assert.deepEqual([canopy.base, canopy.minHeight, canopy.height], [101, 14.5, 15.5]);
+  assert.deepEqual([arcade.minHeight, arcade.height], [9.5, 20]);
+  assert.deepEqual([upper.minHeight, upper.height], [6, 20]);
+});

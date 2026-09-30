@@ -6,8 +6,12 @@
 // A building over a tunnel in a cut (cuts.ts) stands at least at the top of the tunnel's lid: the
 // elevation model has the cut under it, and the ground by its door may be at the cut's rim or in it,
 // while the building really stands on the deck. Its walls are open under its floor over the tunnel.
+//
+// A building or part raised off the ground (min_height) with nothing under it, such as a canopy on a
+// building that stands at its door down the slope, counts its min_height from its own highest ground, so
+// the ground rising under it does not come up to it.
 import { pointInPolygon, ringCentroid, type Point, type Ring } from "./geometry.ts";
-import { bounds, type Building, type Entrance } from "./osm.ts";
+import { bounds, LEVEL_HEIGHT_M, type Building, type Entrance } from "./osm.ts";
 
 /** A building stands at most this far above its lowest ground (m), so it does not tower on a steep slope */
 export const MAX_PLINTH_M = 6;
@@ -24,8 +28,10 @@ const ROOM_OVER_DOOR_M = 2.5;
  * at least the top of the lids of the tunnels in cuts under it. A part gets the base of the building it
  * is in, so its parts stand on one floor. A building (not a part) whose roof would be lower than
  * ROOM_OVER_DOOR_M over the ground at one of its doors in OSM (a stair hall from a street up a slope to a
- * platform, with a door at each end) is as tall as it is over the ground at that door, and goes into raised. Open shelters stand on their lowest ground and get none,
- * unless they are over a lid: then they stand on its top.
+ * platform, with a door at each end) is as tall as it is over the ground at that door, and goes into raised.
+ * A building or part with a minHeight and no other building under it has its minHeight over its own
+ * highest ground; its top stays, but at least a storey (or its height, if less) over its bottom. Open
+ * shelters stand on their lowest ground and get none, unless they are over a lid: then they stand on its top.
  * heightAt gives the ground height at map meters (undefined outside the elevation model). Returns how
  * many buildings got a base.
  */
@@ -62,6 +68,15 @@ export function setBuildingBases(
     }
   }
   const outlineBases = new Map(outlines.map((o) => [o, baseOf(o.b, o.entrances)]));
+  // what is drawn (not the outlines with parts), to see whether anything stands under a raised building
+  const drawn = buildings.filter((b) => !b.hasParts).map((b) => ({ b, box: bounds(b.polygon.outer) }));
+  const floating = (b: Building) => {
+    const [x, y] = ringCentroid(b.polygon.outer);
+    return !drawn.some(
+      ({ b: o, box }) =>
+        o !== b && o.minHeight < b.minHeight && x >= box.minX && x <= box.maxX && y >= box.minY && y <= box.maxY && pointInPolygon([x, y], o.polygon),
+    );
+  };
   let count = 0;
   for (const b of buildings) {
     delete b.base;
@@ -80,6 +95,12 @@ export function setBuildingBases(
     if (base !== undefined) {
       b.base = base;
       count++;
+      const high = b.minHeight > 0 && !b.hasParts ? groundRange(b.polygon.outer, heightAt)?.high : undefined;
+      if (high !== undefined && high > base && floating(b)) {
+        const thickness = b.height - b.minHeight;
+        b.minHeight += high - base;
+        b.height = Math.max(b.height, b.minHeight + Math.min(thickness, LEVEL_HEIGHT_M));
+      }
       if (!b.part) {
         const doors = (b.entrances ?? []).filter((e) => !e.guessed).map((e) => heightAt(...e.at)).filter((h) => h !== undefined);
         const door = Math.max(...doors);
