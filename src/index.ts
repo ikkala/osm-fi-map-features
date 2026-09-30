@@ -15,6 +15,7 @@ export type {
   LampMount,
   MapFeatures,
   Opening,
+  PassageRoom,
   Rail,
   Road,
   RoofShape,

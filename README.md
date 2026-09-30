@@ -107,6 +107,9 @@ slope (10° for skillion, at most 6 m): on top of the storeys, or within a tagge
 Ways through buildings (`tunnel=building_passage`) are drawn on the ground like other ways, and open the walls
 they cross: as wide as the way (wider where it crosses at a slant, and on over nearly straight corners) and as
 tall as its `maxheight`, else 4 m for vehicles and 3 m for people, leaving at least 0.5 m of wall under the eaves.
+A building is only its walls and roof, so the way also gets a room through it (`passageRooms`): walls along its
+sides from opening to opening (mitred at its corners, and across its end where it ends inside) and a ceiling at
+the opening's height. Where ways beside or across each other meet inside, their rooms are one space.
 Passages are often tagged `tunnel=yes` or `covered=yes` instead: such a way is taken for a passage when it is at
 most 60 m long and not deeper than `layer=-1`, neither end is more than 1 m inside a building, and at least half
 of it is inside buildings.

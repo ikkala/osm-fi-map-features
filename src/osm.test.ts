@@ -1,7 +1,7 @@
 // OSM parsing and tiling together, on a small hand-made Overpass response.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { areaKind, compassDegrees, meters, overpassQuery, parseOsm, type OverpassResponse, type Tree } from "./osm.ts";
+import { areaKind, compassDegrees, meters, openPassages, overpassQuery, parseOsm, type Building, type OverpassResponse, type Tree } from "./osm.ts";
 import type { Point } from "./geometry.ts";
 import { LocalProjection } from "./projection.ts";
 import { cutIntoTiles, tilesCovering } from "./tiles.ts";
@@ -271,6 +271,69 @@ test("a tunnel through a building is taken for a passage, a ramp into it or a de
   assert.deepEqual([road("w51").tunnel, road("w52").tunnel, road("w53").tunnel], [false, true, true]);
   // only the west and east walls open, for w51
   assert.deepEqual(defined(features.buildings[0].passages).map((o) => Math.round(o.from[0])).sort((a, b) => a - b), [0, 20]);
+});
+
+test("a way through a building gets a room walled off from the building's insides", () => {
+  const building = (outer: Point[], holes: Point[][] = []): Building => ({
+    osm: "w1",
+    kind: "apartments",
+    part: false,
+    hasParts: false,
+    height: 15,
+    minHeight: 0,
+    polygon: { outer, holes },
+  });
+  const round = (points: Point[]) => points.flatMap((p) => p.map((v) => Math.round(v * 10) / 10));
+  const rooms = (b: Building) =>
+    defined(b.passageRooms).map((room) => ({ sections: room.sections.map(round), closed: room.closed, walls: room.walls.map(round) }));
+
+  // into a courtyard: the room goes from the street through the building, not on into the courtyard
+  const block = building(
+    [[0, 0], [30, 0], [30, 30], [0, 30]],
+    [[[10, 10], [10, 20], [20, 20], [20, 10]]],
+  );
+  openPassages([block], [{ line: [[15, -5], [15, 15]], width: 2, height: 3 }]);
+  assert.deepEqual(rooms(block), [
+    {
+      sections: [[14, 0, 16, 0], [14, 10, 16, 10]],
+      closed: [false, false],
+      walls: [[14, 0, 14, 10], [16, 10, 16, 0]],
+    },
+  ]);
+  assert.equal(defined(block.passageRooms)[0].height, 3);
+
+  // turning left inside and ending there: a mitred corner, and a wall across the end
+  const house = building([[0, 0], [20, 0], [20, 10], [0, 10]]);
+  openPassages([house], [{ line: [[-5, 5], [10, 5], [10, 8]], width: 2, height: 3 }]);
+  assert.deepEqual(rooms(house), [
+    {
+      sections: [[0, 6, 0, 4], [9, 6, 11, 4], [9, 8, 11, 8]],
+      closed: [false, true],
+      walls: [[0, 6, 9, 6], [9, 6, 9, 8], [9, 8, 11, 8], [11, 8, 11, 4], [11, 4, 0, 4]],
+    },
+  ]);
+
+  // ways crossing inside are one space: neither room has walls in the other
+  const cross = building([[0, 0], [20, 0], [20, 10], [0, 10]]);
+  openPassages(
+    [cross],
+    [
+      { line: [[-5, 5], [25, 5]], width: 2, height: 3 },
+      { line: [[10, -5], [10, 15]], width: 2, height: 4 },
+    ],
+  );
+  assert.deepEqual(
+    rooms(cross).map((room) => room.walls),
+    [
+      [[0, 6, 9, 6], [11, 6, 20, 6], [20, 4, 11, 4], [9, 4, 0, 4]],
+      [[9, 0, 9, 4], [9, 6, 9, 10], [11, 10, 11, 6], [11, 4, 11, 0]],
+    ],
+  );
+
+  // a tunnel in a cut under a building (no height) only opens its walls
+  const station = building([[0, 0], [20, 0], [20, 10], [0, 10]]);
+  openPassages([station], [{ line: [[-5, 5], [25, 5]], width: 2, height: 0 }]);
+  assert.equal(station.passageRooms, undefined);
 });
 
 test("compassDegrees reads degrees and compass points", () => {

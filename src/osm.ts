@@ -120,6 +120,8 @@ export interface Building {
   name?: string;
   /** Where ways run through the building (tunnel=building_passage): its walls are open there */
   passages?: Opening[];
+  /** The rooms of the ways through the building, walled off from its insides */
+  passageRooms?: PassageRoom[];
   /** Doors on the outline: OSM's entrance nodes, or guessed (see entrances.ts) */
   entrances?: Entrance[];
   /** Shops, restaurants, offices, ... inside the building (see businesses.ts) */
@@ -178,6 +180,25 @@ export interface Opening {
   from: Point;
   to: Point;
   height: number;
+}
+
+/**
+ * The room of a way through a building: a building is only its walls and roof, so from the openings in
+ * its walls one would see into it. The room is walled along the way's sides and has a ceiling at height
+ * meters over the ground, over the quadrilaterals between consecutive sections.
+ */
+export interface PassageRoom {
+  /** Across the way, in order along it: where it comes in, its corners, where it goes out; [left, right] */
+  sections: [Point, Point][];
+  height: number;
+  /** Whether the way ends inside the building at its first or last section, so a wall closes the room there */
+  closed: [boolean, boolean];
+  /**
+   * The room's walls, each from point to point with the room on its right (so, as with the outline's
+   * rings, the solid side is on the left): along its sides and across its closed ends, less where they
+   * are in another room of the building (a way beside it or across it)
+   */
+  walls: [Point, Point][];
 }
 
 export type AreaKind = "water" | "grass" | "forest" | "sand" | "rock" | "pitch" | "paved";
@@ -840,9 +861,11 @@ export interface Passage {
 
 /**
  * Opens the walls of the buildings (and parts reaching the ground) where passages cross them: as wide
- * as the way along the wall, wider where it crosses at a slant.
+ * as the way along the wall, wider where it crosses at a slant. A passage taller than 0 also gets a
+ * room through the building (see PassageRoom).
  */
 export function openPassages(buildings: Building[], passages: Passage[]): void {
+  const roomed = new Set<Building>();
   for (const passage of passages) {
     const reach = bounds(passage.line);
     for (const b of buildings) {
@@ -867,8 +890,200 @@ export function openPassages(buildings: Building[], passages: Passage[]): void {
           }
         }
       }
+      if (passage.height > 0) {
+        const rooms = roomsThrough(b.polygon, passage);
+        if (rooms.length > 0) {
+          (b.passageRooms ??= []).push(...rooms);
+          roomed.add(b);
+        }
+      }
     }
   }
+  for (const b of roomed) {
+    setRoomWalls(b.passageRooms ?? []);
+  }
+}
+
+/** A room's side turning at a corner of its way reaches at most this many half-widths from the way */
+const MAX_MITRE = 3;
+/** Places this close along a way (meters) are one (a way's node on a building's outline) */
+const SAME_PLACE_M = 0.01;
+
+/**
+ * The rooms of a passage through a building's polygon: one for each stretch of it inside, from where it
+ * comes in (as wide as its opening in the wall) or starts inside, through its corners, to where it goes
+ * out or ends. Their walls are set by setRoomWalls.
+ */
+function roomsThrough(polygon: Polygon, passage: Passage): PassageRoom[] {
+  const line = dedupe(passage.line);
+  const half = passage.width / 2;
+  // meters along the line to each point, and each segment's unit normal to its left
+  const run = [0];
+  const normals: Point[] = [];
+  for (let k = 0; k + 1 < line.length; k++) {
+    const length = Math.hypot(line[k + 1][0] - line[k][0], line[k + 1][1] - line[k][1]);
+    run.push(run[k] + length);
+    normals.push([-(line[k + 1][1] - line[k][1]) / length, (line[k + 1][0] - line[k][0]) / length]);
+  }
+  if (normals.length === 0) {
+    return [];
+  }
+  const pointAt = (along: number): Point => {
+    let k = 0;
+    while (k + 2 < line.length && run[k + 1] < along) {
+      k++;
+    }
+    const s = (along - run[k]) / (run[k + 1] - run[k]);
+    return [line[k][0] + (line[k + 1][0] - line[k][0]) * s, line[k][1] + (line[k + 1][1] - line[k][1]) * s];
+  };
+
+  // where sections go across the way: its points (mitred at a corner) and where it crosses the outline
+  const sections: { along: number; section: [Point, Point]; crossing: boolean }[] = [];
+  for (let i = 0; i < line.length; i++) {
+    const [before, after] = [normals[Math.max(0, i - 1)], normals[Math.min(normals.length - 1, i)]];
+    const sum = Math.hypot(before[0] + after[0], before[1] + after[1]);
+    const mitre: Point = sum < 1e-9 ? after : [(before[0] + after[0]) / sum, (before[1] + after[1]) / sum];
+    const reach = Math.min(half / Math.max(1e-9, mitre[0] * after[0] + mitre[1] * after[1]), half * MAX_MITRE);
+    const p = line[i];
+    sections.push({
+      along: run[i],
+      section: [
+        [p[0] + mitre[0] * reach, p[1] + mitre[1] * reach],
+        [p[0] - mitre[0] * reach, p[1] - mitre[1] * reach],
+      ],
+      crossing: false,
+    });
+  }
+  for (const ring of [polygon.outer, ...polygon.holes]) {
+    for (let i = 0; i < ring.length; i++) {
+      const [a, c] = [ring[i], ring[(i + 1) % ring.length]];
+      const wall = Math.hypot(c[0] - a[0], c[1] - a[1]);
+      for (let k = 0; k + 1 < line.length; k++) {
+        const hit = crossing(a, c, line[k], line[k + 1], passage.width);
+        if (hit && wall > 1e-9) {
+          // across the opening along the wall, its ends on the way's left and right
+          const x: Point = [a[0] + (c[0] - a[0]) * hit.at, a[1] + (c[1] - a[1]) * hit.at];
+          const [ue, un] = [((c[0] - a[0]) / wall) * hit.half, ((c[1] - a[1]) / wall) * hit.half];
+          const leftward = ue * normals[k][0] + un * normals[k][1] > 0;
+          const [ahead, back]: Point[] = [
+            [x[0] + ue, x[1] + un],
+            [x[0] - ue, x[1] - un],
+          ];
+          const along = run[k] + Math.hypot(x[0] - line[k][0], x[1] - line[k][1]);
+          sections.push({ along, section: leftward ? [ahead, back] : [back, ahead], crossing: true });
+        }
+      }
+    }
+  }
+  // one section at a place, a crossing rather than a point of the way on the outline
+  sections.sort((s, t) => s.along - t.along || Number(t.crossing) - Number(s.crossing));
+  const places = sections.filter((s, i) => i === 0 || s.along - sections[i - 1].along > SAME_PLACE_M);
+
+  const rooms: PassageRoom[] = [];
+  let room: PassageRoom | undefined;
+  for (let j = 0; j + 1 < places.length; j++) {
+    if (pointInPolygon(pointAt((places[j].along + places[j + 1].along) / 2), polygon)) {
+      room ??= { sections: [places[j].section], height: passage.height, closed: [!places[j].crossing, false], walls: [] };
+      room.sections.push(places[j + 1].section);
+      room.closed[1] = !places[j + 1].crossing;
+    } else if (room) {
+      rooms.push(room);
+      room = undefined;
+    }
+  }
+  if (room) {
+    rooms.push(room);
+  }
+  return rooms;
+}
+
+/**
+ * Sets the walls of a building's passage rooms: along both sides of each, and across its closed ends,
+ * less where they are in another room (a way beside it or across it: one space).
+ */
+function setRoomWalls(rooms: PassageRoom[]): void {
+  const quads = rooms.map((room) =>
+    room.sections.slice(1).map(([left, right], i): Point[] => [room.sections[i][0], room.sections[i][1], right, left]),
+  );
+  rooms.forEach((room, r) => {
+    const { sections, closed } = room;
+    const last = sections.length - 1;
+    const walls: [Point, Point][] = [];
+    if (closed[0]) {
+      walls.push([sections[0][1], sections[0][0]]);
+    }
+    for (let i = 0; i < last; i++) {
+      walls.push([sections[i][0], sections[i + 1][0]]);
+    }
+    if (closed[1]) {
+      walls.push([sections[last][0], sections[last][1]]);
+    }
+    for (let i = last; i > 0; i--) {
+      walls.push([sections[i][1], sections[i - 1][1]]);
+    }
+    const others = quads.filter((_, o) => o !== r).flat();
+    room.walls = walls.flatMap(([a, b]) => {
+      const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const spans = others.map((quad) => spanInside(a, b, quad)).filter((span) => span !== undefined);
+      return spansLeft(spans)
+        .filter(([t0, t1]) => (t1 - t0) * length > SAME_PLACE_M)
+        .map(([t0, t1]): [Point, Point] => [
+          [a[0] + (b[0] - a[0]) * t0, a[1] + (b[1] - a[1]) * t0],
+          [a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1],
+        ]);
+    });
+  });
+}
+
+/**
+ * The span (0 .. 1) of the segment a -> b in a convex polygon or on its edges (within SAME_PLACE_M), or
+ * undefined.
+ */
+function spanInside(a: Point, b: Point, polygon: Point[]): [number, number] | undefined {
+  let area = 0;
+  for (let i = 0; i < polygon.length; i++) {
+    const [p, q] = [polygon[i], polygon[(i + 1) % polygon.length]];
+    area += p[0] * q[1] - q[0] * p[1];
+  }
+  if (Math.abs(area) < 1e-9) {
+    return undefined;
+  }
+  let [t0, t1] = [0, 1];
+  for (let i = 0; i < polygon.length; i++) {
+    const [p, q] = [polygon[i], polygon[(i + 1) % polygon.length]];
+    const length = Math.hypot(q[0] - p[0], q[1] - p[1]);
+    if (length < 1e-9) {
+      continue;
+    }
+    // how far inside the edge's line a point is (meters), and a little more
+    const inside = (x: Point) => (Math.sign(area) * ((q[0] - p[0]) * (x[1] - p[1]) - (q[1] - p[1]) * (x[0] - p[0]))) / length + SAME_PLACE_M;
+    const [fa, fb] = [inside(a), inside(b)];
+    if (fa < 0 && fb < 0) {
+      return undefined;
+    }
+    if (fa < 0) {
+      t0 = Math.max(t0, fa / (fa - fb));
+    } else if (fb < 0) {
+      t1 = Math.min(t1, fa / (fa - fb));
+    }
+  }
+  return t0 < t1 ? [t0, t1] : undefined;
+}
+
+/** What is left of 0 .. 1 without the spans */
+function spansLeft(spans: [number, number][]): [number, number][] {
+  const left: [number, number][] = [];
+  let at = 0;
+  for (const [t0, t1] of spans.sort((s, t) => s[0] - t[0])) {
+    if (t0 > at) {
+      left.push([at, t0]);
+    }
+    at = Math.max(at, t1);
+  }
+  if (at < 1) {
+    left.push([at, 1]);
+  }
+  return left;
 }
 
 /**
