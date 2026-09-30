@@ -43,6 +43,11 @@ export interface Road {
   sidewalks?: Sidewalks;
   /** Walkways: footway=* value, e.g. sidewalk (beside a street) or crossing */
   footway?: string;
+  /** foot=* and bicycle=* values, e.g. designated on a cycleway shared with people walking, no, use_sidepath */
+  foot?: string;
+  bicycle?: string;
+  /** A way shared by people walking and cycling: true when each has a side of its own (segregated=yes) */
+  segregated?: boolean;
   line: Point[];
   /** Bridges: deck height (meters above sea level) at every point of line, when heights are known */
   deck?: number[];
@@ -58,6 +63,8 @@ export interface Road {
    * directions together, at every point of line; unset where no one walks (see footfall.ts)
    */
   footfall?: number[];
+  /** People cycling along the way on an average day of the year, as footfall (see footfall.ts) */
+  cycling?: number[];
 }
 
 export type Sidewalks = "both" | "left" | "right" | "none" | "separate";
@@ -666,6 +673,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
           ...optionalName(road),
           ...oneway(road),
           ...(walkway ? (road.footway ? { footway: road.footway } : {}) : sidewalks(road)),
+          ...access(road),
           line: points,
         };
         features.roads.push(way);
@@ -1566,6 +1574,15 @@ function oneway(tags: Tags): { oneway?: 1 | -1 } {
     return { oneway: 1 };
   }
   return {};
+}
+
+/** Who may walk and cycle on a way: foot=*, bicycle=* and segregated=* */
+export function access(tags: Tags): { foot?: string; bicycle?: string; segregated?: boolean } {
+  return {
+    ...(tags.foot && { foot: tags.foot }),
+    ...(tags.bicycle && { bicycle: tags.bicycle }),
+    ...(tags.segregated === "yes" ? { segregated: true } : tags.segregated === "no" ? { segregated: false } : {}),
+  };
 }
 
 /** A road's sidewalks from sidewalk=*, sidewalk:both=* or sidewalk:left=* and sidewalk:right=* */

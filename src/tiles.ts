@@ -115,12 +115,13 @@ export function cutIntoTiles(features: MapFeatures, keys: TileKey[], size: numbe
   for (const road of features.roads) {
     for (const tile of touched(road.line)) {
       for (const line of clipPolyline(road.line, tileRect(tile, size))) {
-        const footfall = road.footfall;
+        const { footfall, cycling } = road;
         tile.roads.push({
           ...road,
           line,
           ...clippedDeck(road, line),
           ...(footfall && { footfall: line.map((p) => Math.round(deckAt(road.line, footfall, p))) }),
+          ...(cycling && { cycling: line.map((p) => Math.round(deckAt(road.line, cycling, p))) }),
         } satisfies Road);
       }
     }

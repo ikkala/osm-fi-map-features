@@ -1,21 +1,26 @@
-// How many people walk along each way on an average day of the year (footfall), on every point of its
-// line. Counted where a city has counts (around the centre of Tampere, some 430 current results of the
-// city's pedestrian counts), and estimated elsewhere from what is around: shops, restaurants and offices
-// draw people, homes send them out, and the kind of way decides how many of them use it. A centre full of
-// businesses gets thousands a day on its sidewalks, a suburb's footways a few hundred.
+// How many people walk (footfall) and cycle (cycling) along each way on an average day of the year, on
+// every point of its line. Counted where a city has counts (around the centre of Tampere, some 430 current
+// results of the city's pedestrian and cycling counts), and estimated elsewhere from what is around:
+// shops, restaurants and offices draw people, homes send them out, and the kind of way decides how many of
+// them use it. A centre full of businesses gets thousands a day on its sidewalks, a suburb's footways a few
+// hundred.
 //
 // The estimate is kind × (base + scale × draw), where draw is the businesses and doors near the point,
-// each weighed down with its distance. With counts, base and scale are fitted to them (least squares of
-// the logarithms), and around each count the estimate is pulled towards it: the ratio of count to
-// estimate spreads to the ways within COUNT_REACH_M, most along the counted way itself. Without counts,
-// base and scale are the ones fitted to Tampere's.
+// each weighed down with its distance, and kind is the way's for walking or for cycling. With counts, base
+// and scale are fitted to them (least squares of the logarithms), and around each count the estimate is
+// pulled towards it: the ratio of count to estimate spreads to the ways within COUNT_REACH_M, most along
+// the counted way itself. Without counts, base and scale are the ones fitted to Tampere's.
 //
-// A count is of one day; it is turned into an average day with FOOTFALL_MONTHS and FOOTFALL_WEEKDAYS, which
-// also turn footfall back into a given day. FOOTFALL_HOURS tells how a day's walking spreads over its hours.
+// A count is of one day; it is turned into an average day with the months' and weekdays' tables of its
+// kind (FOOTFALL_MONTHS, CYCLING_MONTHS, ...), which also turn footfall and cycling back into a given day.
+// The hours' tables tell how a day spreads over its hours. Cycling varies much more with the season:
+// in Finnish cities winter has about a third of summer's cycling.
 import { distanceToSegment, nearestOnSegment, type Point } from "./geometry.ts";
 import { NOT_FOR_VEHICLES, type Building, type Road } from "./osm.ts";
 
-/** A pedestrian count at a point, turned into an average day (see averageDay) */
+export type Mode = "walking" | "cycling";
+
+/** A count at a point, turned into an average day (see averageDay) */
 export interface FootfallCount {
   point: Point;
   /** People a day */
@@ -45,16 +50,34 @@ export const FOOTFALL_HOURS = {
     0.075, 0.065, 0.05, 0.04, 0.03, 0.025, 0.016,
   ],
 };
+/**
+ * Cycling's months: winter about a third of summer, August some four and a half times January (Helsinki's
+ * automatic counters show the same shape)
+ */
+export const CYCLING_MONTHS = [0.35, 0.4, 0.6, 1.0, 1.55, 1.5, 1.25, 1.6, 1.5, 1.05, 0.75, 0.45];
+/** Cycling's weekdays: more commuting on weekdays, less at weekends */
+export const CYCLING_WEEKDAYS = [1.1, 1.1, 1.1, 1.1, 1.05, 0.8, 0.75];
+/** Cycling's hours: sharper commuting peaks on weekdays, the middle of the day at weekends */
+export const CYCLING_HOURS = {
+  weekday: [
+    0.004, 0.002, 0.001, 0.001, 0.002, 0.008, 0.03, 0.08, 0.075, 0.045, 0.04, 0.045, 0.06, 0.06, 0.07, 0.085, 0.1, 0.08,
+    0.07, 0.05, 0.04, 0.03, 0.015, 0.007,
+  ],
+  weekend: [
+    0.006, 0.004, 0.002, 0.001, 0.001, 0.002, 0.006, 0.015, 0.03, 0.055, 0.08, 0.09, 0.095, 0.095, 0.095, 0.09, 0.08,
+    0.07, 0.06, 0.045, 0.035, 0.025, 0.012, 0.006,
+  ],
+};
 /** An afternoon peak hour (15-17), for counts that have only that, is about this share of the day */
-export const PEAK_HOUR_SHARE = 0.105;
+export const PEAK_HOUR_SHARE: Record<Mode, number> = { walking: 0.105, cycling: 0.1 };
 
 /** How many walk on a way of a kind compared with a footway in the same surroundings; other kinds: none */
-const KIND_FACTORS: Record<string, number> = {
+const WALKING_FACTORS: Record<string, number> = {
   pedestrian: 1.6,
   living_street: 1.0,
   footway: 1.0,
   steps: 0.6,
-  // in Finland mostly shared with people walking, and the main routes between districts
+  // in Finland mostly shared with people walking (foot=designated), and the main routes between districts
   cycleway: 1.0,
   path: 0.35,
   track: 0.2,
@@ -67,10 +90,39 @@ const KIND_FACTORS: Record<string, number> = {
   unclassified: 0.6,
   service: 0.3,
 };
+/** A cycleway without foot=designated, yes or permissive is mostly for bicycles: this many walk on it */
+const CYCLEWAY_ONLY_WALKING = 0.3;
+/**
+ * How many cycle on a way of a kind compared with a cycleway in the same surroundings; other kinds (steps,
+ * motorways, trunk roads and their links): none. On streets they ride in the carriageway.
+ */
+const CYCLING_FACTORS: Record<string, number> = {
+  cycleway: 1.0,
+  // in Finland only children may cycle on a footway, unless it is shared (bicycle=yes or designated)
+  footway: 0.1,
+  pedestrian: 0.2,
+  path: 0.4,
+  track: 0.3,
+  bridleway: 0.1,
+  living_street: 0.5,
+  residential: 0.6,
+  unclassified: 0.5,
+  tertiary: 0.7,
+  secondary: 0.6,
+  primary: 0.5,
+  service: 0.3,
+};
+/** A footway or a pedestrian street shared with bicycles (bicycle=yes or designated) */
+const SHARED_CYCLING = 0.7;
+/** A street with its sidewalks drawn apart often has a cycleway beside it too, which takes most of its cyclists */
+const SEPARATE_CYCLING = 0.3;
 /** Roads that have no sidewalks unless OSM says so */
 const WITHOUT_SIDEWALKS = new Set(["motorway", "motorway_link", "trunk", "trunk_link", "primary_link", "secondary_link", "tertiary_link"]);
 /** A road with a sidewalk tagged on it has this factor when its kind has none */
 const TAGGED_SIDEWALK_FACTOR = 0.7;
+/** foot=* and bicycle=* values that keep people walking or cycling off a way */
+const NOT_ALLOWED = new Set(["no", "use_sidepath", "private"]);
+const ALLOWED = new Set(["yes", "designated", "permissive"]);
 
 /** Businesses draw people from this far (m), and homes' doors send them this far */
 const BUSINESS_REACH_M = 200;
@@ -80,7 +132,10 @@ const BUSINESS_WEIGHTS: Record<string, number> = { shop: 1, amenity: 1.5, office
 /** A door draws this much of a business */
 const DOOR_WEIGHT = 0.15;
 /** Base and scale when there are no counts to fit them to: fitted to Tampere's in 2026 */
-export const DEFAULT_FOOTFALL_MODEL = { base: 330, scale: 21 };
+export const DEFAULT_MODELS: Record<Mode, { base: number; scale: number }> = {
+  walking: { base: 330, scale: 19.2 },
+  cycling: { base: 330, scale: 0.5 },
+};
 
 /** A count is on a way this close to it (m) */
 const COUNT_MATCH_M = 25;
@@ -105,7 +160,7 @@ const SEPARATE_SIDEWALK_M = 8;
 const SEPARATE_SIDEWALK_SHARE = 0.5;
 
 export interface FootfallResult {
-  /** Ways with footfall */
+  /** Ways with footfall (or cycling) */
   ways: number;
   /** Counts on a way, of all */
   matched: number;
@@ -124,35 +179,45 @@ export interface FootfallResult {
  * and doors (after businesses.ts and entrances.ts). Roads where no one walks get none.
  */
 export function estimateFootfall(roads: Road[], buildings: Building[], counts: FootfallCount[]): FootfallResult {
-  const { factors, separate } = kindFactors(roads);
+  return estimate(roads, buildings, counts, "walking");
+}
+
+/** Sets the cycling of the roads, as estimateFootfall the footfall. Roads where no one cycles get none. */
+export function estimateCycling(roads: Road[], buildings: Building[], counts: FootfallCount[]): FootfallResult {
+  return estimate(roads, buildings, counts, "cycling");
+}
+
+function estimate(roads: Road[], buildings: Building[], counts: FootfallCount[], mode: Mode): FootfallResult {
+  const { factors, separate } = kindFactors(roads, mode);
   const draw = drawField(buildings);
-  const walked = roads.filter((road) => (factors.get(road) ?? 0) > 0);
+  const used = roads.filter((road) => (factors.get(road) ?? 0) > 0);
   const index = new SegmentGrid(COUNT_MATCH_M);
-  for (const road of walked) {
+  for (const road of used) {
     index.add(road);
   }
 
   // each count on its way: the draw and the kind factor there, and the count as on that way
-  const matches: { count: FootfallCount; road: Road; at: Point; a: Point; b: Point; draw: number; factor: number; daily: number }[] = [];
+  const matches: { road: Road; at: Point; a: Point; b: Point; draw: number; factor: number; daily: number }[] = [];
   for (const count of counts) {
     const nearest = index.nearest(count.point, COUNT_MATCH_M);
     if (!nearest) {
       continue;
     }
     const factor = factors.get(nearest.road) ?? 0;
-    // a street's footfall is on both its sidewalks, so a count on one of them is about half of it
+    // a street's footfall is on both its sidewalks, so a count on one of them is about half of it; the same
+    // for the cycling of a street with its cycle paths beside it not drawn
     const street = !NOT_FOR_VEHICLES.has(nearest.road.kind) && nearest.road.kind !== "living_street";
     const sides = nearest.road.sidewalks === "left" || nearest.road.sidewalks === "right" ? 1 : 2;
     const daily = street && !count.whole ? count.daily * sides : count.daily;
-    matches.push({ count, road: nearest.road, at: nearest.at, a: nearest.a, b: nearest.b, draw: draw(nearest.at), factor, daily });
+    matches.push({ road: nearest.road, at: nearest.at, a: nearest.a, b: nearest.b, draw: draw(nearest.at), factor, daily });
   }
 
-  const model = matches.length >= 5 ? fitModel(matches) : DEFAULT_FOOTFALL_MODEL;
-  const estimate = (d: number, factor: number) => factor * (model.base + model.scale * d);
-  const residuals = matches.map((m) => ({ ...m, log: Math.log(Math.max(m.daily, 1) / estimate(m.draw, m.factor)) }));
+  const model = matches.length >= 5 ? fitModel(matches, DEFAULT_MODELS[mode]) : DEFAULT_MODELS[mode];
+  const estimated = (d: number, factor: number) => factor * (model.base + model.scale * d);
+  const residuals = matches.map((m) => ({ ...m, log: Math.log(Math.max(m.daily, 1) / estimated(m.draw, m.factor)) }));
   const withinTwo = residuals.filter((r) => Math.abs(r.log) <= Math.LN2).length;
 
-  const footfallAt = (road: Road, p: Point) => {
+  const valueAt = (road: Road, p: Point) => {
     let pull = 0;
     let weight = ESTIMATE_WEIGHT;
     for (const r of residuals) {
@@ -163,14 +228,19 @@ export function estimateFootfall(roads: Road[], buildings: Building[], counts: F
         weight += w;
       }
     }
-    return Math.round(estimate(draw(p), factors.get(road) ?? 0) * Math.exp(pull / weight));
+    return Math.round(estimated(draw(p), factors.get(road) ?? 0) * Math.exp(pull / weight));
   };
-  for (const road of walked) {
-    road.footfall = road.line.map((p) => footfallAt(road, p));
+  for (const road of used) {
+    const values = road.line.map((p) => valueAt(road, p));
+    if (mode === "walking") {
+      road.footfall = values;
+    } else {
+      road.cycling = values;
+    }
   }
-  const atCounts = matches.filter((m) => Math.abs(Math.log(Math.max(m.daily, 1) / Math.max(footfallAt(m.road, m.at), 1))) <= Math.log(1.5)).length;
+  const atCounts = matches.filter((m) => Math.abs(Math.log(Math.max(m.daily, 1) / Math.max(valueAt(m.road, m.at), 1))) <= Math.log(1.5)).length;
   return {
-    ways: walked.length,
+    ways: used.length,
     matched: matches.length,
     counts: counts.length,
     model,
@@ -194,8 +264,10 @@ function goesOn(count: { road: Road; a: Point; b: Point }, road: Road, p: Point)
 }
 
 /** A count of a day turned into the year's average day */
-export function averageDay(daily: number, date: Date): number {
-  return daily / (FOOTFALL_MONTHS[date.getUTCMonth()] * FOOTFALL_WEEKDAYS[(date.getUTCDay() + 6) % 7]);
+export function averageDay(daily: number, date: Date, mode: Mode = "walking"): number {
+  const months = mode === "walking" ? FOOTFALL_MONTHS : CYCLING_MONTHS;
+  const weekdays = mode === "walking" ? FOOTFALL_WEEKDAYS : CYCLING_WEEKDAYS;
+  return daily / (months[date.getUTCMonth()] * weekdays[(date.getUTCDay() + 6) % 7]);
 }
 
 /** 1 at the point, falling smoothly to 0 at reach */
@@ -205,10 +277,11 @@ function falloff(distance: number, reach: number): number {
 }
 
 /**
- * The kind factor of every road, 0 where no one walks: streets whose sidewalks are ways of their own
- * (tagged so, or found beside them) or that have none, and tunnels for vehicles
+ * The kind factor of every road for walking or cycling, 0 where no one does: where foot=* or bicycle=*
+ * says no, tunnels for vehicles, and for walking streets whose sidewalks are ways of their own (tagged so,
+ * or found beside them) or that have none
  */
-function kindFactors(roads: Road[]): { factors: Map<Road, number>; separate: number } {
+function kindFactors(roads: Road[], mode: Mode): { factors: Map<Road, number>; separate: number } {
   const sidewalkWays = new SegmentGrid(SEPARATE_SIDEWALK_M * 2);
   for (const road of roads) {
     if (road.footway === "sidewalk") {
@@ -219,18 +292,39 @@ function kindFactors(roads: Road[]): { factors: Map<Road, number>; separate: num
   let separate = 0;
   for (const road of roads) {
     const walkway = NOT_FOR_VEHICLES.has(road.kind);
-    let factor = KIND_FACTORS[road.kind] ?? 0;
-    if (!walkway) {
-      if (road.tunnel || road.sidewalks === "none" || road.sidewalks === "separate") {
+    const access = mode === "walking" ? road.foot : road.bicycle;
+    let factor = mode === "walking" ? (WALKING_FACTORS[road.kind] ?? 0) : (CYCLING_FACTORS[road.kind] ?? 0);
+    if (access !== undefined && NOT_ALLOWED.has(access)) {
+      factor = 0;
+    } else if (mode === "walking" && road.kind === "cycleway" && !(access !== undefined && ALLOWED.has(access))) {
+      factor = CYCLEWAY_ONLY_WALKING;
+    } else if (mode === "cycling" && (road.kind === "footway" || road.kind === "pedestrian") && access !== undefined && ALLOWED.has(access)) {
+      factor = SHARED_CYCLING;
+    }
+    if (!walkway && factor > 0) {
+      const beside = () => {
+        const found = road.sidewalks === undefined && !WITHOUT_SIDEWALKS.has(road.kind) && besideSidewalks(road, sidewalkWays);
+        if (found) {
+          separate++;
+        }
+        return found;
+      };
+      if (road.tunnel) {
+        factor = 0;
+      } else if (mode === "cycling") {
+        if (road.sidewalks === "separate" || beside()) {
+          factor *= SEPARATE_CYCLING;
+        }
+      } else if (road.sidewalks === "none" || road.sidewalks === "separate") {
         factor = 0;
       } else if (road.sidewalks !== undefined) {
         factor = (factor || TAGGED_SIDEWALK_FACTOR) * (road.sidewalks === "both" ? 1 : 0.5);
-      } else if (WITHOUT_SIDEWALKS.has(road.kind)) {
+      } else if (WITHOUT_SIDEWALKS.has(road.kind) || beside()) {
         factor = 0;
-      } else if (factor > 0 && besideSidewalks(road, sidewalkWays)) {
-        factor = 0;
-        separate++;
       }
+    } else if (!walkway && mode === "walking" && road.sidewalks !== undefined && road.sidewalks !== "none" && road.sidewalks !== "separate" && !road.tunnel) {
+      // a road without sidewalks by its kind, with one tagged
+      factor = TAGGED_SIDEWALK_FACTOR * (road.sidewalks === "both" ? 1 : 0.5);
     }
     factors.set(road, factor);
   }
@@ -294,20 +388,20 @@ function drawField(buildings: Building[]): (p: Point) => number {
 }
 
 /** Base and scale that fit the counts best: least squares of the logarithms, searched on a grid */
-function fitModel(matches: { draw: number; factor: number; daily: number }[]): { base: number; scale: number } {
-  let best = DEFAULT_FOOTFALL_MODEL;
+function fitModel(matches: { draw: number; factor: number; daily: number }[], fallback: { base: number; scale: number }): { base: number; scale: number } {
+  let best = fallback;
   let bestError = Infinity;
   for (let b = 0; b <= 40; b++) {
     const base = 2 * 1.2 ** b;
     for (let s = 0; s <= 40; s++) {
-      const scale = 2 * 1.2 ** s;
+      const scale = 0.5 * 1.2 ** s;
       let error = 0;
       for (const m of matches) {
         error += Math.log(Math.max(m.daily, 1) / (m.factor * (base + scale * m.draw))) ** 2;
       }
       if (error < bestError) {
         bestError = error;
-        best = { base: Math.round(base), scale: Math.round(scale) };
+        best = { base: Math.round(base), scale: Math.round(scale * 10) / 10 };
       }
     }
   }

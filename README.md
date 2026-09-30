@@ -219,11 +219,22 @@ together (on both sidewalks of a street), at each point of its line. Streets hav
 `sidewalk:both`, `sidewalk:left` and `sidewalk:right` (both, left, right, none or separate), and walkways their
 `footway=*` (sidewalk, crossing, ...). No one walks on a street whose sidewalks are `none` or `separate` or run
 beside it as `footway=sidewalk` ways for half its length (in central Tampere about 600 streets), on motorways, trunk
-roads and links unless they have a sidewalk tagged, or on roads in tunnels. Elsewhere footfall is estimated as
-`kind × (base + scale × draw)`: `draw` adds up the businesses near the point (restaurants and cafes 1.5, shops 1,
-offices 0.5, others 0.7; falling off to nothing at 200 m) and the other doors (0.15 each, to nothing at 120 m), and
-`kind` is 1.6 on pedestrian streets, 1 on footways, cycleways and main streets, 0.8 on residential streets, 0.6 on
-steps and unclassified roads, 0.35 on paths, 0.3 on service roads and 0.2 on tracks.
+roads and links unless they have a sidewalk tagged, on roads in tunnels, or where `foot=no`, `use_sidepath` or
+`private`. Elsewhere footfall is estimated as `kind × (base + scale × draw)`: `draw` adds up the businesses near
+the point (restaurants and cafes 1.5, shops 1, offices 0.5, others 0.7; falling off to nothing at 200 m) and the
+other doors (0.15 each, to nothing at 120 m), and `kind` is 1.6 on pedestrian streets, 1 on footways, main
+streets and cycleways shared with people walking (`foot=designated`, `yes` or `permissive`, as most in Finland),
+0.8 on residential streets, 0.6 on steps and unclassified roads, 0.35 on paths, 0.3 on service roads and other
+cycleways, and 0.2 on tracks.
+
+Every way people cycle on gets `cycling` the same way, people cycling along it a day, with `kind` for cycling: 1 on
+cycleways, 0.7 on footways and pedestrian streets shared with bicycles (`bicycle=yes`, `designated` or
+`permissive`), 0.1 and 0.2 on other footways and pedestrian streets (in Finland only children may cycle there), 0.4
+on paths, 0.3 on tracks, and on streets, in their carriageway, 0.7 on tertiary, 0.6 on secondary and residential,
+0.5 on primary, unclassified and living streets and 0.3 on service roads; a street with its sidewalks drawn apart
+gets 30 % of that (a cycleway beside it takes most). No one cycles on steps, motorways, trunk roads and their links,
+roads in tunnels, or where `bicycle=no`, `use_sidepath` or `private`. Ways have their `foot`, `bicycle` and
+`segregated` (`segregated=yes`: people walking and cycling each have a side of their own; OSM does not tell which).
 
 Where there are counts, `base` and `scale` are fitted to them and the estimate around each count is pulled towards
 it, fading out 80 m away: at a count its way gets about the count (the counts near each other averaged), and so do
@@ -231,15 +242,22 @@ the ways of its name and the walkways of its kind in line with it (OSM cuts a si
 other ways get a third of the pull. Tampere's are the city's
 [pedestrian and cycling counts](https://data.tampere.fi/data/dataset/tampereen-jalankulun-ja-pyorailyn-liikennemaaria)
 (WFS layer `liikenneverkot:liikennemaarat_jalankulku_pyoraily_counter_point_TM35`): the current results
-(`tulos_vanhentunut=ei`) along ways (`JKPP`, `Koko poikkileikkaus`), a day's count or the afternoon peak hour's
-(taken as 10.5 % of the day), each on the nearest way within 25 m. A count on one sidewalk of a street is doubled
-for the street. A count is of one day, so it is divided by `FOOTFALL_MONTHS` and `FOOTFALL_WEEKDAYS` for its date
-(a guess at how Nordic cities walk: winter months 0.85, summer 1.1, Sunday 0.75), and multiplying by them turns
-footfall into a given day; `FOOTFALL_HOURS` spreads a weekday's or a weekend day's walking over its hours. Around
-the centre of Tampere (September 2026) 432 counts fit `330 + 21 × draw`, which is also the default without counts,
-and the estimate alone is within a factor of two of 54 % of them; pulled towards the counts, the counted ways are
-within a factor of 1.5 of 84 %. Centre sidewalks get 2 000–9 500 a day, suburban footways a few hundred, paths
-and service roads less.
+(`tulos_vanhentunut=ei`) along ways (`JKPP`, `Koko poikkileikkaus`), people walking (`_jk`) and cycling (`_pp`), a
+day's count or the afternoon peak hour's (taken as 10.5 % of the day walking, 10 % cycling), each on the nearest way
+within 25 m. A count on one sidewalk of a street is doubled for the street. A count is of one day, so it is
+divided by the months' and weekdays' tables for its date, and multiplying by them turns footfall and cycling into a
+given day; the hours' tables spread a weekday's or a weekend day's over its hours. For walking, `FOOTFALL_MONTHS`
+and `FOOTFALL_WEEKDAYS` are a guess at how Nordic cities walk (winter months 0.85, summer 1.1, Sunday 0.75). Cycling
+varies much more: `CYCLING_MONTHS` has winter at about a third of summer (January 0.35, August 1.6), as Helsinki's
+automatic counters show, `CYCLING_WEEKDAYS` more on weekdays (1.1) than at weekends (0.8, 0.75), and `CYCLING_HOURS`
+sharper commuting peaks.
+
+Around the centre of Tampere (September 2026) 432 walking counts fit `330 + 19.2 × draw` and 445 cycling counts
+`330 + 0.5 × draw` (cycling hardly depends on the businesses around), which are also the defaults without counts. The
+estimate alone is within a factor of two of 55 % of the walking counts and 43 % of the cycling ones; pulled towards
+the counts, the counted ways are within a factor of 1.5 of 84 % and 70 %. Centre sidewalks get 2 000–9 500 people
+walking a day, suburban footways a few hundred, paths and service roads less; the cycleways and streets a few
+hundred to a few thousand people cycling.
 
 ## Licences
 
@@ -252,8 +270,8 @@ The data it builds is not:
   altered and combined with other data, a Derivative Database in ODbL terms: when you make it, or something
   produced from it such as a rendered map, public, you must credit OpenStreetMap and offer the database, or the way it
   was made, under the ODbL. This package is that way for maps built with it; say which commit you used.
-- Elevation model and orthophoto © Maanmittauslaitos, building and tree registers and pedestrian counts © City of
-  Tampere, all under
+- Elevation model and orthophoto © Maanmittauslaitos, building and tree registers and pedestrian and cycling counts ©
+  City of Tampere, all under
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): credit them.
 
 `MapInfo.attributions` lists the credits for the data a build used.

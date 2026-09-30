@@ -87,7 +87,7 @@ test("parseCounts keeps current counts along ways, as average days", () => {
   const current = { tulos_vanhentunut: "ei", paiva: "2026-06-10Z" };
   const parsed = parseCounts({
     features: [
-      count({ ...current, kohteen_tyyppi: "JKPP", vuorokausi_jk: 1155, iltahuipputunti_jk: 120 }),
+      count({ ...current, kohteen_tyyppi: "JKPP", vuorokausi_jk: 1155, iltahuipputunti_jk: 120, vuorokausi_pp: 1650 }),
       // only the afternoon peak hour
       count({ ...current, kohteen_tyyppi: "Koko poikkileikkaus", vuorokausi_jk: null, iltahuipputunti_jk: 121.275 }),
       count({ ...current, kohteen_tyyppi: "Suojatie", vuorokausi_jk: 500 }),
@@ -95,9 +95,9 @@ test("parseCounts keeps current counts along ways, as average days", () => {
       count({ ...current, kohteen_tyyppi: "JKPP", vuorokausi_jk: null, iltahuipputunti_jk: null }),
     ],
   });
-  // a Wednesday in June: 1.1 × 1.05
+  // a Wednesday in June: walking 1.1 × 1.05, cycling 1.5 × 1.1
   assert.deepEqual(parsed, [
-    { longitude: 23.7, latitude: 61.5, daily: 1000, whole: false },
-    { longitude: 23.7, latitude: 61.5, daily: 1000, whole: true },
+    { longitude: 23.7, latitude: 61.5, walking: 1000, cycling: 1000, whole: false },
+    { longitude: 23.7, latitude: 61.5, walking: 1000, whole: true },
   ]);
 });

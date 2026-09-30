@@ -18,7 +18,7 @@ import { businessQuery, parseBusinesses, placeBusinesses } from "./businesses.ts
 import { coverCutTunnels } from "./cuts.ts";
 import { ELEVATION_ATTRIBUTION, fetchElevation, sampleElevation, toTm35fin } from "./elevation.ts";
 import { assignEntrances, entranceQuery, guessEntrances, parseEntrances } from "./entrances.ts";
-import { estimateFootfall, type FootfallCount } from "./footfall.ts";
+import { estimateCycling, estimateFootfall, type FootfallCount, type FootfallResult } from "./footfall.ts";
 import { mergeTrees, plantForests } from "./forests.ts";
 import { simplifyLine, type Point } from "./geometry.ts";
 import { placeLamps } from "./lamps.ts";
@@ -288,24 +288,37 @@ export class MapBuilder {
     // TODO: entrances that are steps up or down from the street, and buildings with entrances on several
     // floors (a slope with an entrance at each level), stand at the wrong one.
 
-    // people walking on the ways, after the businesses and doors that draw them: counted in Tampere (the
-    // counts are empty elsewhere), estimated elsewhere
-    let counts: FootfallCount[] = [];
+    // people walking and cycling on the ways, after the businesses and doors that draw them: counted in
+    // Tampere (the counts are empty elsewhere), estimated elsewhere
+    const walkingCounts: FootfallCount[] = [];
+    const cyclingCounts: FootfallCount[] = [];
     try {
       const { counts: register, cached: countsCached } = await fetchCounts(fetchBox, { cache, refresh });
-      counts = register.map(({ latitude, longitude, ...count }) => ({ point: toMeters(latitude, longitude), ...count }));
-      logger.log(`Tampere pedestrian counts: ${counts.length} current counts along ways (${countsCached ? "cached" : "fetched"})`);
+      for (const { latitude, longitude, walking, cycling, whole } of register) {
+        const point = toMeters(latitude, longitude);
+        if (walking !== undefined) {
+          walkingCounts.push({ point, daily: walking, whole });
+        }
+        if (cycling !== undefined) {
+          cyclingCounts.push({ point, daily: cycling, whole });
+        }
+      }
+      logger.log(
+        `Tampere counts: ${walkingCounts.length} of people walking and ${cyclingCounts.length} of people cycling along ways ` +
+          `(${countsCached ? "cached" : "fetched"})`,
+      );
     } catch (err) {
-      logger.warn(`warning: no pedestrian counts: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(`warning: no pedestrian or cycling counts: ${err instanceof Error ? err.message : String(err)}`);
     }
-    const footfall = estimateFootfall(features.roads, features.buildings, counts);
-    logger.log(
-      `footfall on ${footfall.ways} ways (${footfall.separate} streets with their sidewalks drawn apart get none); ` +
-        `${footfall.matched} of ${footfall.counts} counts on a way, the estimate ${footfall.model.base} + ${footfall.model.scale} × draw ` +
-        `within a factor of two of ${Math.round(footfall.withinTwo * 100)} % of them, and pulled towards them within 1.5 of ` +
-        `${Math.round(footfall.atCounts * 100)} %`,
-    );
-    if (footfall.matched > 0) {
+    const fitted = (what: string, result: FootfallResult) =>
+      `${what} on ${result.ways} ways; ${result.matched} of ${result.counts} counts on a way, the estimate ${result.model.base} + ` +
+      `${result.model.scale} × draw within a factor of two of ${Math.round(result.withinTwo * 100)} % of them, and pulled ` +
+      `towards them within 1.5 of ${Math.round(result.atCounts * 100)} %`;
+    const footfall = estimateFootfall(features.roads, features.buildings, walkingCounts);
+    logger.log(`${fitted("footfall", footfall)} (${footfall.separate} streets with their sidewalks drawn apart get none)`);
+    const cycling = estimateCycling(features.roads, features.buildings, cyclingCounts);
+    logger.log(fitted("cycling", cycling));
+    if (footfall.matched + cycling.matched > 0) {
       otherAttributions.push(TAMPERE_COUNTS_ATTRIBUTION);
     }
 
