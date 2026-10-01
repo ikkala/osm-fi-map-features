@@ -107,6 +107,11 @@ export interface Building {
   height: number;
   /** The height is a guess (no height or levels in OSM), which better data may replace */
   heightEstimated?: boolean;
+  /**
+   * The height is counted from storeys (building:levels or a building register's) at LEVEL_HEIGHT_M each:
+   * an old building's taller storeys may replace it (see ages.ts)
+   */
+  heightFromLevels?: boolean;
   /** Meters above the ground to the bottom (e.g. a part over a passage) */
   minHeight: number;
   /**
@@ -118,6 +123,8 @@ export interface Building {
   levels?: number;
   /** The building class in a building register (e.g. "0121", blocks of flats in Finland) */
   use?: string;
+  /** The year it was built: start_date, or the completion year in a building register */
+  year?: number;
   /** How the walls' windows are drawn (see WindowStyle); no windows when unset */
   windows?: WindowStyle;
   /** Tagged as no ordinary building (see isSpecial): a tower, a chimney, a church, a monument, ... */
@@ -998,6 +1005,7 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
   }
   // levels say little about how tall an open roof is
   const heightEstimated = height === undefined && (levelCount === undefined || shelter !== undefined);
+  const heightFromLevels = height === undefined && !heightEstimated;
   const area = Math.abs(ringArea(polygon.outer));
   const roof = pitchedRoof(tags, kind, part || shelter !== undefined, polygon, area, levelCount, taggedHeight);
   // roof:levels=0 is a roof without a storey in it, not a flat one
@@ -1009,6 +1017,7 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
     height = levelsTall + (roofHeight ?? (roofLevels ?? 0) * LEVEL_HEIGHT_M);
   }
   const minLevel = number(tags["building:min_level"]);
+  const year = startYear(tags.start_date);
   const minHeight = meters(tags.min_height) ?? (minLevel !== undefined ? minLevel * LEVEL_HEIGHT_M : 0);
   if (height <= minHeight) {
     height = minHeight + LEVEL_HEIGHT_M;
@@ -1026,6 +1035,7 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
     hasParts: false,
     height,
     ...(heightEstimated && { heightEstimated }),
+    ...(heightFromLevels && { heightFromLevels }),
     minHeight,
     ...(wallLevels !== undefined && wallLevels >= 1 && { levels: Math.round(wallLevels) }),
     ...(roof && { roofShape: roof.shape, roofAngle: roof.angle }),
@@ -1033,6 +1043,7 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
     ...(tags["building:colour"] && { colour: tags["building:colour"] }),
     ...(tags["roof:colour"] && { roofColour: tags["roof:colour"] }),
     ...(tags["building:material"] && { material: tags["building:material"] }),
+    ...(year !== undefined && { year }),
     ...(shelter && { shelter }),
     ...(isSpecial(tags) && { special: true }),
     ...optionalName(tags),
@@ -1762,6 +1773,12 @@ export function meters(value: string | undefined): number | undefined {
   }
   const amount = Number(match[1].replace(",", "."));
   return match[2] === "ft" || match[2] === "'" ? amount * 0.3048 : amount;
+}
+
+/** The year of a start_date such as "1965", "1965-05-01" or "1960s"; undefined for "C19", "~1900", ... */
+function startYear(value: string | undefined): number | undefined {
+  const match = value?.match(/^(\d{4})(?:$|-|s$)/);
+  return match ? Number(match[1]) : undefined;
 }
 
 /** Parses a plain number such as "3" or "2.5"; lists like "3;4" use the first value. */

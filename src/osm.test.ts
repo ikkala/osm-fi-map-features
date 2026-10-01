@@ -25,9 +25,9 @@ const response: OverpassResponse = {
     { type: "way", id: 1, tags: { highway: "residential", name: "Pitkä \"katu\"" }, geometry: [at(-50, 10), at(150, 10)] },
     { type: "way", id: 2, tags: { highway: "footway", bridge: "yes", layer: "1" }, geometry: [at(10, 20), at(20, 20)] },
     { type: "way", id: 3, tags: { highway: "proposed" }, geometry: [at(10, 30), at(20, 30)] },
-    { type: "way", id: 4, tags: { building: "apartments", "building:levels": "4", "roof:height": "2" }, geometry: square(10, 40, 20) },
+    { type: "way", id: 4, tags: { building: "apartments", "building:levels": "4", "roof:height": "2", start_date: "1890-05" }, geometry: square(10, 40, 20) },
     { type: "way", id: 5, tags: { "building:part": "yes", height: "12 m" }, geometry: square(10, 40, 20) },
-    { type: "way", id: 6, tags: { building: "shed" }, geometry: square(80, 40, 5) },
+    { type: "way", id: 6, tags: { building: "shed", start_date: "C19" }, geometry: square(80, 40, 5) },
     {
       type: "relation",
       id: 7,
@@ -54,6 +54,9 @@ test("parseOsm reads roads, buildings and multipolygon areas in meters", () => {
   const [house, part, shed] = features.buildings;
   assert.deepEqual([house.height, house.hasParts, house.levels], [4 * 3 + 2, true, 4]);
   assert.deepEqual([part.part, part.height, part.levels], [true, 12, undefined]);
+  // a height counted from building:levels, and the year of start_date when it has one
+  assert.deepEqual([house.heightFromLevels, part.heightFromLevels, shed.heightFromLevels], [true, undefined, undefined]);
+  assert.deepEqual([house.year, part.year, shed.year], [1890, undefined, undefined]);
   // a shed gets a guessed gabled roof on top of its storey
   assert.deepEqual([shed.roofShape, shed.hasParts], ["gabled", false]);
   assert.equal(shed.height.toFixed(2), (3 + 2.5 * Math.tan((27 * Math.PI) / 180)).toFixed(2));

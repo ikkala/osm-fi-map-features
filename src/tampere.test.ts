@@ -21,15 +21,16 @@ test("parseRegister keeps buildings with their storeys and facade material", () 
   const point = (lon: number, lat: number) => ({ type: "Point", coordinates: [lon, lat] });
   const parsed = parseRegister({
     features: [
-      { geometry: point(23.1, 61.1), properties: { TYYPPI: "Rakennus", I_KERRLKM: 4, C_JULKISIVU: "2", C_RAKENNUSLUOKKA: "0121" } },
-      { geometry: point(23.2, 61.2), properties: { TYYPPI: "Rakennus", I_KERRLKM: null, C_JULKISIVU: "7" } },
+      { geometry: point(23.1, 61.1), properties: { TYYPPI: "Rakennus", I_KERRLKM: 4, C_JULKISIVU: "2", C_RAKENNUSLUOKKA: "0121", C_VALMPVM: "1962-11-30Z" } },
+      // 29 February 1904 stands for an unknown date
+      { geometry: point(23.2, 61.2), properties: { TYYPPI: "Rakennus", I_KERRLKM: null, C_JULKISIVU: "7", C_VALMPVM: "1904-02-29Z" } },
       { geometry: point(23.3, 61.3), properties: { TYYPPI: "Rakennelma", I_KERRLKM: 1, C_JULKISIVU: "5" } },
       // glass is not trusted
       { geometry: point(23.4, 61.4), properties: { TYYPPI: "Rakennus", I_KERRLKM: 6, C_JULKISIVU: "6", C_RAKENNUSLUOKKA: "0400" } },
     ],
   });
   assert.deepEqual(parsed, [
-    { longitude: 23.1, latitude: 61.1, floors: 4, facade: "brick", use: "0121" },
+    { longitude: 23.1, latitude: 61.1, floors: 4, facade: "brick", use: "0121", year: 1962 },
     { longitude: 23.2, latitude: 61.2 },
     { longitude: 23.4, latitude: 61.4, floors: 6, use: "0400" },
   ]);
@@ -37,10 +38,10 @@ test("parseRegister keeps buildings with their storeys and facade material", () 
 
 test("applyRegister replaces estimated heights and sets materials from the points inside", () => {
   const estimated = square(0, 10);
-  const tagged = square(20, 10, { height: 30, heightEstimated: undefined, levels: 8, material: "glass" });
+  const tagged = square(20, 10, { height: 30, heightEstimated: undefined, levels: 8, material: "glass", year: 2001 });
   const empty = square(40, 10);
-  const at = (e: number, n: number, floors?: number, facade?: string, use?: string): RegisterBuilding => ({ longitude: e, latitude: n, floors, facade, use });
-  const register = [at(2, 2, 2, "wood", "0110"), at(8, 8, 5, "brick", "0121"), at(9, 1, 1, "brick", "0121"), at(25, 5, 4, "concrete"), at(100, 100, 3)];
+  const at = (e: number, n: number, floors?: number, facade?: string, use?: string, year?: number): RegisterBuilding => ({ longitude: e, latitude: n, floors, facade, use, year });
+  const register = [at(2, 2, 2, "wood", "0110", 1950), at(8, 8, 5, "brick", "0121", 1912), at(9, 1, 1, "brick", "0121"), at(25, 5, 4, "concrete", undefined, 1980), at(100, 100, 3)];
   const match = applyRegister([estimated, tagged, empty], register, (r) => [r.longitude, r.latitude]);
   assert.deepEqual(match, { heights: 1, materials: 1, unmatched: 1 });
   // the most storeys and the most common facade win
@@ -49,8 +50,12 @@ test("applyRegister replaces estimated heights and sets materials from the point
   assert.equal(estimated.material, "brick");
   assert.equal(estimated.levels, 5);
   assert.equal(estimated.use, "0121");
-  // OSM heights, levels and materials are kept
+  // the earliest year, and the height is counted from storeys
+  assert.equal(estimated.year, 1912);
+  assert.equal(estimated.heightFromLevels, true);
+  // OSM heights, levels, materials and years are kept
   assert.equal(tagged.height, 30);
+  assert.equal(tagged.year, 2001);
   assert.equal(tagged.levels, 8);
   assert.equal(tagged.material, "glass");
   assert.equal(empty.height, 9);

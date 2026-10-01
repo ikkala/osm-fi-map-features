@@ -86,9 +86,14 @@ wooden ones before 1940), the register counts it as a storey about half the time
 height, so the register would not make such buildings taller. The large differences are mostly register points
 of a tall building that fall into a low wing drawn as its own outline (Rongankatu 7: 1 vs 11), so taking the
 register's storeys over OSM's would do harm; a few look like errors in OSM (Kankurinkatu 4–8: 4 vs 6), better fixed
-there. Old buildings still come out low, e.g. Tampereen ensimmäinen postitalo by Finlayson (1867, one storey and a
-hipped roof storey, 6 m): every storey is 3 m while 19th-century ones are more like 3.5–4 m (the register's
-completion year, `C_VALMPVM`, is not imported yet).
+there. Storeys are 3 m, but old buildings have taller ones: a building whose height is counted from its storeys
+(`building:levels` or the register's) gets 3.6 m storeys when built before 1920 and 3.2 m before 1946, e.g. the
+walls of Tampereen ensimmäinen postitalo by Finlayson (1867, one storey under a hipped roof) are 3.6 m tall, not 3.
+The year (`year`) is `start_date` in OSM, else the register's completion date (`C_VALMPVM`; the
+earliest of the points in an outline). The register has 29 February 1904 on some 5 000 outbuildings and holiday
+homes and 1 January 1900 on some 400 others, both left out as unknown, and a few dates before 1700 are errors. A
+`building:part` without a year gets the year of the building it is in, but keeps 3 m storeys, so that the parts
+meet (a part higher up starts at a `building:min_level` counted at 3 m).
 
 On a slope a building stands at its highest ground, so its entrance on the uphill side is not in the hill, and its
 walls reach down to its lowest ground: a plinth or a basement storey on the downhill side, with windows in it. On a
@@ -172,7 +177,7 @@ halls, ...) and glass walls get no windows, and neither do storeys under 2.2 m o
 tagged as something special whatever their `building=*` (`man_made=*` such as towers and chimneys,
 `amenity=place_of_worship`, `historic=*` other than `building`, `tourism=attraction` or `museum`) and the parts in
 them, or buildings over five times taller than their longest side (towers that are not tagged so); Näsinneula is
-`building=yes` with `man_made=tower`.
+`building=yes` with `man_made=tower`. The style says nothing of the windows' age: a building's `year` (see above) does.
 
 Street and park trees come from the City of Tampere's tree register (WFS layer `locus:locus_t_RpaVegetation_gsview`
 at `geodata.tampere.fi`, a point per tree with its species, height class and trunk circumference; about 12 500

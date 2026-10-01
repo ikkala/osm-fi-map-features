@@ -9,6 +9,7 @@
 // For now the first tile asked for builds the whole area and the rest come from memory: bridge spans,
 // tunnels in cuts and multipolygons reach over tile edges, so they are worked out over the whole area.
 import type { SourceCache } from "./cache.ts";
+import { applyAges } from "./ages.ts";
 import { openBarriers } from "./barriers.ts";
 import { MAX_PLINTH_M, setBuildingBases } from "./bases.ts";
 import { setBridgeDecks } from "./bridges.ts";
@@ -22,7 +23,7 @@ import { mergeTrees, plantForests } from "./forests.ts";
 import { pointKey, simplifyLine, type Point } from "./geometry.ts";
 import { placeLamps } from "./lamps.ts";
 import { fetchRoofColours, ORTHO_ATTRIBUTION } from "./ortho.ts";
-import { bounds, fetchOverpass, openDoorways, overpassQuery, parseOsm, type Building, type GeoBox } from "./osm.ts";
+import { bounds, fetchOverpass, LEVEL_HEIGHT_M, openDoorways, overpassQuery, parseOsm, type Building, type GeoBox } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { placeStreetNodes } from "./streets.ts";
 import {
@@ -259,6 +260,10 @@ export class MapBuilder {
     // 2023 scanning at 0.5 points/m², ~60 MB per 3 x 3 km map sheet (the centre is M4212G3). The points inside
     // an outline minus the elevation model give its height (a high percentile, so chimneys do not count) and
     // the roof's profile. Mind trees over roofs and buildings newer than the scanning.
+    // after the register, which has most buildings' years
+    const aged = applyAges(features.buildings);
+    const dated = features.buildings.filter((b) => b.year !== undefined && !b.hasParts).length;
+    logger.log(`${dated} buildings have a year, ${aged} old ones with storeys taller than ${LEVEL_HEIGHT_M} m`);
     const estimated = features.buildings.filter((b) => b.heightEstimated && !b.hasParts).length;
     logger.log(`${estimated} buildings have a height estimated from their type and floor area`);
     // after the register, which tells the use of a building=yes

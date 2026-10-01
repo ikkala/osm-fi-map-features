@@ -1,7 +1,7 @@
-// Storeys and facade materials from the City of Tampere's building register (Tampereen rakennukset,
-// CC BY 4.0), fetched from its WFS interface as points, one per building. OSM has the outlines; a
-// register point inside an outline gives that building its storeys (when OSM has no height) and its
-// wall material. Also the city's register of street and park trees (CC BY 4.0), one point per tree.
+// Storeys, facade materials and completion years from the City of Tampere's building register (Tampereen
+// rakennukset, CC BY 4.0), fetched from its WFS interface as points, one per building. OSM has the outlines; a
+// register point inside an outline gives that building its storeys (when OSM has no height), its wall material
+// and its year. Also the city's register of street and park trees (CC BY 4.0), one point per tree.
 import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
 import { bounds, LEVEL_HEIGHT_M, type Building, type GeoBox, type TreeKind } from "./osm.ts";
@@ -47,7 +47,17 @@ export interface RegisterBuilding {
   facade?: string;
   /** C_RAKENNUSLUOKKA: the building class (use), e.g. "0121" for blocks of flats */
   use?: string;
+  /** The year of C_VALMPVM, the completion date */
+  year?: number;
 }
+
+/**
+ * C_VALMPVM values that stand for an unknown date: 29 February 1904 is on most outbuildings and holiday homes
+ * (about 5 000 in Tampere), 1 January 1900 on some 400 houses and outbuildings
+ */
+const UNKNOWN_DATES = new Set(["1904-02-29", "1900-01-01"]);
+/** Completion years before this are errors (952, 1065) */
+const FIRST_YEAR = 1700;
 
 /** Reads the buildings of a WFS GeoJSON response. */
 export function parseRegister(response: unknown): RegisterBuilding[] {
@@ -62,6 +72,7 @@ export function parseRegister(response: unknown): RegisterBuilding[] {
     const floors = optionalNumber(field(feature, "properties", "I_KERRLKM"));
     const facadeCode = optionalString(field(feature, "properties", "C_JULKISIVU"));
     const use = optionalString(field(feature, "properties", "C_RAKENNUSLUOKKA"));
+    const year = completionYear(optionalString(field(feature, "properties", "C_VALMPVM")));
     const facade = facadeCode === undefined ? undefined : FACADES[facadeCode];
     result.push({
       longitude,
@@ -69,9 +80,20 @@ export function parseRegister(response: unknown): RegisterBuilding[] {
       ...(floors !== undefined && floors > 0 && { floors }),
       ...(facade && { facade }),
       ...(use && { use }),
+      ...(year !== undefined && { year }),
     });
   }
   return result;
+}
+
+/** The year of a C_VALMPVM date such as "1965-05-01Z", unless the date stands for an unknown one */
+function completionYear(date: string | undefined): number | undefined {
+  const match = date?.match(/^(\d{4})-\d\d-\d\d/);
+  if (!match || UNKNOWN_DATES.has(match[0])) {
+    return undefined;
+  }
+  const year = Number(match[1]);
+  return year >= FIRST_YEAR ? year : undefined;
 }
 
 /** Fetches the register's buildings in a box, caching the response by box. */
@@ -211,9 +233,9 @@ export interface RegisterMatch {
 }
 
 /**
- * Gives OSM buildings the storeys, facades and uses of the register buildings inside them. With several
- * register buildings in one outline, the most storeys and the most common facade and use win. Heights
- * from OSM are kept, and so are OSM materials and levels. toPoint maps a register building to map meters.
+ * Gives OSM buildings the storeys, facades, uses and completion years of the register buildings inside them.
+ * With several register buildings in one outline, the most storeys, the most common facade and use and the
+ * earliest year win. Heights from OSM are kept, and so are OSM materials, levels and start_dates. toPoint maps a register building to map meters.
  */
 export function applyRegister(buildings: Building[], register: RegisterBuilding[], toPoint: (r: RegisterBuilding) => Point): RegisterMatch {
   const inside = new Map<Building, RegisterBuilding[]>();
@@ -238,6 +260,7 @@ export function applyRegister(buildings: Building[], register: RegisterBuilding[
     if (b.heightEstimated && !b.part && floors > 0) {
       b.height = Math.max(floors * LEVEL_HEIGHT_M + (b.roofHeight ?? 0), b.minHeight + LEVEL_HEIGHT_M);
       delete b.heightEstimated;
+      b.heightFromLevels = true;
       result.heights++;
     }
     if (b.levels === undefined && !b.part && b.minHeight === 0 && floors > 0) {
@@ -246,6 +269,10 @@ export function applyRegister(buildings: Building[], register: RegisterBuilding[
     const use = mostCommon(rs.map((r) => r.use).filter((u) => u !== undefined));
     if (use) {
       b.use = use;
+    }
+    const years = rs.map((r) => r.year).filter((y) => y !== undefined);
+    if (b.year === undefined && years.length > 0) {
+      b.year = Math.min(...years);
     }
     const facade = mostCommon(rs.map((r) => r.facade).filter((f) => f !== undefined));
     if (facade && !b.material) {
