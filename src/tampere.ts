@@ -1,18 +1,15 @@
 // Storeys and facade materials from the City of Tampere's building register (Tampereen rakennukset,
 // CC BY 4.0), fetched from its WFS interface as points, one per building. OSM has the outlines; a
 // register point inside an outline gives that building its storeys (when OSM has no height) and its
-// wall material. Also the city's register of street and park trees (CC BY 4.0), one point per tree, and
-// its counts of people walking and cycling (CC BY 4.0), one point per count.
+// wall material. Also the city's register of street and park trees (CC BY 4.0), one point per tree.
 import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
-import { averageDay, PEAK_HOUR_SHARE, type Mode } from "./footfall.ts";
 import { bounds, LEVEL_HEIGHT_M, type Building, type GeoBox, type TreeKind } from "./osm.ts";
 import { pointInPolygon, type Point } from "./geometry.ts";
 import { field, items, optionalNumber, optionalString } from "./json.ts";
 
 export const TAMPERE_ATTRIBUTION = "Building register © City of Tampere (CC BY 4.0)";
 export const TAMPERE_TREES_ATTRIBUTION = "Tree register © City of Tampere (CC BY 4.0)";
-export const TAMPERE_COUNTS_ATTRIBUTION = "Pedestrian and cycling counts © City of Tampere (CC BY 4.0)";
 
 const BUILDINGS: WfsLayer = {
   url: "https://geodata.tampere.fi/geoserver/rakennukset/ows",
@@ -27,15 +24,6 @@ const TREES: WfsLayer = {
   cacheName: "tampere-trees",
   title: "Tampere tree register",
   count: 200000,
-};
-
-// Counts of people walking and cycling (Jalankulun ja pyöräilyn liikennemäärät) since 1926, some 10 000
-const COUNTS: WfsLayer = {
-  url: "https://geodata.tampere.fi/geoserver/liikenneverkot/ows",
-  layer: "liikenneverkot:liikennemaarat_jalankulku_pyoraily_counter_point_TM35",
-  cacheName: "tampere-counts",
-  title: "Tampere pedestrian and cycling counts",
-  count: 100000,
 };
 
 /**
@@ -135,68 +123,6 @@ async function fetchWfs(source: WfsLayer, box: GeoBox, options: CacheOptions): P
   }
   await options.cache.put(cacheKey, text);
   return { json, cached: false };
-}
-
-export interface RegisterCount {
-  latitude: number;
-  longitude: number;
-  /** People walking and cycling on the year's average day (see averageDay), when counted */
-  walking?: number;
-  cycling?: number;
-  /** Counted across the whole street; else on one path or sidewalk */
-  whole: boolean;
-}
-
-/**
- * Reads the current counts of people walking and cycling along ways of a WFS GeoJSON response of the city's
- * counts. Counts of people crossing a street (Suojatie) or on the carriageway (Ajorata) are left out, and so
- * are the outdated ones (tulos_vanhentunut). A count of the afternoon peak hour only is made a day's by
- * PEAK_HOUR_SHARE.
- */
-export function parseCounts(response: unknown): RegisterCount[] {
-  const result: RegisterCount[] = [];
-  for (const feature of items(field(response, "features"))) {
-    const [longitude, latitude] = items(field(feature, "geometry", "coordinates")).map(optionalNumber);
-    const property = (name: string) => field(feature, "properties", name);
-    const type = property("kohteen_tyyppi");
-    // "2025-06-26Z"
-    const date = new Date((optionalString(property("paiva")) ?? "").replace(/Z$/, ""));
-    if (
-      field(feature, "geometry", "type") !== "Point" ||
-      longitude === undefined ||
-      latitude === undefined ||
-      (type !== "JKPP" && type !== "Koko poikkileikkaus") ||
-      property("tulos_vanhentunut") !== "ei" ||
-      Number.isNaN(date.getTime())
-    ) {
-      continue;
-    }
-    const counted = (suffix: string, mode: Mode) => {
-      const day = optionalNumber(property(`vuorokausi_${suffix}`));
-      const peak = optionalNumber(property(`iltahuipputunti_${suffix}`));
-      const daily = day ?? (peak === undefined ? undefined : peak / PEAK_HOUR_SHARE[mode]);
-      return daily === undefined || daily < 0 ? undefined : Math.round(averageDay(daily, date, mode));
-    };
-    const walking = counted("jk", "walking");
-    const cycling = counted("pp", "cycling");
-    if (walking === undefined && cycling === undefined) {
-      continue;
-    }
-    result.push({
-      latitude,
-      longitude,
-      ...(walking !== undefined && { walking }),
-      ...(cycling !== undefined && { cycling }),
-      whole: type === "Koko poikkileikkaus",
-    });
-  }
-  return result;
-}
-
-/** Fetches the city's counts of people walking and cycling in a box, caching the response by box. */
-export async function fetchCounts(box: GeoBox, options: CacheOptions): Promise<{ counts: RegisterCount[]; cached: boolean }> {
-  const { json, cached } = await fetchWfs(COUNTS, box, options);
-  return { counts: parseCounts(json), cached };
 }
 
 /** Kasviryhma: the register's plant groups */

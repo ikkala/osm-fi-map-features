@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Point } from "./geometry.ts";
 import { estimatedLevels, type Building } from "./osm.ts";
-import { applyRegister, parseCounts, parseRegister, parseTreeRegister, registerTreeHeight, type RegisterBuilding } from "./tampere.ts";
+import { applyRegister, parseRegister, parseTreeRegister, registerTreeHeight, type RegisterBuilding } from "./tampere.ts";
 
 function square(x: number, size: number, extra: Partial<Building> = {}): Building {
   const outer: Point[] = [[x, 0], [x + size, 0], [x + size, size], [x, size]];
@@ -82,22 +82,3 @@ test("parseTreeRegister reads the kind, height, genus and trunk of each plant", 
   ]);
 });
 
-test("parseCounts keeps current counts along ways, as average days", () => {
-  const count = (properties: Record<string, unknown>) => ({ geometry: { type: "Point", coordinates: [23.7, 61.5] }, properties });
-  const current = { tulos_vanhentunut: "ei", paiva: "2026-06-10Z" };
-  const parsed = parseCounts({
-    features: [
-      count({ ...current, kohteen_tyyppi: "JKPP", vuorokausi_jk: 1155, iltahuipputunti_jk: 120, vuorokausi_pp: 1650 }),
-      // only the afternoon peak hour
-      count({ ...current, kohteen_tyyppi: "Koko poikkileikkaus", vuorokausi_jk: null, iltahuipputunti_jk: 121.275 }),
-      count({ ...current, kohteen_tyyppi: "Suojatie", vuorokausi_jk: 500 }),
-      count({ ...current, kohteen_tyyppi: "JKPP", tulos_vanhentunut: "kyllä", vuorokausi_jk: 500 }),
-      count({ ...current, kohteen_tyyppi: "JKPP", vuorokausi_jk: null, iltahuipputunti_jk: null }),
-    ],
-  });
-  // a Wednesday in June: walking 1.1 × 1.05, cycling 1.5 × 1.1
-  assert.deepEqual(parsed, [
-    { longitude: 23.7, latitude: 61.5, walking: 1000, cycling: 1000, whole: false },
-    { longitude: 23.7, latitude: 61.5, walking: 1000, whole: true },
-  ]);
-});

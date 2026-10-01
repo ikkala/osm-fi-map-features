@@ -55,8 +55,7 @@ Each source's responses are cached apart from the others in a `SourceCache` (`ge
 and the map is only combined from them when it is built. `fileCache(dir)` keeps a file per key and
 `memoryCache()` keeps them in memory; anything else (e.g. object storage) is a `SourceCache` of your own.
 `refresh: true` fetches everything again. The keys name the source and a hash of the request:
-`overpass-*.json`, `mml-elevation-*.asc`, `tampere-buildings-*.json`, `tampere-trees-*.json`,
-`tampere-counts-*.json`, and
+`overpass-*.json`, `mml-elevation-*.asc`, `tampere-buildings-*.json`, `tampere-trees-*.json`, and
 `mml-roof-colours.json` (the colours worked out from the orthophoto by outline; the images are not kept).
 
 The Overpass server is `https://overpass-api.de/api/interpreter` unless `overpassUrl` is given; mind its
@@ -245,28 +244,36 @@ takes most of its cyclists. No one cycles on steps, motorways, trunk roads and t
 where `bicycle=no` or `private`. Ways have their `foot`, `bicycle` and
 `segregated` (`segregated=yes`: people walking and cycling each have a side of their own; OSM does not tell which).
 
-Where there are counts, `base` and `scale` are fitted to them and the estimate around each count is pulled towards
-it, fading out 80 m away: at a count its way gets about the count (the counts near each other averaged), and so do
-the ways of its name and the walkways of its kind in line with it (OSM cuts a sidewalk into many unnamed pieces);
-other ways get a third of the pull. Tampere's are the city's
+`base` and `scale` (`DEFAULT_MODELS`) were fitted, in September 2026, to the City of Tampere's
 [pedestrian and cycling counts](https://data.tampere.fi/data/dataset/tampereen-jalankulun-ja-pyorailyn-liikennemaaria)
-(WFS layer `liikenneverkot:liikennemaarat_jalankulku_pyoraily_counter_point_TM35`): the current results
-(`tulos_vanhentunut=ei`) along ways (`JKPP`, `Koko poikkileikkaus`), people walking (`_jk`) and cycling (`_pp`), a
-day's count or the afternoon peak hour's (taken as 10.5 % of the day walking, 10 % cycling), each on the nearest way
-within 25 m. A count on one sidewalk of a street is doubled for the street. A count is of one day, so it is
-divided by the months' and weekdays' tables for its date, and multiplying by them turns footfall and cycling into a
-given day; the hours' tables spread a weekday's or a weekend day's over its hours. For walking, `FOOTFALL_MONTHS`
-and `FOOTFALL_WEEKDAYS` are a guess at how Nordic cities walk (winter months 0.85, summer 1.1, Sunday 0.75). Cycling
-varies much more: `CYCLING_MONTHS` has winter at about a third of summer (January 0.35, August 1.6), as Helsinki's
-automatic counters show, `CYCLING_WEEKDAYS` more on weekdays (1.1) than at weekends (0.8, 0.75), and `CYCLING_HOURS`
-sharper commuting peaks.
-
-Around the centre of Tampere (September 2026) 432 walking counts fit `330 + 19.2 × draw` and 445 cycling counts
-`330 + 0.5 × draw` (cycling hardly depends on the businesses around), which are also the defaults without counts. The
-estimate alone is within a factor of two of 55 % of the walking counts and 43 % of the cycling ones; pulled towards
-the counts, the counted ways are within a factor of 1.5 of 84 % and 70 %. Centre sidewalks get 2 000–9 500 people
+around the centre: 432 walking counts fit `330 + 19.2 × draw` and 445 cycling counts `330 + 0.5 × draw` (cycling
+hardly depends on the businesses around), within a factor of two of 55 % of the walking counts and 43 % of the
+cycling ones. The counts themselves are not in the map; a user with counts can pull the estimates towards them
+when it uses the map (see [Flows](#flows)). Centre sidewalks get 2 000–9 500 people
 walking a day, suburban footways a few hundred, paths and service roads less; the cycleways and streets a few
 hundred to a few thousand people cycling.
+
+Roads for vehicles have `motorVehicle`, the most specific of `motorcar=*`, `motor_vehicle=*`, `vehicle=*` and
+`access=*` (who may drive on it: no, private, destination, ...), and service roads their `service=*` (parking_aisle,
+driveway, ...).
+
+### Flows
+
+`pullFlows(roads, others, counts)` (`flows.ts`) gives how many walk, cycle and drive along roads on an average day
+of the year, at each point of their lines: the map's footfall and cycling, and motor vehicles by the kind of road
+(`estimateMotorTraffic`: motorway 30 000, primary 12 000, secondary 7 000, tertiary 3 500, unclassified 800,
+residential 250, a service road 60, a parking aisle 30; a fifth of it where `motorVehicle` lets only some drive,
+such as `destination` or `delivery`, and none where it is `no`, `private`, `psv`, ..., on walkways and in tunnels
+drawn neither on a floor nor under a lid), each pulled towards counts at points. It is for a user that has counts,
+such as a city's traffic counts, and combines them with the map when it uses it instead of building them into the
+map, so the counts stay a database of their own and can be updated without building the map again.
+
+Each count is on the nearest road of its mode within 25 m among `others` (the roads and those around them, so a
+count beside the edge of an area still counts); a count of walking or cycling on one sidewalk of a street is
+doubled for the street. Around it the ratio of count to estimate spreads, fading out, along the counted road (its
+OSM id or name, and for walking and cycling the walkways of its kind in line with it) within 80 m for walking and
+cycling and 250 m for motor traffic, and onto other roads within 80 m (a third of the pull) or 60 m (a fifth). The
+counts are given as the year's average day, people or vehicles both ways.
 
 ## Licences
 
@@ -279,9 +286,12 @@ The data it builds is not:
   altered and combined with other data, a Derivative Database in ODbL terms: when you make it, or something
   produced from it such as a rendered map, public, you must credit OpenStreetMap and offer the database, or the way it
   was made, under the ODbL. This package is that way for maps built with it; say which commit you used.
-- Elevation model and orthophoto © Maanmittauslaitos, building and tree registers and pedestrian and cycling counts ©
-  City of Tampere, all under
+- Elevation model and orthophoto © Maanmittauslaitos, building and tree registers © City of Tampere, all under
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): credit them.
+- Flows pulled towards counts (`pullFlows`) are OSM roads combined with the counts: a Derivative Database under the
+  ODbL however briefly they exist, whether they are stored or worked out when they are used, and `flows.ts` is the
+  way they are made. Credit the counts' source too. The counts themselves are not changed by it and stay under
+  their own terms.
 
 `MapInfo.attributions` lists the credits for the data a build used.
 

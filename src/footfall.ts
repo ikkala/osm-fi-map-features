@@ -1,75 +1,16 @@
 // How many people walk (footfall) and cycle (cycling) along each way on an average day of the year, on
-// every point of its line. Counted where a city has counts (around the centre of Tampere, some 430 current
-// results of the city's pedestrian and cycling counts), and estimated elsewhere from what is around:
-// shops, restaurants and offices draw people, homes send them out, and the kind of way decides how many of
-// them use it. A centre full of businesses gets thousands a day on its sidewalks, a suburb's footways a few
-// hundred.
+// every point of its line, estimated from what OpenStreetMap has around: shops, restaurants and offices draw
+// people, homes send them out, and the kind of way decides how many of them use it. A centre full of
+// businesses gets thousands a day on its sidewalks, a suburb's footways a few hundred.
 //
 // The estimate is kind × (base + scale × draw), where draw is the businesses and doors near the point,
-// each weighed down with its distance, and kind is the way's for walking or for cycling. With counts, base
-// and scale are fitted to them (least squares of the logarithms), and around each count the estimate is
-// pulled towards it: the ratio of count to estimate spreads to the ways within COUNT_REACH_M, most along
-// the counted way itself. Without counts, base and scale are the ones fitted to Tampere's.
-//
-// A count is of one day; it is turned into an average day with the months' and weekdays' tables of its
-// kind (FOOTFALL_MONTHS, CYCLING_MONTHS, ...), which also turn footfall and cycling back into a given day.
-// The hours' tables tell how a day spreads over its hours. Cycling varies much more with the season:
-// in Finnish cities winter has about a third of summer's cycling.
+// each weighed down with its distance, and kind is the way's for walking or for cycling. Base and scale
+// (DEFAULT_MODELS) were fitted to the City of Tampere's pedestrian and cycling counts in 2026. The counts
+// themselves are not in the map: a user that has counts can pull the estimate towards them (flows.ts).
 import { distanceToSegment, nearestOnSegment, type Point } from "./geometry.ts";
 import { NOT_FOR_VEHICLES, type Building, type Road } from "./osm.ts";
 
 export type Mode = "walking" | "cycling";
-
-/** A count at a point, turned into an average day (see averageDay) */
-export interface FootfallCount {
-  point: Point;
-  /** People a day */
-  daily: number;
-  /** Counted across the whole street (both sidewalks); else on one path or sidewalk */
-  whole: boolean;
-}
-
-/**
- * How a month's days compare with the year's average day, January first. People walk more in summer and
- * before Christmas, less in the dark and the slush of winter; a guess from the shape of Nordic city counts.
- */
-export const FOOTFALL_MONTHS = [0.85, 0.85, 0.9, 0.95, 1.05, 1.1, 1.05, 1.1, 1.05, 1.0, 0.95, 1.05];
-/** How a day of the week compares with the average day, Monday first */
-export const FOOTFALL_WEEKDAYS = [1.05, 1.05, 1.05, 1.05, 1.1, 0.95, 0.75];
-/**
- * The share of a day's walking in each hour, from 0-1 to 23-24, of a weekday and of a Saturday or Sunday
- * (later start, no commuting peaks). Each sums to 1.
- */
-export const FOOTFALL_HOURS = {
-  weekday: [
-    0.005, 0.003, 0.002, 0.002, 0.003, 0.008, 0.02, 0.045, 0.06, 0.05, 0.05, 0.06, 0.07, 0.065, 0.065, 0.08, 0.09, 0.08,
-    0.07, 0.055, 0.04, 0.03, 0.02, 0.027,
-  ],
-  weekend: [
-    0.012, 0.01, 0.008, 0.005, 0.003, 0.003, 0.006, 0.012, 0.025, 0.045, 0.065, 0.08, 0.085, 0.085, 0.085, 0.085, 0.085,
-    0.075, 0.065, 0.05, 0.04, 0.03, 0.025, 0.016,
-  ],
-};
-/**
- * Cycling's months: winter about a third of summer, August some four and a half times January (Helsinki's
- * automatic counters show the same shape)
- */
-export const CYCLING_MONTHS = [0.35, 0.4, 0.6, 1.0, 1.55, 1.5, 1.25, 1.6, 1.5, 1.05, 0.75, 0.45];
-/** Cycling's weekdays: more commuting on weekdays, less at weekends */
-export const CYCLING_WEEKDAYS = [1.1, 1.1, 1.1, 1.1, 1.05, 0.8, 0.75];
-/** Cycling's hours: sharper commuting peaks on weekdays, the middle of the day at weekends */
-export const CYCLING_HOURS = {
-  weekday: [
-    0.004, 0.002, 0.001, 0.001, 0.002, 0.008, 0.03, 0.08, 0.075, 0.045, 0.04, 0.045, 0.06, 0.06, 0.07, 0.085, 0.1, 0.08,
-    0.07, 0.05, 0.04, 0.03, 0.015, 0.007,
-  ],
-  weekend: [
-    0.006, 0.004, 0.002, 0.001, 0.001, 0.002, 0.006, 0.015, 0.03, 0.055, 0.08, 0.09, 0.095, 0.095, 0.095, 0.09, 0.08,
-    0.07, 0.06, 0.045, 0.035, 0.025, 0.012, 0.006,
-  ],
-};
-/** An afternoon peak hour (15-17), for counts that have only that, is about this share of the day */
-export const PEAK_HOUR_SHARE: Record<Mode, number> = { walking: 0.105, cycling: 0.1 };
 
 /** How many walk on a way of a kind compared with a footway in the same surroundings; other kinds: none */
 const WALKING_FACTORS: Record<string, number> = {
@@ -136,29 +77,12 @@ const DOOR_REACH_M = 120;
 const BUSINESS_WEIGHTS: Record<string, number> = { shop: 1, amenity: 1.5, office: 0.5 };
 /** A door draws this much of a business */
 const DOOR_WEIGHT = 0.15;
-/** Base and scale when there are no counts to fit them to: fitted to Tampere's in 2026 */
+/** Base and scale of each mode: fitted to Tampere's counts in 2026 */
 export const DEFAULT_MODELS: Record<Mode, { base: number; scale: number }> = {
   walking: { base: 330, scale: 19.2 },
   cycling: { base: 330, scale: 0.5 },
 };
 
-/** A count is on a way this close to it (m) */
-const COUNT_MATCH_M = 25;
-/** A count pulls the estimate within this distance (m) towards it */
-const COUNT_REACH_M = 80;
-/**
- * The pull of counts on ways other than the counted one (a parallel street, a side street). The counted
- * way goes on in the ways of its name, and in the walkways of its kind in line with it (OSM cuts sidewalks
- * into many pieces without names).
- */
-const OTHER_WAY_PULL = 0.3;
-/** A walkway goes on from the counted one when it is within this (m) of the counted segment's line */
-const IN_LINE_M = 6;
-/**
- * Weight of the estimate against the counts' pull: at a count its way gets about the count, and a lone
- * count farther away moves the estimate less than several near
- */
-const ESTIMATE_WEIGHT = 0.1;
 /** A street has its sidewalks drawn as ways of their own when footway=sidewalk runs this close beside it */
 const SEPARATE_SIDEWALK_M = 8;
 /** ... for this share of its length */
@@ -167,112 +91,38 @@ const SEPARATE_SIDEWALK_SHARE = 0.5;
 export interface FootfallResult {
   /** Ways with footfall (or cycling) */
   ways: number;
-  /** Counts on a way, of all */
-  matched: number;
-  counts: number;
-  model: { base: number; scale: number };
-  /** Of the matched counts, the share the estimate alone gets within a factor of two */
-  withinTwo: number;
-  /** Of the matched counts, the share whose way gets within a factor of 1.5 of them, pulled by the counts */
-  atCounts: number;
   /** Streets whose sidewalks were found drawn as ways of their own without a sidewalk tag */
   separate: number;
 }
 
 /**
- * Sets the footfall of the roads: counted near counts, estimated elsewhere from the buildings' businesses
- * and doors (after businesses.ts and entrances.ts). Roads where no one walks get none.
+ * Sets the footfall of the roads, estimated from the buildings' businesses and doors (after businesses.ts and
+ * entrances.ts). Roads where no one walks get none.
  */
-export function estimateFootfall(roads: Road[], buildings: Building[], counts: FootfallCount[]): FootfallResult {
-  return estimate(roads, buildings, counts, "walking");
+export function estimateFootfall(roads: Road[], buildings: Building[]): FootfallResult {
+  return estimate(roads, buildings, "walking");
 }
 
 /** Sets the cycling of the roads, as estimateFootfall the footfall. Roads where no one cycles get none. */
-export function estimateCycling(roads: Road[], buildings: Building[], counts: FootfallCount[]): FootfallResult {
-  return estimate(roads, buildings, counts, "cycling");
+export function estimateCycling(roads: Road[], buildings: Building[]): FootfallResult {
+  return estimate(roads, buildings, "cycling");
 }
 
-function estimate(roads: Road[], buildings: Building[], counts: FootfallCount[], mode: Mode): FootfallResult {
+function estimate(roads: Road[], buildings: Building[], mode: Mode): FootfallResult {
   const { factors, separate } = kindFactors(roads, mode);
   const draw = drawField(buildings);
+  const model = DEFAULT_MODELS[mode];
   const used = roads.filter((road) => (factors.get(road) ?? 0) > 0);
-  const index = new SegmentGrid(COUNT_MATCH_M);
   for (const road of used) {
-    index.add(road);
-  }
-
-  // each count on its way: the draw and the kind factor there, and the count as on that way
-  const matches: { road: Road; at: Point; a: Point; b: Point; draw: number; factor: number; daily: number }[] = [];
-  for (const count of counts) {
-    const nearest = index.nearest(count.point, COUNT_MATCH_M);
-    if (!nearest) {
-      continue;
-    }
-    const factor = factors.get(nearest.road) ?? 0;
-    // a street's footfall is on both its sidewalks, so a count on one of them is about half of it; the same
-    // for the cycling of a street with its cycle paths beside it not drawn
-    const street = !NOT_FOR_VEHICLES.has(nearest.road.kind) && nearest.road.kind !== "living_street";
-    const sides = nearest.road.sidewalks === "left" || nearest.road.sidewalks === "right" ? 1 : 2;
-    const daily = street && !count.whole ? count.daily * sides : count.daily;
-    matches.push({ road: nearest.road, at: nearest.at, a: nearest.a, b: nearest.b, draw: draw(nearest.at), factor, daily });
-  }
-
-  const model = matches.length >= 5 ? fitModel(matches, DEFAULT_MODELS[mode]) : DEFAULT_MODELS[mode];
-  const estimated = (d: number, factor: number) => factor * (model.base + model.scale * d);
-  const residuals = matches.map((m) => ({ ...m, log: Math.log(Math.max(m.daily, 1) / estimated(m.draw, m.factor)) }));
-  const withinTwo = residuals.filter((r) => Math.abs(r.log) <= Math.LN2).length;
-
-  const valueAt = (road: Road, p: Point) => {
-    let pull = 0;
-    let weight = ESTIMATE_WEIGHT;
-    for (const r of residuals) {
-      const distance = Math.hypot(r.at[0] - p[0], r.at[1] - p[1]);
-      if (distance < COUNT_REACH_M) {
-        const w = falloff(distance, COUNT_REACH_M) * (goesOn(r, road, p) ? 1 : OTHER_WAY_PULL);
-        pull += w * r.log;
-        weight += w;
-      }
-    }
-    return Math.round(estimated(draw(p), factors.get(road) ?? 0) * Math.exp(pull / weight));
-  };
-  for (const road of used) {
-    const values = road.line.map((p) => valueAt(road, p));
+    const factor = factors.get(road) ?? 0;
+    const values = road.line.map((p) => Math.round(factor * (model.base + model.scale * draw(p))));
     if (mode === "walking") {
       road.footfall = values;
     } else {
       road.cycling = values;
     }
   }
-  const atCounts = matches.filter((m) => Math.abs(Math.log(Math.max(m.daily, 1) / Math.max(valueAt(m.road, m.at), 1))) <= Math.log(1.5)).length;
-  return {
-    ways: used.length,
-    matched: matches.length,
-    counts: counts.length,
-    model,
-    withinTwo: matches.length > 0 ? withinTwo / matches.length : 0,
-    atCounts: matches.length > 0 ? atCounts / matches.length : 0,
-    separate,
-  };
-}
-
-/** Whether the way at p is the counted way, or goes on from it: of its name, or a walkway of its kind in line with it */
-function goesOn(count: { road: Road; a: Point; b: Point }, road: Road, p: Point): boolean {
-  if (count.road.osm === road.osm || (count.road.name !== undefined && count.road.name === road.name)) {
-    return true;
-  }
-  if (road.kind !== count.road.kind || road.footway !== count.road.footway || !NOT_FOR_VEHICLES.has(road.kind)) {
-    return false;
-  }
-  const [a, b] = [count.a, count.b];
-  const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
-  return length > 0 && Math.abs((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])) / length <= IN_LINE_M;
-}
-
-/** A count of a day turned into the year's average day */
-export function averageDay(daily: number, date: Date, mode: Mode = "walking"): number {
-  const months = mode === "walking" ? FOOTFALL_MONTHS : CYCLING_MONTHS;
-  const weekdays = mode === "walking" ? FOOTFALL_WEEKDAYS : CYCLING_WEEKDAYS;
-  return daily / (months[date.getUTCMonth()] * weekdays[(date.getUTCDay() + 6) % 7]);
+  return { ways: used.length, separate };
 }
 
 /** 1 at the point, falling smoothly to 0 at reach */
@@ -394,27 +244,6 @@ function drawField(buildings: Building[]): (p: Point) => number {
     }
     return sum;
   };
-}
-
-/** Base and scale that fit the counts best: least squares of the logarithms, searched on a grid */
-function fitModel(matches: { draw: number; factor: number; daily: number }[], fallback: { base: number; scale: number }): { base: number; scale: number } {
-  let best = fallback;
-  let bestError = Infinity;
-  for (let b = 0; b <= 40; b++) {
-    const base = 2 * 1.2 ** b;
-    for (let s = 0; s <= 40; s++) {
-      const scale = 0.5 * 1.2 ** s;
-      let error = 0;
-      for (const m of matches) {
-        error += Math.log(Math.max(m.daily, 1) / (m.factor * (base + scale * m.draw))) ** 2;
-      }
-      if (error < bestError) {
-        bestError = error;
-        best = { base: Math.round(base), scale: Math.round(scale * 10) / 10 };
-      }
-    }
-  }
-  return best;
 }
 
 /** Road segments in square cells, to find the nearest one to a point */

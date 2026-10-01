@@ -4,8 +4,7 @@
 // around the area (from an Overpass API server) are laid out in meters around the origin. With an MML API key they get ground heights and
 // bridge decks from the Maanmittauslaitos elevation model and roof colours from its orthophoto; in
 // Tampere, storeys and wall materials from the city's building register, street and park trees from
-// its tree register and pedestrian counts from its counts. The ways get the people walking on them
-// (footfall.ts). Every tile touching the area can be built.
+// its tree register. The ways get the people walking and cycling on them (footfall.ts). Every tile touching the area can be built.
 //
 // For now the first tile asked for builds the whole area and the rest come from memory: bridge spans,
 // tunnels in cuts and multipolygons reach over tile edges, so they are worked out over the whole area.
@@ -18,7 +17,7 @@ import { businessQuery, parseBusinesses, placeBusinesses } from "./businesses.ts
 import { coverCutTunnels } from "./cuts.ts";
 import { ELEVATION_ATTRIBUTION, fetchElevation, sampleElevation, toTm35fin } from "./elevation.ts";
 import { assignEntrances, entranceQuery, guessEntrances, parseEntrances } from "./entrances.ts";
-import { estimateCycling, estimateFootfall, type FootfallCount, type FootfallResult } from "./footfall.ts";
+import { estimateCycling, estimateFootfall } from "./footfall.ts";
 import { mergeTrees, plantForests } from "./forests.ts";
 import { pointKey, simplifyLine, type Point } from "./geometry.ts";
 import { placeLamps } from "./lamps.ts";
@@ -28,11 +27,9 @@ import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { placeStreetNodes } from "./streets.ts";
 import {
   applyRegister,
-  fetchCounts,
   fetchRegister,
   fetchTreeRegister,
   TAMPERE_ATTRIBUTION,
-  TAMPERE_COUNTS_ATTRIBUTION,
   TAMPERE_TREES_ATTRIBUTION,
 } from "./tampere.ts";
 import { cutIntoTiles, tileHeights, tileName, tilesCovering, type Tile, type TileKey } from "./tiles.ts";
@@ -304,39 +301,11 @@ export class MapBuilder {
     // TODO: entrances that are steps up or down from the street, and buildings with entrances on several
     // floors (a slope with an entrance at each level), stand at the wrong one.
 
-    // people walking and cycling on the ways, after the businesses and doors that draw them: counted in
-    // Tampere (the counts are empty elsewhere), estimated elsewhere
-    const walkingCounts: FootfallCount[] = [];
-    const cyclingCounts: FootfallCount[] = [];
-    try {
-      const { counts: register, cached: countsCached } = await fetchCounts(fetchBox, { cache, refresh });
-      for (const { latitude, longitude, walking, cycling, whole } of register) {
-        const point = toMeters(latitude, longitude);
-        if (walking !== undefined) {
-          walkingCounts.push({ point, daily: walking, whole });
-        }
-        if (cycling !== undefined) {
-          cyclingCounts.push({ point, daily: cycling, whole });
-        }
-      }
-      logger.log(
-        `Tampere counts: ${walkingCounts.length} of people walking and ${cyclingCounts.length} of people cycling along ways ` +
-          `(${countsCached ? "cached" : "fetched"})`,
-      );
-    } catch (err) {
-      logger.warn(`warning: no pedestrian or cycling counts: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    const fitted = (what: string, result: FootfallResult) =>
-      `${what} on ${result.ways} ways; ${result.matched} of ${result.counts} counts on a way, the estimate ${result.model.base} + ` +
-      `${result.model.scale} × draw within a factor of two of ${Math.round(result.withinTwo * 100)} % of them, and pulled ` +
-      `towards them within 1.5 of ${Math.round(result.atCounts * 100)} %`;
-    const footfall = estimateFootfall(features.roads, features.buildings, walkingCounts);
-    logger.log(`${fitted("footfall", footfall)} (${footfall.separate} streets with their sidewalks drawn apart get none)`);
-    const cycling = estimateCycling(features.roads, features.buildings, cyclingCounts);
-    logger.log(fitted("cycling", cycling));
-    if (footfall.matched + cycling.matched > 0) {
-      otherAttributions.push(TAMPERE_COUNTS_ATTRIBUTION);
-    }
+    // people walking and cycling on the ways, after the businesses and doors that draw them
+    const footfall = estimateFootfall(features.roads, features.buildings);
+    logger.log(`footfall on ${footfall.ways} ways (${footfall.separate} streets with their sidewalks drawn apart get none)`);
+    const cycling = estimateCycling(features.roads, features.buildings);
+    logger.log(`cycling on ${cycling.ways} ways`);
 
     // street and park trees from the city's register (empty outside Tampere), OSM's trees where it has none
     // of its own, and trees planted in woods and scrub

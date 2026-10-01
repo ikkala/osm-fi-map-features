@@ -66,6 +66,10 @@ export interface Road {
   footfall?: number[];
   /** People cycling along the way on an average day of the year, as footfall (see footfall.ts) */
   cycling?: number[];
+  /** Roads for vehicles: who may drive on it, from motor_vehicle=*, motorcar=*, vehicle=* or access=*, when OSM tells */
+  motorVehicle?: string;
+  /** service=* value of a service road, e.g. parking_aisle or driveway */
+  service?: string;
 }
 
 export type Sidewalks = "both" | "left" | "right" | "none" | "separate";
@@ -692,7 +696,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
           ...layering(road),
           ...optionalName(road),
           ...oneway(road),
-          ...(walkway ? (road.footway ? { footway: road.footway } : {}) : sidewalks(road)),
+          ...(walkway ? (road.footway ? { footway: road.footway } : {}) : { ...sidewalks(road), ...motorAccess(road) }),
           ...access(road),
           line: points,
         };
@@ -1711,6 +1715,15 @@ export function access(tags: Tags): { foot?: string; bicycle?: string; segregate
     ...(tags.foot && { foot: tags.foot }),
     ...(tags.bicycle && { bicycle: tags.bicycle }),
     ...(tags.segregated === "yes" ? { segregated: true } : tags.segregated === "no" ? { segregated: false } : {}),
+  };
+}
+
+/** Who may drive on a road (the most specific of motor_vehicle=*, motorcar=*, vehicle=*, access=*) and its service=* */
+export function motorAccess(tags: Tags): { motorVehicle?: string; service?: string } {
+  const value = tags.motorcar ?? tags.motor_vehicle ?? tags.vehicle ?? tags.access;
+  return {
+    ...(value && { motorVehicle: value }),
+    ...(tags.highway === "service" && tags.service && { service: tags.service }),
   };
 }
 
