@@ -13,6 +13,8 @@ const COVERAGE = "korkeusmalli_2m";
 const CELL_SIZE_M = 2;
 /** WCS limits: 10 km a side and 5000 pixels a side */
 const MAX_SIDE_M = 10_000;
+/** A larger area is fetched in pieces of at most this a side */
+const PIECE_M = 9_000;
 
 /** ETRS-TM35FIN (EPSG:3067) */
 const TM35FIN = "+proj=utm +zone=35 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs";
@@ -115,7 +117,10 @@ export interface ElevationFetchOptions extends CacheOptions {
   apiKey: string;
 }
 
-/** Fetches the elevation model for a TM35FIN box (snapped out to whole cells), caching it by box. */
+/**
+ * Fetches the elevation model for a TM35FIN box (snapped out to whole cells), caching it by box. An area
+ * over 10 km a side, more than the WCS gives at once, is fetched in pieces and put together.
+ */
 export async function fetchElevation(box: TmBox, options: ElevationFetchOptions): Promise<{ grid: ElevationGrid; cached: boolean }> {
   const snapped = {
     minE: Math.floor(box.minE / CELL_SIZE_M) * CELL_SIZE_M,
@@ -123,9 +128,52 @@ export async function fetchElevation(box: TmBox, options: ElevationFetchOptions)
     maxE: Math.ceil(box.maxE / CELL_SIZE_M) * CELL_SIZE_M,
     maxN: Math.ceil(box.maxN / CELL_SIZE_M) * CELL_SIZE_M,
   };
-  if (snapped.maxE - snapped.minE > MAX_SIDE_M || snapped.maxN - snapped.minN > MAX_SIDE_M) {
-    throw new Error("the elevation area is over 10 km a side; the WCS needs it split into several requests");
+  if (snapped.maxE - snapped.minE <= MAX_SIDE_M && snapped.maxN - snapped.minN <= MAX_SIDE_M) {
+    return fetchPiece(snapped, options);
   }
+  const pieces: ElevationGrid[] = [];
+  let cached = true;
+  for (let minE = snapped.minE; minE < snapped.maxE; minE += PIECE_M) {
+    for (let minN = snapped.minN; minN < snapped.maxN; minN += PIECE_M) {
+      const piece = await fetchPiece({ minE, minN, maxE: Math.min(minE + PIECE_M, snapped.maxE), maxN: Math.min(minN + PIECE_M, snapped.maxN) }, options);
+      pieces.push(piece.grid);
+      cached &&= piece.cached;
+    }
+  }
+  return { grid: mergeGrids(snapped, CELL_SIZE_M, pieces), cached };
+}
+
+/**
+ * One grid over a box (whole cells) from grids of parts of it; a cell no part has is NaN. Each part's cells
+ * go where their own corner puts them, whatever its edges.
+ */
+export function mergeGrids(box: TmBox, cellSize: number, parts: ElevationGrid[]): ElevationGrid {
+  const cols = Math.round((box.maxE - box.minE) / cellSize);
+  const rows = Math.round((box.maxN - box.minN) / cellSize);
+  const values = new Float32Array(cols * rows).fill(Number.NaN);
+  for (const part of parts) {
+    const colOffset = Math.round((part.west - box.minE) / part.cellSize);
+    // rows count from the north
+    const rowOffset = Math.round((box.maxN - (part.south + part.rows * part.cellSize)) / part.cellSize);
+    for (let r = 0; r < part.rows; r++) {
+      const row = r + rowOffset;
+      if (row < 0 || row >= rows) {
+        continue;
+      }
+      for (let c = 0; c < part.cols; c++) {
+        const col = c + colOffset;
+        const value = part.values[r * part.cols + c];
+        if (col >= 0 && col < cols && value !== part.noData) {
+          values[row * cols + col] = value;
+        }
+      }
+    }
+  }
+  return { west: box.minE, south: box.minN, cellSize, cols, rows, values, noData: undefined };
+}
+
+/** One WCS request's worth (at most 10 km a side), cached by box */
+async function fetchPiece(snapped: TmBox, options: ElevationFetchOptions): Promise<{ grid: ElevationGrid; cached: boolean }> {
   const query = new URLSearchParams({
     service: "WCS",
     version: "2.0.1",

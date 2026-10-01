@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseAsciiGrid, sampleElevation, toTm35fin } from "./elevation.ts";
+import { mergeGrids, parseAsciiGrid, sampleElevation, toTm35fin } from "./elevation.ts";
 import { tileHeights } from "./tiles.ts";
 
 // 3 x 2 cells of 2 m: rows from the north
@@ -51,4 +51,15 @@ test("tileHeights samples the tile grid from the south-west and fills gaps with 
   assert.deepEqual(heights.values.slice(0, 3), [90, 140, 190]);
   const average = (9 + 14 + 19 + 9.5 + 14.5 + 19.5 + 10 + 15) / 8;
   assert.equal(heights.values[8], Math.round(average * 10));
+});
+
+test("mergeGrids puts the pieces of a large area where their corners say, leaving gaps empty", () => {
+  // two 2 x 1 pieces side by side, and the box one row taller than they are
+  const west = parseAsciiGrid("ncols 2\nnrows 1\nxllcorner 1000\nyllcorner 5002\ncellsize 2\nNODATA_value -9999\n1 -9999\n");
+  const east = parseAsciiGrid("ncols 2\nnrows 1\nxllcorner 1004\nyllcorner 5002\ncellsize 2\n3 4\n");
+  const grid = mergeGrids({ minE: 1000, minN: 5000, maxE: 1008, maxN: 5004 }, 2, [west, east]);
+  assert.deepEqual([grid.west, grid.south, grid.cols, grid.rows], [1000, 5000, 4, 2]);
+  assert.deepEqual([...grid.values].slice(0, 4), [1, Number.NaN, 3, 4]);
+  assert.ok([...grid.values].slice(4).every(Number.isNaN));
+  assert.equal(sampleElevation(grid, 1001, 5001), undefined);
 });
