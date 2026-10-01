@@ -56,3 +56,17 @@ test("counts pull their road far along it, the side streets and other ways littl
   const street = defined(at(6).footfall);
   assert.ok(Math.abs(street[0] - 1800) / 1800 < 0.2, `street ${street.join(", ")}`);
 });
+
+test("a street where only some may drive keeps its few cars, and its motor count is left out", () => {
+  // a transit street open to deliveries, counted, and a street crossing it
+  const transit: FlowRoad = { osm: "w1", kind: "residential", name: "Hämeenkatu", motorVehicle: "delivery", line: [[0, 0], [100, 0], [200, 0]] };
+  const crossing: FlowRoad = { osm: "w2", kind: "tertiary", name: "Puutarhakatu", line: [[100, -100], [100, 100]] };
+  const { flows, counted } = pullFlows([transit, crossing], [transit, crossing], [{ mode: "driving", point: [50, 2], daily: 2400, whole: false }]);
+  assert.equal(counted, false);
+  assert.deepEqual(flows[0].motor, [50, 50, 50]);
+  assert.deepEqual(flows[1].motor, [3500, 3500]);
+  // nor is it pulled by a count on the street crossing it
+  const near = pullFlows([transit, crossing], [transit, crossing], [{ mode: "driving", point: [102, 10], daily: 9000, whole: false }]);
+  assert.deepEqual(near.flows[0].motor, [50, 50, 50]);
+  assert.ok(defined(near.flows[1].motor)[1] > 7000);
+});

@@ -14,7 +14,9 @@
 // estimate there spreads, fading out, along the counted road (the roads of its id or name, and for walking
 // and cycling the walkways of its kind in line with it, as OpenStreetMap cuts a sidewalk into many unnamed
 // pieces) within the mode's `reach`, and onto other roads within `otherReach`, `other` as much. A street's
-// cars keep their count much farther along it than people walking do theirs.
+// cars keep their count much farther along it than people walking do theirs. A road where only some may drive
+// (a pedestrian or transit street open to deliveries) keeps its few cars: a motor count there is of the buses,
+// taxis and deliveries, so it is left out, and the counts around do not pull it.
 import { NOT_FOR_VEHICLES, type Road } from "./osm.ts";
 import type { Point } from "./geometry.ts";
 
@@ -104,6 +106,11 @@ export function estimateMotorTraffic(road: FlowRoad): number {
     return 0;
   }
   return road.motorVehicle !== undefined && FEW_ALLOWED.has(road.motorVehicle) ? base * FEW_ALLOWED_SHARE : base;
+}
+
+/** Whether only some may drive on a road (motorVehicle destination, delivery, ...) */
+function restricted(road: FlowRoad): boolean {
+  return road.motorVehicle !== undefined && FEW_ALLOWED.has(road.motorVehicle);
 }
 
 /** A road's estimate of a mode at each point of its line, or undefined where no one goes that way */
@@ -205,7 +212,9 @@ export function pullFlows(roads: FlowRoad[], others: FlowRoad[], counts: FlowCou
       grids.set(count.mode, grid);
     }
     const match = nearestRoad(grid, count.point);
-    if (!match) {
+    // a motor count on a road where only some may drive (a street for buses, trams, taxis and deliveries) is of
+    // those, not of cars
+    if (!match || (count.mode === "driving" && restricted(match.road))) {
       continue;
     }
     // a street's walking is on both its sidewalks, so a count on one of them is about half of it; the same for
@@ -223,6 +232,11 @@ export function pullFlows(roads: FlowRoad[], others: FlowRoad[], counts: FlowCou
       const settings = SETTINGS[mode];
       const values = estimates(road, mode);
       if (!values) {
+        continue;
+      }
+      if (mode === "driving" && restricted(road)) {
+        // only the few that may drive there, whatever is counted around
+        result[settings.out] = values.map((value) => Math.round(value));
         continue;
       }
       const farthest = Math.max(settings.reach, settings.otherReach);
