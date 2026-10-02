@@ -16,7 +16,7 @@ import { setBridgeDecks } from "./bridges.ts";
 import { setOutlineDecks, standOnDecks } from "./decks.ts";
 import { businessQuery, parseBusinesses, placeBusinesses } from "./businesses.ts";
 import { coverCutTunnels } from "./cuts.ts";
-import { ELEVATION_ATTRIBUTION, fetchElevation, sampleElevation, toTm35fin } from "./elevation.ts";
+import { ELEVATION_ATTRIBUTION, fetchElevation, sampleElevation, toTm35fin, type ElevationGrid } from "./elevation.ts";
 import { assignEntrances, entranceQuery, guessEntrances, parseEntrances } from "./entrances.ts";
 import { estimateCycling, estimateFootfall } from "./footfall.ts";
 import { mergeTrees, plantForests } from "./forests.ts";
@@ -33,7 +33,7 @@ import {
   TAMPERE_ATTRIBUTION,
   TAMPERE_TREES_ATTRIBUTION,
 } from "./tampere.ts";
-import { cutIntoTiles, tileHeights, tileName, tilesCovering, type Tile, type TileKey } from "./tiles.ts";
+import { cutIntoTiles, latticeProjection, tileHeights, tileName, tilesCovering, type Tile, type TileKey } from "./tiles.ts";
 import { setTrackBeds } from "./trackbeds.ts";
 import { setTunnelFloors, uncoverAtGrade } from "./tunnels.ts";
 import { assignWindows } from "./windows.ts";
@@ -47,6 +47,11 @@ const FETCH_MARGIN_M = 50;
 const LINE_TOLERANCE_M = 0.3;
 /** Ground height grid spacing; the elevation model has 2 m cells */
 const HEIGHT_STEP_M = 2;
+/**
+ * A tile's heights take the elevation model's coordinates of their points from a lattice this many meters
+ * apart, between whose points they are interpolated: over a tile the projection is all but linear.
+ */
+const TM_LATTICE_M = 10;
 
 export interface Logger {
   log(message: string): void;
@@ -85,6 +90,8 @@ interface Built {
   info: MapInfo;
   tiles: Map<string, Tile>;
   heightAt: ((e: number, n: number) => number | undefined) | undefined;
+  /** The elevation model and where a point (m) is in its coordinates, for the tiles' heights */
+  ground: { grid: ElevationGrid; toTm: (e: number, n: number) => [number, number] } | undefined;
 }
 
 export class MapBuilder {
@@ -117,10 +124,12 @@ export class MapBuilder {
   async tile(key: TileKey): Promise<Tile | undefined> {
     const built = await this.#build();
     const tile = built.tiles.get(tileName(key));
-    if (!tile || !built.heightAt || tile.heights) {
+    if (!tile || !built.ground || tile.heights) {
       return tile;
     }
-    const { heights, missing } = tileHeights(tile, this.#options.tileSizeM, HEIGHT_STEP_M, built.heightAt);
+    const { grid, toTm } = built.ground;
+    const at = latticeProjection(tile, this.#options.tileSizeM, TM_LATTICE_M, toTm);
+    const { heights, missing } = tileHeights(tile, this.#options.tileSizeM, HEIGHT_STEP_M, (e, n) => sampleElevation(grid, ...at(e, n)));
     if (missing > 0) {
       this.#logger.warn(`warning: tile ${tileName(tile)}: ${missing} height points outside the elevation model got the tile's average`);
     }
@@ -183,6 +192,7 @@ export class MapBuilder {
       barrier.line = simplifyLine(barrier.line, LINE_TOLERANCE_M);
     }
     let heightAt: ((e: number, n: number) => number | undefined) | undefined;
+    let ground: Built["ground"];
     if (mmlApiKey) {
       // the elevation model over the tiles (the corners' TM35FIN box covers them, turned or not)
       const tm = corners.map(toTm35fin);
@@ -196,7 +206,9 @@ export class MapBuilder {
         { apiKey: mmlApiKey, cache, refresh },
       );
       logger.log(`elevation model ${grid.cols} x ${grid.rows} cells of ${grid.cellSize} m (${elevationCached ? "cached" : "fetched"})`);
-      heightAt = (e: number, n: number) => sampleElevation(grid, ...toTm35fin(toGeo([e, n])));
+      const toTm = (e: number, n: number) => toTm35fin(toGeo([e, n]));
+      heightAt = (e: number, n: number) => sampleElevation(grid, ...toTm(e, n));
+      ground = { grid, toTm };
       // tunnels in cuts first: the ways over them become bridges
       const covered = coverCutTunnels(features, heightAt);
       logger.log(`${covered.tunnels} tunnels in cuts get lids, ${covered.crossings} ways over them become bridges`);
@@ -352,6 +364,6 @@ export class MapBuilder {
 
     const tiles = new Map(cutIntoTiles(features, keys, size).map((tile) => [tileName(tile), tile]));
     const attributions = [OSM_ATTRIBUTION, ...(heightAt ? [ELEVATION_ATTRIBUTION] : []), ...otherAttributions];
-    return { info: { origin, tileSize: size, tiles: keys, osmTimestamp, attributions }, tiles, heightAt };
+    return { info: { origin, tileSize: size, tiles: keys, osmTimestamp, attributions }, tiles, heightAt, ground };
   }
 }

@@ -228,3 +228,39 @@ export function tileHeights(
 function compareOsmIds(a: string, b: string): number {
   return a[0] === b[0] ? Number(a.slice(1)) - Number(b.slice(1)) : a < b ? 1 : -1;
 }
+
+/**
+ * toTm over a tile, worked out on a lattice of points about `spacing` apart and interpolated between them
+ * (bilinearly, which is exact where toTm is linear).
+ */
+export function latticeProjection(
+  tile: TileKey,
+  size: number,
+  spacing: number,
+  toTm: (e: number, n: number) => [number, number],
+): (e: number, n: number) => [number, number] {
+  const cells = Math.max(1, Math.round(size / spacing));
+  const step = size / cells;
+  const x0 = tile.x * size;
+  const y0 = tile.y * size;
+  const lattice: [number, number][] = [];
+  for (let row = 0; row <= cells; row++) {
+    for (let col = 0; col <= cells; col++) {
+      lattice.push(toTm(x0 + col * step, y0 + row * step));
+    }
+  }
+  const at = (col: number, row: number) => lattice[row * (cells + 1) + col];
+  return (e, n) => {
+    const u = (e - x0) / step;
+    const v = (n - y0) / step;
+    const col = Math.min(Math.max(Math.floor(u), 0), cells - 1);
+    const row = Math.min(Math.max(Math.floor(v), 0), cells - 1);
+    const s = u - col;
+    const t = v - row;
+    const [a, b, c, d] = [at(col, row), at(col + 1, row), at(col, row + 1), at(col + 1, row + 1)];
+    return [
+      (1 - t) * ((1 - s) * a[0] + s * b[0]) + t * ((1 - s) * c[0] + s * d[0]),
+      (1 - t) * ((1 - s) * a[1] + s * b[1]) + t * ((1 - s) * c[1] + s * d[1]),
+    ];
+  };
+}

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mergeGrids, parseAsciiGrid, sampleElevation, toTm35fin } from "./elevation.ts";
-import { tileHeights } from "./tiles.ts";
+import { LocalProjection } from "./projection.ts";
+import { latticeProjection, tileHeights } from "./tiles.ts";
 
 // 3 x 2 cells of 2 m: rows from the north
 const GRID = `ncols        3
@@ -51,6 +52,32 @@ test("tileHeights samples the tile grid from the south-west and fills gaps with 
   assert.deepEqual(heights.values.slice(0, 3), [90, 140, 190]);
   const average = (9 + 14 + 19 + 9.5 + 14.5 + 19.5 + 10 + 15) / 8;
   assert.equal(heights.values[8], Math.round(average * 10));
+});
+
+test("latticeProjection is exact for a linear projection, inside the tile and at its edges", () => {
+  const linear = (e: number, n: number): [number, number] => [300_000 + 0.9 * e - 0.1 * n, 6_800_000 + 0.1 * e + 0.9 * n];
+  const at = latticeProjection({ x: 2, y: -3 }, 250, 10, linear);
+  for (const [e, n] of [[500, -750], [750, -500], [612.3, -611.7], [749.99, -500.01]]) {
+    const [x, y] = at(e, n);
+    const [ex, ey] = linear(e, n);
+    assert.ok(Math.abs(x - ex) < 1e-6 && Math.abs(y - ey) < 1e-6, `at ${e}, ${n}: ${x}, ${y}`);
+  }
+});
+
+test("latticeProjection keeps to TM35FIN within a millimetre over a tile in Tampere, 10 km out", () => {
+  const projection = new LocalProjection({ latitude: 61.4978, longitude: 23.761 });
+  const toTm = (e: number, n: number) => toTm35fin(projection.toGeo([e, n]));
+  const tile = { x: 40, y: -40 };
+  const at = latticeProjection(tile, 250, 10, toTm);
+  let worst = 0;
+  for (let e = 10_000; e <= 10_250; e += 7.3) {
+    for (let n = -10_000; n <= -9_750; n += 7.3) {
+      const [x, y] = at(e, n);
+      const [ex, ey] = toTm(e, n);
+      worst = Math.max(worst, Math.hypot(x - ex, y - ey));
+    }
+  }
+  assert.ok(worst < 0.001, `${worst} m`);
 });
 
 test("mergeGrids puts the pieces of a large area where their corners say, leaving gaps empty", () => {
