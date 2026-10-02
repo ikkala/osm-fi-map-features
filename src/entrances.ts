@@ -5,7 +5,7 @@
 // Wider blocks of flats (around a courtyard, in a city block) get none: their doors are as often in the
 // yard or a gateway. The mapped staircases of Tampere are 18 m apart (the middle half 15 .. 20.5 m), and
 // the street side is right for 66 % of the slabs: a guessed door is often on the wrong side.
-import { distanceToRing, nearestOnSegment, orientedBox, ringArea, ringCentroid, type Point, type Ring } from "./geometry.ts";
+import { distanceToRing, nearestOnSegment, orientedBox, RectGrid, ringArea, ringCentroid, type Point, type Rect, type Ring } from "./geometry.ts";
 import { bounds, type Building, type Entrance, type GeoBox, type OverpassResponse, type Road } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 
@@ -72,7 +72,7 @@ export function assignEntrances(buildings: Building[], entrances: Entrance[]): n
  * Returns how many buildings got some.
  */
 export function guessEntrances(buildings: Building[], roads: Road[]): number {
-  const streets = roads.filter((r) => STREETS.has(r.kind) && !r.tunnel && !r.bridge);
+  const streets = streetGrid(roads.filter((r) => STREETS.has(r.kind) && !r.tunnel && !r.bridge));
   let count = 0;
   for (const b of buildings) {
     const ring = b.polygon.outer;
@@ -84,7 +84,11 @@ export function guessEntrances(buildings: Building[], roads: Road[]): number {
     const along: Point = [Math.cos(box.angle), Math.sin(box.angle)];
     const across: Point = [-along[1], along[0]];
     const centre = boxCentre(ring, along, across);
-    const street = nearestStreetPoint(streets, ringCentroid(ring));
+    // a street farther from the centroid than this is farther than MAX_STREET_M from every point of the
+    // outline (1 m more for rounding)
+    const centroid = ringCentroid(ring);
+    const radius = Math.max(...ring.map(([x, y]) => Math.hypot(x - centroid[0], y - centroid[1])));
+    const street = nearestStreetPoint(streets, centroid, MAX_STREET_M + radius + 1);
     if (!street || distanceToRing(street, ring) > MAX_STREET_M) {
       continue;
     }
@@ -173,18 +177,52 @@ function nearestOnRings(rings: Ring[], p: Point): Point | undefined {
   return best;
 }
 
-/** The point on a street nearest to p, or undefined without streets */
-function nearestStreetPoint(streets: Road[], p: Point): Point | undefined {
-  let best: Point | undefined;
-  let bestDistance = Infinity;
+/** A street's segment, and its place among all the streets' segments */
+interface Segment {
+  a: Point;
+  b: Point;
+  order: number;
+}
+
+/** The streets' segments in cells of this size (m) */
+const STREET_CELL_M = 50;
+
+function streetGrid(streets: Road[]): RectGrid<Segment> {
+  const segments: { a: Point; b: Point; box: Rect }[] = [];
   for (const street of streets) {
     for (let i = 0; i + 1 < street.line.length; i++) {
-      const q = nearestOnSegment(p, street.line[i], street.line[i + 1]);
-      const d = Math.hypot(q[0] - p[0], q[1] - p[1]);
-      if (d < bestDistance) {
-        best = q;
-        bestDistance = d;
-      }
+      const a = street.line[i];
+      const b = street.line[i + 1];
+      segments.push({ a, b, box: bounds([a, b]) });
+    }
+  }
+  const over = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  for (const { box } of segments) {
+    over.minX = Math.min(over.minX, box.minX);
+    over.minY = Math.min(over.minY, box.minY);
+    over.maxX = Math.max(over.maxX, box.maxX);
+    over.maxY = Math.max(over.maxY, box.maxY);
+  }
+  const grid = new RectGrid<Segment>(STREET_CELL_M, over);
+  segments.forEach(({ a, b, box }, order) => grid.add(box, { a, b, order }));
+  return grid;
+}
+
+/**
+ * The point on a street nearest to p, or undefined when there is none within reach (m). Of equally near
+ * ones, the first of the streets' segments, as if they were all gone through in order.
+ */
+function nearestStreetPoint(streets: RectGrid<Segment>, p: Point, reach: number): Point | undefined {
+  let best: Point | undefined;
+  let bestDistance = Infinity;
+  let bestOrder = Infinity;
+  for (const { a, b, order } of streets.within({ minX: p[0] - reach, minY: p[1] - reach, maxX: p[0] + reach, maxY: p[1] + reach })) {
+    const q = nearestOnSegment(p, a, b);
+    const d = Math.hypot(q[0] - p[0], q[1] - p[1]);
+    if (d <= reach && (d < bestDistance || (d === bestDistance && order < bestOrder))) {
+      best = q;
+      bestDistance = d;
+      bestOrder = order;
     }
   }
   return best;

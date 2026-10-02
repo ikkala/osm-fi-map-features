@@ -3,7 +3,7 @@
 // something to draw) and the same on every build, since each tree's place and look come from its
 // grid cell alone.
 import { bounds, type Area, type MapFeatures, type Tree } from "./osm.ts";
-import { distanceToRing, distanceToSegment, pointInPolygon, type Point, type Rect } from "./geometry.ts";
+import { distanceToRing, distanceToSegment, pointInPolygon, polygonTest, RectGrid, type Point, type Rect } from "./geometry.ts";
 
 /** An OSM tree this close (m) to a register tree is the same tree */
 const SAME_TREE_M = 4;
@@ -81,44 +81,6 @@ class PointGrid {
   }
 }
 
-/**
- * Things (in square cells by their bounding boxes) that a point may be inside. Only the cells over `over`
- * are kept, so that a lake many kilometres across fills only those; points outside it find nothing.
- */
-class RectGrid<T> {
-  readonly #cell: number;
-  readonly #over: Rect;
-  readonly #cells = new Map<string, T[]>();
-
-  constructor(cell: number, over: Rect) {
-    this.#cell = cell;
-    this.#over = over;
-  }
-
-  add(rect: Rect, item: T): void {
-    const over = this.#over;
-    const minI = Math.floor(Math.max(rect.minX, over.minX) / this.#cell);
-    const maxI = Math.floor(Math.min(rect.maxX, over.maxX) / this.#cell);
-    const minJ = Math.floor(Math.max(rect.minY, over.minY) / this.#cell);
-    const maxJ = Math.floor(Math.min(rect.maxY, over.maxY) / this.#cell);
-    for (let i = minI; i <= maxI; i++) {
-      for (let j = minJ; j <= maxJ; j++) {
-        const key = `${i},${j}`;
-        const list = this.#cells.get(key);
-        if (list) {
-          list.push(item);
-        } else {
-          this.#cells.set(key, [item]);
-        }
-      }
-    }
-  }
-
-  at(point: Point): T[] {
-    return this.#cells.get(`${Math.floor(point[0] / this.#cell)},${Math.floor(point[1] / this.#cell)}`) ?? [];
-  }
-}
-
 /** The register's trees, and OSM's trees except those at a register tree */
 export function mergeTrees(register: Tree[], osm: Tree[]): Tree[] {
   const grid = new PointGrid(SAME_TREE_M);
@@ -162,7 +124,7 @@ export function plantForests(features: MapFeatures, within: Rect): number {
   }
   for (const area of features.areas) {
     if (BARE_AREAS.has(area.kind)) {
-      blockers.add(bounds(area.polygon.outer), (p) => pointInPolygon(p, area.polygon));
+      blockers.add(bounds(area.polygon.outer), polygonTest(area.polygon));
     }
   }
   const lines = [
@@ -186,6 +148,7 @@ export function plantForests(features: MapFeatures, within: Rect): number {
   for (const area of covered) {
     const planting = PLANTINGS[area.cover ?? "trees"];
     const { spacing } = planting;
+    const inArea = polygonTest(area.polygon);
     // woods reach far outside the map
     const box = bounds(area.polygon.outer);
     const minX = Math.max(box.minX, within.minX);
@@ -200,7 +163,7 @@ export function plantForests(features: MapFeatures, within: Rect): number {
         // somewhere in the cell, not too close to the neighbouring cells' plants
         const point: Point = [(i + 0.15 + 0.7 * cellRandom(i, j, 2)) * spacing, (j + 0.15 + 0.7 * cellRandom(i, j, 3)) * spacing];
         if (
-          !pointInPolygon(point, area.polygon) ||
+          !inArea(point) ||
           plants.near(point, PLANT_GAP_M) ||
           blockers.at(point).some((blocks) => blocks(point))
         ) {

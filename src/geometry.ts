@@ -249,6 +249,118 @@ export function pointInPolygon(point: Point, polygon: Polygon): boolean {
   return pointInRing(point, polygon.outer) && !polygon.holes.some((hole) => pointInRing(point, hole));
 }
 
+/** Rings with fewer points than this are tested edge by edge: banding them would not pay */
+const BANDED_RING_POINTS = 32;
+/** Edges per band, on average, of a banded ring */
+const EDGES_PER_BAND = 8;
+const MAX_BANDS = 4096;
+
+/**
+ * pointInPolygon for many points in one large polygon (a lake, a wood): each ring's edges are kept in
+ * horizontal bands, and a point is tested only against the edges of its band. Those are all the edges that
+ * can cross its ray, tested the same way, so the answer is the same as pointInPolygon's.
+ */
+export function polygonTest(polygon: Polygon): (point: Point) => boolean {
+  const outer = ringTest(polygon.outer);
+  const holes = polygon.holes.map(ringTest);
+  return (point) => outer(point) && !holes.some((hole) => hole(point));
+}
+
+function ringTest(ring: Ring): (point: Point) => boolean {
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const [, y] of ring) {
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+  }
+  const count = Math.min(MAX_BANDS, Math.ceil(ring.length / EDGES_PER_BAND));
+  const height = (maxY - minY) / count;
+  if (ring.length < BANDED_RING_POINTS || !(height > 0)) {
+    return (point) => pointInRing(point, ring);
+  }
+  // monotonic in y, so an edge from y1 to y2 is in the bands of every y between them
+  const bandOf = (y: number) => Math.min(count - 1, Math.floor((y - minY) / height));
+  // each edge as xi, yi, xj, yj, as pointInRing has them
+  const bands: number[][] = Array.from({ length: count }, () => []);
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if (yi !== yj) {
+      for (let band = bandOf(Math.min(yi, yj)); band <= bandOf(Math.max(yi, yj)); band++) {
+        bands[band].push(xi, yi, xj, yj);
+      }
+    }
+  }
+  return ([x, y]) => {
+    // no edge reaches a point outside the ring's heights
+    if (!(y >= minY && y < maxY)) {
+      return false;
+    }
+    const edges = bands[bandOf(y)];
+    let inside = false;
+    for (let k = 0; k < edges.length; k += 4) {
+      const xi = edges[k];
+      const yi = edges[k + 1];
+      const xj = edges[k + 2];
+      const yj = edges[k + 3];
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  };
+}
+
+/**
+ * Things (in square cells by their bounding boxes) near a point. Only the cells over `over` are kept, so
+ * that a lake many kilometres across fills only those; points outside it find nothing.
+ */
+export class RectGrid<T> {
+  readonly #cell: number;
+  readonly #over: Rect;
+  readonly #cells = new Map<string, T[]>();
+
+  constructor(cell: number, over: Rect) {
+    this.#cell = cell;
+    this.#over = over;
+  }
+
+  add(rect: Rect, item: T): void {
+    const over = this.#over;
+    const minI = Math.floor(Math.max(rect.minX, over.minX) / this.#cell);
+    const maxI = Math.floor(Math.min(rect.maxX, over.maxX) / this.#cell);
+    const minJ = Math.floor(Math.max(rect.minY, over.minY) / this.#cell);
+    const maxJ = Math.floor(Math.min(rect.maxY, over.maxY) / this.#cell);
+    for (let i = minI; i <= maxI; i++) {
+      for (let j = minJ; j <= maxJ; j++) {
+        const key = `${i},${j}`;
+        const list = this.#cells.get(key);
+        if (list) {
+          list.push(item);
+        } else {
+          this.#cells.set(key, [item]);
+        }
+      }
+    }
+  }
+
+  /** The things whose box may hold the point */
+  at(point: Point): T[] {
+    return this.#cells.get(`${Math.floor(point[0] / this.#cell)},${Math.floor(point[1] / this.#cell)}`) ?? [];
+  }
+
+  /** The things whose box may meet the rectangle; one over several cells comes once for each */
+  within(rect: Rect): T[] {
+    const result: T[] = [];
+    for (let i = Math.floor(rect.minX / this.#cell); i <= Math.floor(rect.maxX / this.#cell); i++) {
+      for (let j = Math.floor(rect.minY / this.#cell); j <= Math.floor(rect.maxY / this.#cell); j++) {
+        result.push(...(this.#cells.get(`${i},${j}`) ?? []));
+      }
+    }
+    return result;
+  }
+}
+
 /**
  * Joins open ways into closed rings by matching their endpoints (multipolygon members are split into
  * several ways). Returns the rings and the number of ways that could not be closed.

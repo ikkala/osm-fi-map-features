@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { clipPolyline, clipRing, orientedBox, pointInPolygon, ringArea, simplifyLine, simplifyRing, stitchRings, triangulate, type Point } from "./geometry.ts";
+import { clipPolyline, clipRing, orientedBox, pointInPolygon, polygonTest, RectGrid, ringArea, simplifyLine, simplifyRing, stitchRings, triangulate, type Point, type Polygon } from "./geometry.ts";
 import { defined } from "./testing.ts";
 
 const rect = { minX: 0, minY: 0, maxX: 10, maxY: 10 };
@@ -45,6 +45,34 @@ test("pointInPolygon honours holes", () => {
   assert.equal(pointInPolygon([2, 2], polygon), true);
   assert.equal(pointInPolygon([5, 5], polygon), false);
   assert.equal(pointInPolygon([12, 5], polygon), false);
+});
+
+test("polygonTest answers as pointInPolygon on a large jagged polygon with a hole", () => {
+  // a star of 400 points, with flat runs and points on band edges, and a smaller star as the hole
+  const star = (n: number, r: number, cx: number, cy: number): Point[] =>
+    Array.from({ length: n }, (_, k) => {
+      const a = (2 * Math.PI * k) / n;
+      const rk = k % 7 === 0 ? r : r * (0.6 + 0.4 * Math.abs(Math.sin(k * 1.7)));
+      return [cx + Math.round(rk * Math.cos(a)), cy + Math.round(rk * Math.sin(a))];
+    });
+  const polygon: Polygon = { outer: star(400, 1000, 0, 0), holes: [star(200, 300, 100, -50)] };
+  const test = polygonTest(polygon);
+  let seed = 1;
+  const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2400 - 1200;
+  for (let k = 0; k < 20000; k++) {
+    // every fourth point at a vertex's height, where rays meet vertices
+    const p: Point = k % 4 === 0 ? [random(), polygon.outer[k % 400][1]] : [random(), random()];
+    assert.equal(test(p), pointInPolygon(p, polygon), `at ${p}`);
+  }
+});
+
+test("RectGrid finds the things whose boxes meet a rectangle", () => {
+  const grid = new RectGrid<string>(10, { minX: 0, minY: 0, maxX: 100, maxY: 100 });
+  grid.add({ minX: 5, minY: 5, maxX: 25, maxY: 8 }, "long");
+  grid.add({ minX: 60, minY: 60, maxX: 61, maxY: 61 }, "far");
+  assert.deepEqual(grid.at([22, 6]), ["long"]);
+  assert.deepEqual(new Set(grid.within({ minX: 0, minY: 0, maxX: 30, maxY: 30 })), new Set(["long"]));
+  assert.deepEqual(new Set(grid.within({ minX: 15, minY: 0, maxX: 65, maxY: 65 })), new Set(["long", "far"]));
 });
 
 test("simplifyLine drops points closer than the tolerance", () => {
