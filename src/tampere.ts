@@ -99,7 +99,7 @@ function completionYear(date: string | undefined): number | undefined {
 /** Fetches the register's buildings in a box, caching the response by box. */
 export async function fetchRegister(box: GeoBox, options: CacheOptions): Promise<{ buildings: RegisterBuilding[]; cached: boolean }> {
   const { json, cached } = await fetchWfs(BUILDINGS, box, options);
-  return { buildings: parseRegister(json), cached };
+  return { buildings: inBox(parseRegister(json), box), cached };
 }
 
 interface WfsLayer {
@@ -220,7 +220,17 @@ export function parseTreeRegister(response: unknown): RegisterTree[] {
 /** Fetches the city's street and park trees in a box, caching the response by box. */
 export async function fetchTreeRegister(box: GeoBox, options: CacheOptions): Promise<{ trees: RegisterTree[]; cached: boolean }> {
   const { json, cached } = await fetchWfs(TREES, box, options);
-  return { trees: parseTreeRegister(json), cached };
+  return { trees: inBox(parseTreeRegister(json), box), cached };
+}
+
+/**
+ * The points inside the box. The server's bbox filter also lets through features with broken coordinates (a
+ * larch at latitude 0, longitude 53 comes with every box, also far from Tampere).
+ */
+export function inBox<T extends { latitude: number; longitude: number }>(points: T[], box: GeoBox): T[] {
+  return points.filter(
+    (p) => p.latitude >= box.south && p.latitude <= box.north && p.longitude >= box.west && p.longitude <= box.east,
+  );
 }
 
 export interface RegisterMatch {

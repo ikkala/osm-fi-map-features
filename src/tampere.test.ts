@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Point } from "./geometry.ts";
 import { estimatedLevels, type Building } from "./osm.ts";
-import { applyRegister, parseRegister, parseTreeRegister, registerTreeHeight, type RegisterBuilding } from "./tampere.ts";
+import { applyRegister, inBox, parseRegister, parseTreeRegister, registerTreeHeight, type RegisterBuilding } from "./tampere.ts";
 
 function square(x: number, size: number, extra: Partial<Building> = {}): Building {
   const outer: Point[] = [[x, 0], [x + size, 0], [x + size, size], [x, size]];
@@ -100,3 +100,9 @@ test("parseTreeRegister reads the kind, height, genus and trunk of each plant", 
   ]);
 });
 
+
+test("inBox leaves out the points outside the box, such as a register tree with broken coordinates", () => {
+  const box = { south: 61.49, west: 23.73, north: 61.51, east: 23.79 };
+  const inside = { latitude: 61.5, longitude: 23.76 };
+  assert.deepEqual(inBox([inside, { latitude: 0, longitude: 53.256414 }, { latitude: 61.5, longitude: 23.8 }], box), [inside]);
+});
