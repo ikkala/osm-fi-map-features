@@ -264,7 +264,8 @@ walking a day, suburban footways a few hundred, paths and service roads less; th
 hundred to a few thousand people cycling.
 
 Roads for vehicles have `motorVehicle`, the most specific of `motorcar=*`, `motor_vehicle=*`, `vehicle=*` and
-`access=*` (who may drive on it: no, private, destination, ...), and service roads their `service=*` (parking_aisle,
+`access=*` (who may drive on it: no, private, destination, ...), `bus`, from `bus=*` or else `psv=*` (whether buses may:
+designated on a bus lane or a bus station's way closed to others), and service roads their `service=*` (parking_aisle,
 driveway, ...).
 
 ### Flows

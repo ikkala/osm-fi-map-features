@@ -68,6 +68,27 @@ test("parseOsm reads roads, buildings and multipolygon areas in meters", () => {
   assert.equal(lake.polygon.holes.length, 1);
 });
 
+test("parseOsm tells who may drive on a road: everyone, buses and taxis only, and buses alone", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 1, tags: { highway: "service", service: "parking_aisle" }, geometry: [at(0, 0), at(20, 0)] },
+      { type: "way", id: 2, tags: { highway: "service", motor_vehicle: "no", taxi: "yes" }, geometry: [at(0, 10), at(20, 10)] },
+      { type: "way", id: 3, tags: { highway: "service", access: "no", bus: "designated" }, geometry: [at(0, 20), at(20, 20)] },
+      { type: "way", id: 4, tags: { highway: "residential", motor_vehicle: "no", psv: "yes" }, geometry: [at(0, 30), at(20, 30)] },
+    ],
+    origin,
+  );
+  assert.deepEqual(
+    features.roads.map((r) => [r.osm, r.motorVehicle, r.bus, r.service]),
+    [
+      ["w1", undefined, undefined, "parking_aisle"],
+      ["w2", "no", undefined, undefined],
+      ["w3", "no", "designated", undefined],
+      ["w4", "no", "yes", undefined],
+    ],
+  );
+});
+
 test("cutIntoTiles cuts roads and areas at tile edges and keeps buildings whole", () => {
   const { features } = parseOsm(response.elements, origin);
   const keys = tilesCovering({ minX: -100, minY: -100, maxX: 100, maxY: 100 }, 100);

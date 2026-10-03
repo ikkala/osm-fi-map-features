@@ -70,6 +70,8 @@ export interface Road {
   motorVehicle?: string;
   /** service=* value of a service road, e.g. parking_aisle or driveway */
   service?: string;
+  /** Roads for vehicles: whether buses may drive on it, from bus=* or psv=*, when OSM tells (e.g. designated on a bus lane closed to others) */
+  bus?: string;
 }
 
 export type Sidewalks = "both" | "left" | "right" | "none" | "separate";
@@ -1783,11 +1785,16 @@ export function access(tags: Tags): { foot?: string; bicycle?: string; segregate
   };
 }
 
-/** Who may drive on a road (the most specific of motor_vehicle=*, motorcar=*, vehicle=*, access=*) and its service=* */
-export function motorAccess(tags: Tags): { motorVehicle?: string; service?: string } {
+/**
+ * Who may drive on a road (the most specific of motor_vehicle=*, motorcar=*, vehicle=*, access=*), whether buses may
+ * (bus=*, else psv=*) and its service=*
+ */
+export function motorAccess(tags: Tags): { motorVehicle?: string; service?: string; bus?: string } {
   const value = tags.motorcar ?? tags.motor_vehicle ?? tags.vehicle ?? tags.access;
+  const bus = tags.bus ?? tags.psv;
   return {
     ...(value && { motorVehicle: value }),
+    ...(bus && { bus }),
     ...(tags.highway === "service" && tags.service && { service: tags.service }),
   };
 }
