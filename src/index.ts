@@ -1,6 +1,7 @@
 export { MapBuilder, DEFAULT_OVERPASS_URL, OSM_ATTRIBUTION, type Logger, type MapInfo, type MapOptions } from "./builder.ts";
 export { fileCache, memoryCache, type SourceCache } from "./cache.ts";
 export { ELEVATION_ATTRIBUTION } from "./elevation.ts";
+export { FAR_CLASSES, farTile, type FarBox, type FarClass, type FarOptions, type FarTile } from "./far.ts";
 export {
   estimateMotorTraffic,
   FLOW_REACH_M,
