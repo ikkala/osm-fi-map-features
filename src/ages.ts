@@ -1,6 +1,4 @@
-// What a building's age tells: older buildings have taller storeys. A height counted from storeys at 3 m
-// each comes out low for buildings from before the Second World War, e.g. the 19th-century ones with storeys
-// of 3.5–4 m. The parts of a building without a year of their own get the year of the building they are in.
+// Older buildings have taller storeys, so a height counted from storeys is raised for them.
 import { pointInPolygon, ringCentroid } from "./geometry.ts";
 import { bounds, LEVEL_HEIGHT_M, type Building } from "./osm.ts";
 
@@ -16,9 +14,8 @@ export function storeyHeight(year: number | undefined): number {
 }
 
 /**
- * Gives parts without a year the year of the building they are in, and makes the storeys of old buildings
- * whose height is counted from storeys taller. Parts keep theirs: those higher up start at a building:min_level
- * also counted at LEVEL_HEIGHT_M, and the parts of a building must meet. Returns how many buildings got taller.
+ * Gives parts without a year their building's year, and makes storeys of old buildings whose height is counted
+ * from storeys taller. Parts keep their height so that the parts of a building still meet. Returns how many got taller.
  */
 export function applyAges(buildings: Building[]): number {
   const outlines = buildings.filter((b) => b.hasParts && b.year !== undefined).map((b) => ({ b, box: bounds(b.polygon.outer) }));

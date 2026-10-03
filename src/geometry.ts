@@ -256,9 +256,8 @@ const EDGES_PER_BAND = 8;
 const MAX_BANDS = 4096;
 
 /**
- * pointInPolygon for many points in one large polygon (a lake, a wood): each ring's edges are kept in
- * horizontal bands, and a point is tested only against the edges of its band. Those are all the edges that
- * can cross its ray, tested the same way, so the answer is the same as pointInPolygon's.
+ * pointInPolygon for many points in one large polygon: edges are bucketed into horizontal bands and a
+ * point is tested only against its band, with the same answer as pointInPolygon.
  */
 export function polygonTest(polygon: Polygon): (point: Point) => boolean {
   const outer = ringTest(polygon.outer);
@@ -311,10 +310,7 @@ function ringTest(ring: Ring): (point: Point) => boolean {
   };
 }
 
-/**
- * Things (in square cells by their bounding boxes) near a point. Only the cells over `over` are kept, so
- * that a lake many kilometres across fills only those; points outside it find nothing.
- */
+/** Spatial index of things by bounding box in square cells; only cells over `over` are kept. */
 export class RectGrid<T> {
   readonly #cell: number;
   readonly #over: Rect;

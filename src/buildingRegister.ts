@@ -1,8 +1,5 @@
-// Storeys, facade materials, uses and completion years from the Finnish building register, as the Finnish
-// Environment Institute's Ryhti (the built environment information system) publishes it for the whole country
-// (CC BY 4.0): an OGC API Features collection of one point per building. OSM has the outlines; a register
-// point inside an outline gives that building its storeys (when OSM has no height), its wall material, its use
-// and its year.
+// Storeys, facade materials, uses and completion years from SYKE's Ryhti building register (OGC API
+// Features, one point per building, CC BY 4.0), applied to the OSM outlines the points fall in.
 import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
 import { bounds, LEVEL_HEIGHT_M, type Building, type BuildingUse, type GeoBox } from "./osm.ts";
@@ -15,13 +12,12 @@ export const BUILDING_REGISTER_ATTRIBUTION = "Building register © Finnish Envir
 const ITEMS_URL = "https://paikkatiedot.ymparisto.fi/geoserver/ryhti_building/ogc/features/v1/collections/avoimet_rakennukset/items";
 /** Features asked for a page; the server gives up to this many */
 const PAGE_SIZE = 10000;
-/** Pages to follow at most: some 100 000 buildings, a city */
+/** Pages to follow at most */
 const MAX_PAGES = 10;
 
 /**
- * julkisivumateriaali: the facade materials of the register. "Lasi" (glass) is left out: it is on brick
- * factories, a stone school and blocks of flats; permits for later changes (a glass entrance, glazed
- * balconies) seem to have replaced the material. OSM building:material=glass is kept. "Muu" (other) says nothing.
+ * julkisivumateriaali: facade materials. "Lasi" (glass) is left out as unreliable (later permits for glazed
+ * parts seem to overwrite the material); "Muu" (other) says nothing.
  */
 const FACADES: Record<string, string> = {
   Betoni: "concrete",
@@ -36,9 +32,9 @@ const USES: Record<string, BuildingUse> = {
   Pientalo: "house",
   "Vapaa-ajan asuinrakennus": "holiday",
   Kerrostalo: "apartments",
-  // shops, restaurants, hotels, schools, kindergartens, sports halls, churches, hospitals, ...
+  // shops, restaurants, hotels, schools, churches, hospitals, ...
   "Julkinen rakennus": "public",
-  // offices, factories, warehouses, parking garages and whatever is not classified
+  // offices, factories, warehouses and whatever is not classified
   "Toimisto-, tuotanto-, yhdyskuntatekniikan tai muut rakennukset": "work",
   Talousrakennus: "ancillary",
   Saunarakennus: "sauna",
@@ -55,12 +51,9 @@ export interface RegisterBuilding {
   year?: number;
 }
 
-/**
- * Completion dates that stand for an unknown one: 29 February 1904 is on most outbuildings and holiday homes
- * whose date is not known, 1 January 1900 on some houses and outbuildings
- */
+/** Placeholder completion dates that stand for an unknown one */
 const UNKNOWN_DATES = new Set(["1904-02-29", "1900-01-01"]);
-/** Completion years before this are errors (952, 1065) */
+/** Completion years before this are errors */
 const FIRST_YEAR = 1700;
 
 /** Reads the standing buildings of a GeoJSON page of the register. */
@@ -71,7 +64,7 @@ export function parseBuildingRegister(response: unknown): RegisterBuilding[] {
     if (field(feature, "geometry", "type") !== "Point" || longitude === undefined || latitude === undefined) {
       continue;
     }
-    // "Purettu ..." (demolished), and some demolished ones have only the date
+    // "Purettu ..." (demolished); some demolished ones have only the date
     const inUse = optionalString(field(feature, "properties", "kaytossaolo"));
     if (optionalString(field(feature, "properties", "purkamispaivamaara")) !== undefined || inUse?.startsWith("Purettu")) {
       continue;
@@ -156,9 +149,9 @@ export interface RegisterMatch {
 }
 
 /**
- * Gives OSM buildings the storeys, facades, uses and completion years of the register buildings inside them.
- * With several register buildings in one outline, the most storeys, the most common facade and use and the
- * earliest year win. Heights from OSM are kept, and so are heights guessed by type (towers, tanks, churches), OSM materials (not guessed ones), levels and start_dates. toPoint maps a register building to map meters.
+ * Gives OSM buildings the storeys, facades, uses and years of the register buildings inside them (most
+ * storeys, most common facade and use, earliest year). OSM values and heights guessed by type are kept;
+ * toPoint maps a register building to map meters.
  */
 export function applyRegister(buildings: Building[], register: RegisterBuilding[], toPoint: (r: RegisterBuilding) => Point): RegisterMatch {
   const inside = new Map<Building, RegisterBuilding[]>();

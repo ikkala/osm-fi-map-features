@@ -1,10 +1,6 @@
-// Splits map features into square tiles, so a map can be loaded only where it is needed.
-//
-// Tile (x, y) covers east x*size ... (x+1)*size and north y*size ... (y+1)*size meters from the map
-// origin. Roads, rails and areas are cut at tile edges; a building belongs whole to the tile its
-// centroid is in, so it may reach a little into the neighbouring tiles, a tree to the tile of its
-// trunk, a street lamp, crossing, traffic signal or gate to the tile of its point. Fences and walls are cut
-// at tile edges as roads are. A piece of a bridge deck (a few meters long) belongs to the tile of the middle of its vertices.
+// Splits map features into square tiles. Tile (x, y) covers east x*size ... (x+1)*size and north
+// y*size ... (y+1)*size meters from the map origin. Lines and areas are cut at tile edges; buildings,
+// points and bridge deck pieces belong whole to the tile of their centre.
 import { deckAt } from "./bridges.ts";
 import { clipPolygon, clipPolyline, ringCentroid, simplifyRing, type Point, type Polygon, type Rect } from "./geometry.ts";
 import {
@@ -42,7 +38,7 @@ export interface Tile extends TileKey, MapFeatures {
   heights?: Heights;
 }
 
-/** Areas are simplified to this many meters before cutting; a lake shore does not need every node. */
+/** Areas are simplified to this many meters before cutting. */
 const AREA_TOLERANCE_M = 0.25;
 
 export function tileName(tile: TileKey): string {
@@ -75,10 +71,7 @@ function tileRange(rect: Rect, size: number): Rect {
   };
 }
 
-/**
- * The deck heights (bridges), lid heights (tunnels in cuts), floors (other tunnels) and track beds of a
- * piece clipped out of a line
- */
+/** The deck, lid, floor and track bed heights of a piece clipped out of a line */
 function clippedDeck(
   feature: { line: Point[]; deck?: number[]; lid?: number[]; floor?: number[]; bed?: number[] },
   piece: Point[],
@@ -229,10 +222,7 @@ function compareOsmIds(a: string, b: string): number {
   return a[0] === b[0] ? Number(a.slice(1)) - Number(b.slice(1)) : a < b ? 1 : -1;
 }
 
-/**
- * toTm over a tile, worked out on a lattice of points about `spacing` apart and interpolated between them
- * (bilinearly, which is exact where toTm is linear).
- */
+/** toTm over a tile, bilinearly interpolated from a lattice of points about `spacing` apart. */
 export function latticeProjection(
   tile: TileKey,
   size: number,

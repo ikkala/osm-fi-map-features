@@ -1,13 +1,5 @@
-// Builds the map a tile at a time from the sources, which stay apart in the SourceCache.
-//
-// The OpenStreetMap roads, rails, buildings (with the businesses in them), trees, street lamps and ground areas
-// around the area (from an Overpass API server) are laid out in meters around the origin. With an MML API key they get ground heights and
-// bridge decks from the Maanmittauslaitos elevation model and roof colours from its orthophoto; storeys, wall
-// materials, uses and years from the Finnish building register (Ryhti), and street and park trees from the
-// register of a city that publishes one (treeRegister.ts). The ways get the people walking and cycling on them (footfall.ts). Every tile touching the area can be built.
-//
-// For now the first tile asked for builds the whole area and the rest come from memory: bridge spans,
-// tunnels in cuts and multipolygons reach over tile edges, so they are worked out over the whole area.
+// Builds the map's tiles from OpenStreetMap and the open data sources, laid out in meters around the origin.
+// The first tile asked for builds the whole area: bridges, tunnels and multipolygons reach over tile edges.
 import type { SourceCache } from "./cache.ts";
 import { applyAges } from "./ages.ts";
 import { applyRegister, BUILDING_REGISTER_ATTRIBUTION, fetchBuildingRegister } from "./buildingRegister.ts";
@@ -42,10 +34,7 @@ const FETCH_MARGIN_M = 50;
 const LINE_TOLERANCE_M = 0.3;
 /** Ground height grid spacing; the elevation model has 2 m cells */
 const HEIGHT_STEP_M = 2;
-/**
- * A tile's heights take the elevation model's coordinates of their points from a lattice this many meters
- * apart, between whose points they are interpolated: over a tile the projection is all but linear.
- */
+/** Elevation model coordinates are projected on a lattice this far apart (m) and interpolated: nearly linear over a tile */
 const TM_LATTICE_M = 10;
 
 export interface Logger {
@@ -172,8 +161,7 @@ export class MapBuilder {
     for (const warning of warnings) {
       logger.warn(`warning: ${warning}`);
     }
-    // every line point costs something to draw, so drop the ones that barely bend the line, but not where
-    // other ways join it (a tunnel's branches are found by the points they share with it)
+    // simplify lines but keep the points other ways join at (tunnel networks are found by shared points)
     const ways = [...features.roads, ...features.rails];
     const uses = new Map<string, number>();
     for (const way of ways) {
@@ -191,7 +179,7 @@ export class MapBuilder {
     let heightAt: ((e: number, n: number) => number | undefined) | undefined;
     let ground: Built["ground"];
     if (mmlApiKey) {
-      // the elevation model over the tiles (the corners' TM35FIN box covers them, turned or not)
+      // the corners' TM35FIN box covers the tiles, turned or not
       const tm = corners.map(toTm35fin);
       const { grid, cached: elevationCached } = await fetchElevation(
         {
@@ -217,7 +205,6 @@ export class MapBuilder {
       setBridgeDecks(features.roads, heightAt);
       setBridgeDecks(features.rails, heightAt);
       logger.log(`${ramps(features.roads) + ramps(features.rails)} bridge approaches raised out of the hollows under bridges`);
-      // the ways on a bridge's outline get one deck, and the outline is drawn as the deck between them
       const outlined = setOutlineDecks(bridgeOutlines, [...features.roads, ...features.rails]);
       features.bridgeDecks = outlined.decks;
       logger.log(`${bridgeOutlines.length} bridge outlines, ${new Set(outlined.decks.map((d) => d.osm)).size} with decks for the ${outlined.ways} ways on them`);
@@ -227,7 +214,6 @@ export class MapBuilder {
       logger.log("no MML API key: the tiles get no ground heights");
     }
 
-    // storeys, wall materials, uses and years from the building register
     const otherAttributions: string[] = [];
     try {
       const { buildings: register, cached: registerCached } = await fetchBuildingRegister(fetchBox, { cache, refresh });
@@ -242,7 +228,7 @@ export class MapBuilder {
     } catch (err) {
       logger.warn(`warning: no building register data: ${err instanceof Error ? err.message : String(err)}`);
     }
-    // roof colours from the orthophoto, for the drawn roofs OSM has no roof:colour for
+    // roof colours from the orthophoto where OSM has none
     if (mmlApiKey) {
       const roofs = features.buildings.filter((b) => !b.hasParts && !b.roofColour);
       const toTm = (ring: Point[]) => ring.map((p) => toTm35fin(toGeo(p)));
@@ -262,13 +248,8 @@ export class MapBuilder {
         logger.warn(`warning: no roof colours from the orthophoto: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-    // TODO: measure the buildings whose height is still a guess (and the roof shapes OSM does not have) from
-    // Maanmittauslaitos laser scanning. Its 3D buildings (LoD2) do not cover Tampere yet, and its WCS has no
-    // surface model, but the open point cloud does: the file service's OGC API process
-    // laserkeilausaineisto_05_karttalehti (dataSetInput "05p_2020-", LAZ, the MML API key) has Tampere's summer
-    // 2023 scanning at 0.5 points/m², ~60 MB per 3 x 3 km map sheet (the centre is M4212G3). The points inside
-    // an outline minus the elevation model give its height (a high percentile, so chimneys do not count) and
-    // the roof's profile. Mind trees over roofs and buildings newer than the scanning.
+    // TODO: measure guessed heights and roof shapes from the MML laser scanning point cloud (a high
+    // percentile of the points in an outline minus the ground; mind trees and newer buildings).
     // after the register, which has most buildings' years
     const aged = applyAges(features.buildings);
     const dated = features.buildings.filter((b) => b.year !== undefined && !b.hasParts).length;
@@ -278,7 +259,7 @@ export class MapBuilder {
     // after the register, which tells the use of a building=yes
     const windowed = assignWindows(features.buildings);
     logger.log(`${windowed} of ${features.buildings.filter((b) => !b.hasParts).length} buildings get windows`);
-    // entrances from OSM, and guessed doors for the ordinary buildings (with windows) without any
+    // OSM entrances, and guessed doors for buildings with windows but none
     try {
       const { response: entranceResponse, cached: entrancesCached } = await fetchOverpass(entranceQuery(fetchBox), { url: overpassUrl, cache, refresh });
       const entrances = parseEntrances(entranceResponse.elements, origin);
@@ -291,7 +272,7 @@ export class MapBuilder {
     } catch (err) {
       logger.warn(`warning: no entrances: ${err instanceof Error ? err.message : String(err)}`);
     }
-    // shops, restaurants, offices, ... in the buildings, after the entrances they show at
+    // businesses after the entrances they show at
     try {
       const { response: businessResponse, cached: businessesCached } = await fetchOverpass(businessQuery(fetchBox), { url: overpassUrl, cache, refresh });
       const businesses = parseBusinesses(businessResponse.elements, origin);
@@ -308,21 +289,19 @@ export class MapBuilder {
       const raised: Building[] = [];
       const based = setBuildingBases(features.buildings, heightAt, lids, raised);
       logger.log(`${based} buildings stand at their OSM entrance or highest ground (at most ${MAX_PLINTH_M} m above their lowest)`);
-      // the ones raised over a door up a slope are stair halls: their walls open where covered ways come in at their doors
+      // buildings raised to a door up a slope are stair halls: open them where covered ways come in
       const openings = openDoorways(raised, covered, heightAt);
       logger.log(`${raised.length} buildings raised over a door up a slope, ${openings} openings where covered ways come in at their doors`);
     }
-    // TODO: entrances that are steps up or down from the street, and buildings with entrances on several
-    // floors (a slope with an entrance at each level), stand at the wrong one.
+    // TODO: buildings with entrances on several levels, or steps at the door, stand at the wrong one.
 
-    // people walking and cycling on the ways, after the businesses and doors that draw them
+    // after the businesses and doors that draw people
     const footfall = estimateFootfall(features.roads, features.buildings);
     logger.log(`footfall on ${footfall.ways} ways (${footfall.separate} streets with their sidewalks drawn apart get none)`);
     const cycling = estimateCycling(features.roads, features.buildings);
     logger.log(`cycling on ${cycling.ways} ways`);
 
-    // street and park trees from the registers that cover the area, OSM's trees where they have none of their
-    // own, and trees planted in woods and scrub
+    // register trees replace OSM's where they overlap
     const osmTrees = features.trees.length;
     const registerTrees: RegisterTree[] = [];
     for (const source of (this.#options.treeRegisters ?? TREE_REGISTERS).filter((s) => overlaps(s.covers, fetchBox))) {

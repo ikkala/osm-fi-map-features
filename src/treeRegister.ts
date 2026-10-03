@@ -1,6 +1,5 @@
-// Street and park trees from the registers of the cities that publish theirs, one point per tree, from a WFS
-// layer in the format of the parks register software many Finnish cities use (Kasviryhma, Kasvilaji,
-// Pituusluokka, Rungon_ymparys). A register is fetched only for a map that reaches into the area it covers.
+// Street and park trees from city tree registers: WFS point layers in the common Finnish parks register
+// format (Kasviryhma, Kasvilaji, Pituusluokka, Rungon_ymparys), fetched only for maps reaching their area.
 import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
 import { field, items, optionalNumber, optionalString } from "./json.ts";
@@ -17,7 +16,7 @@ export interface TreeRegisterSource {
   layer: string;
   /** What a map with its trees must credit */
   attribution: string;
-  /** Around the area the register covers (the city), so that it is not asked for maps elsewhere */
+  /** Around the area the register covers, so that it is not asked for maps elsewhere */
   covers: GeoBox;
   /** Asks for up to this many features; without it the server decides */
   count?: number;
@@ -72,7 +71,7 @@ export function registerTreeHeight(heightClass: string | undefined, circumferenc
     return Number(over[1]) + 2;
   }
   if (kind !== "shrub" && circumference !== undefined && circumference > 0) {
-    // a rough rule for city trees: a 30 cm trunk (about 10 cm across) is some 6 m tall, 150 cm some 20 m
+    // a rough height-from-diameter rule for city trees
     return Math.min(25, 3 + (circumference / Math.PI) * 0.35);
   }
   return DEFAULT_REGISTER_HEIGHTS[kind];
@@ -113,9 +112,8 @@ export function overlaps(a: GeoBox, b: GeoBox): boolean {
 }
 
 /**
- * Fetches a register's trees in a box, caching the response by the request. The server's bbox filter also lets
- * through features with broken coordinates (a larch of Tampere's at latitude 0, longitude 53 comes with every
- * box), so only the trees inside the box are kept.
+ * Fetches a register's trees in a box, cached by request. Only trees inside the box are kept: the bbox
+ * filter lets through features with broken coordinates.
  */
 export async function fetchTreeRegister(
   source: TreeRegisterSource,
@@ -145,7 +143,7 @@ export async function fetchTreeRegister(
     throw new Error(`${source.title} request failed (${res.status}): ${text.slice(0, 500)}`);
   }
   const json: unknown = JSON.parse(text);
-  // (numberMatched may be a little more than the features returned: those without a geometry are left out)
+  // count the features returned, not numberMatched, which includes ones without a geometry
   const returned = items(field(json, "features")).length;
   if (source.count !== undefined && returned >= source.count) {
     throw new Error(`${source.title}: the server returned the ${source.count} features asked for, there may be more`);

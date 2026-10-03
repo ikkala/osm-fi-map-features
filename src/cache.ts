@@ -1,5 +1,4 @@
-// Where the fetched source data is kept between runs: the raw responses of each source, by a key that
-// names the source and the request, so the sources stay apart and are only combined when a map is built.
+// Keeps the raw responses of each source between runs, keyed by source and request.
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 

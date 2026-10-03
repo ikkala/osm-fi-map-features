@@ -1,6 +1,5 @@
-// Terrain heights from the National Land Survey of Finland's elevation model (korkeusmalli 2 m, the
-// bare ground from laser scanning, heights in meters above sea level, N2000), fetched from its WCS
-// interface as an ASCII grid in ETRS-TM35FIN coordinates. Data © Maanmittauslaitos, CC BY 4.0.
+// Terrain heights from the National Land Survey's 2 m elevation model (bare ground, meters above sea
+// level, N2000), fetched from its WCS as an ASCII grid in ETRS-TM35FIN. CC BY 4.0.
 import { createHash } from "node:crypto";
 import proj4 from "proj4";
 import type { CacheOptions } from "./cache.ts";
@@ -117,10 +116,7 @@ export interface ElevationFetchOptions extends CacheOptions {
   apiKey: string;
 }
 
-/**
- * Fetches the elevation model for a TM35FIN box (snapped out to whole cells), caching it by box. An area
- * over 10 km a side, more than the WCS gives at once, is fetched in pieces and put together.
- */
+/** Fetches the elevation model for a TM35FIN box (snapped to whole cells), in pieces past the WCS limit. */
 export async function fetchElevation(box: TmBox, options: ElevationFetchOptions): Promise<{ grid: ElevationGrid; cached: boolean }> {
   const snapped = {
     minE: Math.floor(box.minE / CELL_SIZE_M) * CELL_SIZE_M,
@@ -143,10 +139,7 @@ export async function fetchElevation(box: TmBox, options: ElevationFetchOptions)
   return { grid: mergeGrids(snapped, CELL_SIZE_M, pieces), cached };
 }
 
-/**
- * One grid over a box (whole cells) from grids of parts of it; a cell no part has is NaN. Each part's cells
- * go where their own corner puts them, whatever its edges.
- */
+/** One grid over a box from grids of parts of it, each placed by its own corner; missing cells are NaN. */
 export function mergeGrids(box: TmBox, cellSize: number, parts: ElevationGrid[]): ElevationGrid {
   const cols = Math.round((box.maxE - box.minE) / cellSize);
   const rows = Math.round((box.maxN - box.minN) / cellSize);

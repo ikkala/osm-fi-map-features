@@ -1,7 +1,5 @@
-// Street lamps' heights and facing where OSM does not have them. OSM has the lamps as points (in central
-// Tampere about 2 100, a tenth of them with their mount and none with a height or a direction): a lamp
-// next to a street is as tall as that street's lamps usually are and faces it, and a lamp with only a path
-// next to it is a low park lamp facing the path. A lamp on a bridge stands on its deck.
+// Guesses street lamps' heights and facing, which OSM rarely has: a lamp faces the nearest street (or else
+// path) and is as tall as lamps by such a way usually are.
 import { deckAt } from "./bridges.ts";
 import { nearestOnLine, type Point } from "./geometry.ts";
 import { bounds, NOT_FOR_VEHICLES, type Road, type StreetLamp } from "./osm.ts";
@@ -26,9 +24,8 @@ interface Nearest {
 }
 
 /**
- * Sets the facing (`toward`) of the lamps OSM has no direction for, the height of those it has no height
- * for, and the `base` of the lamps on bridge decks (and their approaches). Tunnels are left out: they are
- * under the ground the lamps stand on. Returns how many lamps got each.
+ * Sets the missing facing (`toward`) and height of lamps, and the `base` of lamps on bridge decks; tunnels
+ * are ignored. Returns how many lamps got each.
  */
 export function placeLamps(lamps: StreetLamp[], roads: Road[]): { facing: number; heights: number; onDecks: number } {
   const reach = Math.max(STREET_REACH_M, PATH_REACH_M);

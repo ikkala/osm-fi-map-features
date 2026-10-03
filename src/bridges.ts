@@ -1,12 +1,6 @@
-// Bridge deck heights. The elevation model is the bare ground, so under a bridge it has the river or
-// the road below; the deck instead runs from the ground at one end of the bridge to the ground at
-// the other. A bridge is often several OSM ways in a row (split where its tags change), so ways
-// that meet end to end are joined into one span first.
-//
-// The model's 2 m grid also smooths the cut under a bridge into a hollow wider than the bridge, so the
-// ground at a short bridge's end (a railway over a road) is already down in it. The end's height is
-// taken instead where the ground up the way leading on stops rising steeply, and that stretch of the
-// way (the approach) gets deck heights too, so it does not dip into the hollow either.
+// Bridge deck heights. The elevation model is bare ground, so a deck instead runs from the ground at
+// one end of a span (bridge ways joined end to end) to the other. The model smooths the cut under a
+// bridge into a wider hollow, so ends are taken where the approach stops rising steeply.
 import type { Point } from "./geometry.ts";
 
 export interface BridgeLine {
@@ -21,16 +15,12 @@ const APPROACH_STEP_M = 2;
 const APPROACH_REACH_M = 12;
 /** The ground has stopped rising steeply where it rises less than this in a step (m) */
 const APPROACH_RISE_M = 0.2;
-/** Junction heights are averaged this many rounds (they settle in far fewer) */
+/** Maximum rounds of junction height averaging */
 const JUNCTION_ROUNDS = 1000;
 
 /**
- * Sets `deck` on every bridge line: along each span of bridge lines joined end to end, the height
- * goes linearly by distance from the ground at the span's first end to the ground at its last, and
- * never below the ground under it. Where three or more bridge lines meet (a ramp leaving the bridge)
- * the height hangs between the ends of the spans from there instead. The ends' ground is taken up the approaches (see above), which are
- * split off the lines leading on (added to lines, not bridges) with deck heights of their own.
- * heightAt takes meters east / north of the map origin.
+ * Sets `deck` on every bridge line: linear along each span between its ends, never below the ground.
+ * Approaches are split off the lines leading on and get decks too. heightAt takes meters east / north.
  */
 export function setBridgeDecks<T extends BridgeLine>(lines: T[], heightAt: (e: number, n: number) => number | undefined): void {
   const bridges = lines.filter((l) => l.bridge && l.line.length >= 2);
@@ -104,10 +94,8 @@ export function setBridgeDecks<T extends BridgeLine>(lines: T[], heightAt: (e: n
     spans.push({ span, points, distances });
   }
 
-  // The spans' ends: a bridge's end has the ground up its approaches; a junction on a bridge (three or
-  // more bridge lines meet: a ramp leaving the bridge) is over whatever the bridge crosses, so its height
-  // is the average of the ends of the spans from it, weighed by how near they are, as a stretched net
-  // would hang
+  // A junction (three or more bridge lines meet) has no ground of its own: its height is the average of
+  // the spans' other ends, weighted by nearness, like a stretched net
   const junction = (k: string) => (byEnd.get(k) ?? []).length > 2;
   const ends = new Map<string, { height: number | undefined; approaches: Approach<T>[] }>();
   for (const { points } of spans) {
@@ -201,11 +189,7 @@ function approach<T extends BridgeLine>(line: T, atStart: boolean, heightAt: (e:
   return { line, atStart, length, top };
 }
 
-/**
- * Gives an approach deck heights from the bridge's end (height) down to the ground where it ends,
- * never below the ground: splits it off its line into a line of its own, or gives the whole line deck
- * heights when the approach is all of it.
- */
+/** Gives an approach deck heights down from the bridge's end, splitting it off its line unless it is all of it. */
 function raiseApproach<T extends BridgeLine>(lines: T[], a: Approach<T>, height: number, heightAt: (e: number, n: number) => number | undefined): void {
   const points = a.atStart ? a.line.line : [...a.line.line].reverse();
   // the approach's points: the line's up to its length, and the point at its length

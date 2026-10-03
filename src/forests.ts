@@ -1,7 +1,5 @@
-// Trees for the map. The city's register has the street and park trees one by one and OSM some more,
-// but woods and scrub are only areas: they are planted here, sparser than real woods (every tree costs
-// something to draw) and the same on every build, since each tree's place and look come from its
-// grid cell alone.
+// Trees for the map: register and OSM trees merged, and woods and scrub areas planted sparsely and
+// deterministically (each plant's place and look come from its grid cell alone).
 import { bounds, type Area, type MapFeatures, type Tree } from "./osm.ts";
 import { distanceToRing, distanceToSegment, pointInPolygon, polygonTest, RectGrid, type Point, type Rect } from "./geometry.ts";
 
@@ -99,9 +97,8 @@ export function cellRandom(i: number, j: number, salt: number): number {
 }
 
 /**
- * Plants trees in woods and shrubs in scrub (areas with a cover) inside `within`, away from buildings,
- * roads, rails, water and the trees already in features.trees, and adds them there. Returns how many
- * were planted.
+ * Plants woods and scrub inside `within` into features.trees, clear of buildings, roads, rails, water and
+ * existing trees. Returns how many were planted.
  */
 export function plantForests(features: MapFeatures, within: Rect): number {
   const plants = new PointGrid(10);

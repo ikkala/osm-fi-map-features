@@ -1,7 +1,5 @@
-// Fences, walls and hedges open where ways go through them. In OSM a path through a fence often has no
-// gate or opening of its own, and the fence runs on over it; drawn so, it would close the path. So each
-// barrier is cut open as wide as every way (not a tunnel or a bridge, which pass under or over) that
-// crosses it, a little more, and as wide as each gate in it (a gate is drawn in the opening).
+// Fences, walls and hedges are cut open where ways cross them at grade and at their gates: in OSM a fence
+// often runs on over a path with no opening of its own.
 import { distanceToSegment, type Point } from "./geometry.ts";
 import { bounds, crossing, type Barrier, type Gate, type MapFeatures } from "./osm.ts";
 

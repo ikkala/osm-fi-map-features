@@ -1,15 +1,11 @@
-// Building entrances. OSM has entrance nodes on some outlines (in central Tampere on a seventh of the
-// buildings, mostly blocks of flats); the other ordinary buildings get guessed ones. A block of flats (a
-// slab: long, narrow and rectangular) gets a staircase every STAIR_SPACING_M along its long side facing
-// the nearest street, other buildings with windows one main door in the middle of the side facing it.
-// Wider blocks of flats (around a courtyard, in a city block) get none: their doors are as often in the
-// yard or a gateway. The mapped staircases of Tampere are 18 m apart (the middle half 15 .. 20.5 m), and
-// the street side is right for 66 % of the slabs: a guessed door is often on the wrong side.
+// Building entrances: OSM entrance nodes where mapped, else guessed. A slab block of flats gets
+// staircases along its side facing the nearest street, other buildings with windows one main door on
+// that side. Wider blocks of flats get none: their doors are as often in the yard.
 import { distanceToRing, nearestOnSegment, orientedBox, RectGrid, ringArea, ringCentroid, type Point, type Rect, type Ring } from "./geometry.ts";
 import { bounds, type Building, type Entrance, type GeoBox, type OverpassResponse, type Road } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 
-/** Staircases of a guessed block of flats are this far apart (m) */
+/** Staircases of a guessed block of flats are this far apart (m), as measured from mapped ones */
 export const STAIR_SPACING_M = 18;
 /** A block of flats this narrow (m) and this rectangular (area / oriented box) is a slab */
 const MAX_SLAB_WIDTH_M = 20;
@@ -84,8 +80,7 @@ export function guessEntrances(buildings: Building[], roads: Road[]): number {
     const along: Point = [Math.cos(box.angle), Math.sin(box.angle)];
     const across: Point = [-along[1], along[0]];
     const centre = boxCentre(ring, along, across);
-    // a street farther from the centroid than this is farther than MAX_STREET_M from every point of the
-    // outline (1 m more for rounding)
+    // beyond this from the centroid a street is beyond MAX_STREET_M from the whole outline (+1 m rounding)
     const centroid = ringCentroid(ring);
     const radius = Math.max(...ring.map(([x, y]) => Math.hypot(x - centroid[0], y - centroid[1])));
     const street = nearestStreetPoint(streets, centroid, MAX_STREET_M + radius + 1);

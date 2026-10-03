@@ -1,7 +1,5 @@
-// Roof colours from the National Land Survey of Finland's colour orthophoto (ortokuva, 0.5 m pixels),
-// fetched from the same WCS interface as the elevation model as uncompressed GeoTIFFs in ETRS-TM35FIN
-// coordinates. Data © Maanmittauslaitos, CC BY 4.0. A roof's colour is the median of the pixels inside
-// its outline; the images are big (~12 MB per km²), so only the colours are cached.
+// Roof colours from the National Land Survey's colour orthophoto (WCS, uncompressed GeoTIFF in
+// ETRS-TM35FIN, CC BY 4.0): the median of the pixels inside each outline. Only colours are cached.
 import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
 import { distanceToRing, pointInPolygon, type Point, type Polygon } from "./geometry.ts";
@@ -12,19 +10,15 @@ export const ORTHO_ATTRIBUTION = "Orthophoto © Maanmittauslaitos (CC BY 4.0)";
 const WCS_URL = "https://avoin-karttakuva.maanmittauslaitos.fi/ortokuvat-ja-korkeusmallit/wcs/v2";
 const COVERAGE = "ortokuva_vari";
 const PIXEL_SIZE_M = 0.5;
-/** WCS limit: 4000 pixels a side (~48 MB) */
+/** WCS limit: 4000 pixels a side */
 const MAX_SIDE_M = 4000 * PIXEL_SIZE_M;
-/**
- * Roofs are fetched by the square their centre is in, with this much around it for the roofs that
- * cross its edges (a bigger roof gets the part of it in the image)
- */
+/** Roofs are fetched by the square their centre is in, with this margin for roofs crossing its edges */
 const SQUARE_MARGIN_M = 100;
 const SQUARE_M = MAX_SIDE_M - 2 * SQUARE_MARGIN_M;
-/** Pixels this close to the outline are left out: eaves, walls leaning into the image and misalignment */
+/** Pixels this close to the outline are left out (eaves, leaning walls, misalignment) */
 const EDGE_MARGIN_M = 1;
 /** Fewer pixels than this is no colour */
 const MIN_PIXELS = 4;
-/** The colours are cached, not the images */
 const CACHE_KEY = "mml-roof-colours.json";
 /** Bump when the colour computation changes, so cached colours are computed again */
 const CACHE_VERSION = 1;
@@ -90,10 +84,7 @@ export function parseTiff(bytes: Uint8Array): { width: number; height: number; r
   return { width, height, rgb };
 }
 
-/**
- * The haze in a raster: each channel's value at its darkest 0.1 %, which would be black without it.
- * Aerial photos are hazy blue, deep shadows are e.g. (20, 29, 39).
- */
+/** The haze in a raster: each channel's value at its darkest 0.1 %, which would be black without it. */
 export function darkPoint(raster: Raster): [number, number, number] {
   const pixels = raster.width * raster.height;
   const channelDark = (channel: number) => {
@@ -114,9 +105,8 @@ export function darkPoint(raster: Raster): [number, number, number] {
 }
 
 /**
- * The colour ("#rrggbb") of the roof over an outline (in TM35FIN), or undefined when too little of it is
- * in the raster. The median of the pixels inside, without the edges and the darkest third (shadows),
- * with the haze (see darkPoint) taken out.
+ * The roof colour ("#rrggbb") over a TM35FIN outline, or undefined: the median of the pixels inside,
+ * without the edges and the darkest third (shadows), with the haze taken out.
  */
 export function roofColour(raster: Raster, outline: Polygon, dark: [number, number, number]): string | undefined {
   const xs = outline.outer.map(([e]) => (e - raster.west) / raster.pixelSize);
@@ -192,10 +182,7 @@ export interface RoofColourResult {
   fetched: number;
 }
 
-/**
- * The roof colours of outlines (in TM35FIN), from the cache or else by fetching the orthophoto around
- * them a square at a time. Colours are cached by the outline's shape, so a changed outline gets a new one.
- */
+/** Roof colours of TM35FIN outlines, cached by outline shape, else fetched a square at a time. */
 export async function fetchRoofColours(
   outlines: Polygon[],
   options: CacheOptions & { apiKey: string; log?: (message: string) => void },

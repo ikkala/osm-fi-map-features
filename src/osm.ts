@@ -1,5 +1,4 @@
-// Fetches OpenStreetMap data from an Overpass API server and turns it into map features in meters
-// east / north of the map origin.
+// Fetches OpenStreetMap data from Overpass and turns it into map features in meters east / north of the origin.
 import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
 import { field, isObject, items, optionalNumber, optionalString } from "./json.ts";
@@ -20,12 +19,7 @@ import {
   type Ring,
 } from "./geometry.ts";
 
-/**
- * The main use classes of the Finnish building register: house (detached, semi-detached and terraced), holiday
- * (holiday homes), apartments (blocks of flats, residential homes), public (shops, restaurants, hotels, schools,
- * sports halls, churches, hospitals, ...), work (offices, factories, warehouses, parking garages and the
- * unclassified), ancillary (sheds, garages) and sauna
- */
+/** The main use classes of the Finnish building register; work includes the unclassified */
 export type BuildingUse = "house" | "holiday" | "apartments" | "public" | "work" | "ancillary" | "sauna";
 
 export interface GeoBox {
@@ -62,15 +56,9 @@ export interface Road {
   deck?: number[];
   /** A tunnel in a cut in the elevation model: its lid's top (m above sea level) at every point of line */
   lid?: number[];
-  /**
-   * Other tunnels, ramps down to their portals and tunnels beside tunnels in cuts: the floor (m above sea
-   * level) at every point of line, when heights are known
-   */
+  /** Other tunnels and ramps to their portals: the floor (m above sea level) at every point of line, when known */
   floor?: number[];
-  /**
-   * People walking along the way (on its sidewalks for a street) on an average day of the year, both
-   * directions together, at every point of line; unset where no one walks (see footfall.ts)
-   */
+  /** People walking along the way per average day, both directions, at every point of line (see footfall.ts) */
   footfall?: number[];
   /** People cycling along the way on an average day of the year, as footfall (see footfall.ts) */
   cycling?: number[];
@@ -96,10 +84,7 @@ export interface Rail {
   deck?: number[];
   /** A tunnel in a cut in the elevation model: its lid's top (m above sea level) at every point of line */
   lid?: number[];
-  /**
-   * Other tunnels, ramps down to their portals and tunnels beside tunnels in cuts: the floor (m above sea
-   * level) at every point of line, when heights are known
-   */
+  /** Other tunnels and ramps to their portals: the floor (m above sea level) at every point of line, when known */
   floor?: number[];
   /** Other railways: the track bed (m above sea level) at every point of line, the ground smoothed along it */
   bed?: number[];
@@ -117,22 +102,13 @@ export interface Building {
   height: number;
   /** The height is a guess (no height or levels in OSM), which better data may replace */
   heightEstimated?: boolean;
-  /**
-   * The estimated height is guessed from what the building is (a tower, a tank, a church, see
-   * HEIGHTS_BY_TYPE): a building register's storeys would tell it worse
-   */
+  /** The estimated height comes from the building's type (HEIGHTS_BY_TYPE), which storeys would tell worse */
   heightByType?: boolean;
-  /**
-   * The height is counted from storeys (building:levels or a building register's) at LEVEL_HEIGHT_M each:
-   * an old building's taller storeys may replace it (see ages.ts)
-   */
+  /** The height is storeys times LEVEL_HEIGHT_M, which an old building's taller storeys may replace (ages.ts) */
   heightFromLevels?: boolean;
   /** Meters above the ground to the bottom (e.g. a part over a passage) */
   minHeight: number;
-  /**
-   * Meters above sea level that the building stands at, and its height and minHeight count from: its
-   * highest ground, or its building's for a part (see setBuildingBases); unset without an elevation model
-   */
+  /** Meters above sea level that height and minHeight count from (see setBuildingBases); unset without elevations */
   base?: number;
   /** Storeys in the walls, from minHeight to the eaves, when OSM or a building register has them */
   levels?: number;
@@ -155,7 +131,7 @@ export interface Building {
   roofAngle?: number;
   colour?: string;
   roofColour?: string;
-  /** Wall material: building:material or material, or the facade from a building register */
+  /** Wall material: building:material or material, or the building register's facade */
   material?: string;
   /** The material is a guess (brick for an untagged chimney), which a building register's facade replaces */
   materialEstimated?: boolean;
@@ -235,9 +211,8 @@ export interface Opening {
 }
 
 /**
- * The room of a way through a building: a building is only its walls and roof, so from the openings in
- * its walls one would see into it. The room is walled along the way's sides and has a ceiling at height
- * meters over the ground, over the quadrilaterals between consecutive sections.
+ * The room of a way through a building, so its wall openings do not show the hollow inside: walls along
+ * the way's sides and a ceiling at height meters over the quadrilaterals between consecutive sections.
  */
 export interface PassageRoom {
   /** Across the way, in order along it: where it comes in, its corners, where it goes out; [left, right] */
@@ -245,11 +220,7 @@ export interface PassageRoom {
   height: number;
   /** Whether the way ends inside the building at its first or last section, so a wall closes the room there */
   closed: [boolean, boolean];
-  /**
-   * The room's walls, each from point to point with the room on its right (so, as with the outline's
-   * rings, the solid side is on the left): along its sides and across its closed ends, less where they
-   * are in another room of the building (a way beside it or across it)
-   */
+  /** The room's walls, each with the room on its right (solid side left), less where in another room */
   walls: [Point, Point][];
 }
 
@@ -449,10 +420,8 @@ const STOP_SHELTER_HEIGHT_M = 2.7;
  */
 const STRUCTURES = new Set(["chimney", "ventilation_shaft", "storage_tank", "silo", "water_tower", "tower", "gasometer"]);
 /**
- * How tall a structure (by man_made=*, else building=*) or a church without a height or levels is guessed:
- * perWidth times its base's longest side, at most max meters. Storeys say little about these. From those
- * with a height in OSM in southern Finland (October 2026): the median of height / width, and about the upper
- * quartile of the heights; chimneys from Tampere's (10 to 18 times, mostly 12).
+ * Guessed height of an untagged structure (man_made=*, else building=*) or church: perWidth times its base's
+ * longest side, at most max meters. Fitted to tagged heights in OSM.
  */
 const HEIGHTS_BY_TYPE = new Map<string, { perWidth: number; max: number }>([
   ["chimney", { perWidth: 12, max: 100 }],
@@ -466,10 +435,7 @@ const HEIGHTS_BY_TYPE = new Map<string, { perWidth: number; max: number }>([
   ["cathedral", { perWidth: 0.45, max: 30 }],
   ["chapel", { perWidth: 0.45, max: 30 }],
 ]);
-/**
- * A roof that a road runs under (a canopy over a bus stop's lanes or a petrol station) is at least this
- * tall when OSM does not have its height: vehicles in Finland may be 4.4 m tall.
- */
+/** Least height of an untagged roof over a road (vehicles in Finland may be 4.4 m tall) */
 const ROOF_OVER_ROAD_M = 5;
 /** How tall a passage through a building is when its way has no maxheight: for vehicles, and for people */
 const PASSAGE_HEIGHT_M = 4;
@@ -539,10 +505,7 @@ const MAX_GUESSED_ROOF_M = 6;
 /** roof:direction compass points */
 const COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
 
-/**
- * Storeys of a building whose height and levels are not tagged, guessed from its type and floor area
- * (m²): sheds and anything under 40 m² get one, houses and anything under 150 m² two, others three.
- */
+/** Storeys of a building without height or levels, guessed from its type and floor area (m²) */
 export function estimatedLevels(kind: string, area: number): number {
   if (SMALL_BUILDINGS.has(kind) || area < 40) {
     return 1;
@@ -804,12 +767,9 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
     }
   }
 
-  // the ways indoors are left out (they are inside buildings), but not the ones that lead on from a
-  // tunnel's end, up to INDOOR_REACH_M on: stairs up out of an underpass into a stair house over it, and
-  // on to its door, are how the tunnel comes out there. They are passages through the buildings they are
-  // in, so the walls are open where they go out, and their rooms open into one another. A way out of the
-  // tunnel comes into the building from under the ground: its passage starts OUT_OF_TUNNEL_M on, so the
-  // wall stays whole there.
+  // ways indoors are left out, except up to INDOOR_REACH_M on from a tunnel's end (how an underpass comes
+  // out through a building): they become passages, starting OUT_OF_TUNNEL_M on so the wall stays whole
+  // where they come up from under the ground.
   const reached = new Map<string, number>();
   for (const r of features.roads.filter((r) => r.tunnel)) {
     for (const p of [r.line[0], r.line[r.line.length - 1]]) {
@@ -1100,10 +1060,7 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
   };
 }
 
-/**
- * A building's wall material: building:material, or material (common on chimneys). A chimney with neither
- * gets brick as a guess: Tampere's old factory chimneys are brick.
- */
+/** A building's wall material: building:material or material; brick is guessed for an untagged chimney */
 function wallMaterial(tags: Tags, chimney: boolean): { material?: string; materialEstimated?: boolean } {
   const tagged = tags["building:material"] ?? tags.material;
   if (tagged) {
@@ -1131,10 +1088,9 @@ export function isSpecial(tags: Tags): boolean {
 }
 
 /**
- * A building's pitched roof: its shape from roof:shape, or a guessed gabled roof for houses and small
- * buildings with a nearly rectangular outline (not for parts and open roofs). The ridge runs along the
- * long side unless roof:orientation=across; a skillion roof slopes down to roof:direction, or across the
- * long side. guessedHeight is the rise at ROOF_PITCH (SKILLION_PITCH), used when no height is tagged.
+ * A building's pitched roof from roof:shape, or a guessed gabled roof for nearly rectangular houses and small
+ * buildings. The ridge runs along the long side unless roof:orientation=across; a skillion slopes down to
+ * roof:direction, else across. guessedHeight is the rise at ROOF_PITCH (SKILLION_PITCH), for when no height is tagged.
  */
 function pitchedRoof(
   tags: Tags,
@@ -1238,10 +1194,8 @@ export function openPassages(buildings: Building[], passages: Passage[], rooms =
 }
 
 /**
- * Opens the walls of stair halls (buildings with doors up a slope, see bases.ts) where a covered way (a
- * stair up the slope under their roof) comes in at one of their doors in OSM: as openPassages, from the
- * ground there, without a room (the hall is the room; the way inside rises under its roof). heightAt
- * gives the ground at map meters. Returns how many openings there are.
+ * Opens the walls of stair halls (see bases.ts) where a covered way comes in at one of their doors, from the
+ * ground there and without a room. heightAt gives the ground at map meters. Returns the number of openings.
  */
 export function openDoorways(buildings: Building[], ways: Road[], heightAt: (e: number, n: number) => number | undefined): number {
   let count = 0;
@@ -1453,10 +1407,9 @@ function spansLeft(spans: [number, number][]): [number, number][] {
 }
 
 /**
- * Whether a tunnel or covered way is really a passage through buildings (mappers often tag those
- * tunnel=yes): short, neither end well inside a building standing on the ground, and at least half of it
- * inside one. A real tunnel is long or deep (the caller leaves out layers under -1) and runs under
- * other things, and a ramp into a garage ends inside.
+ * Whether a tunnel or covered way is really a passage through buildings (often tagged tunnel=yes): short,
+ * at least half inside one, and neither end well inside (a ramp into a garage ends inside). The caller leaves out
+ * layers under -1.
  */
 function runsThroughBuildings(line: Point[], buildings: Building[]): boolean {
   let length = 0;
@@ -1603,9 +1556,8 @@ function raiseRoofsOverRoads(features: MapFeatures): void {
 }
 
 /**
- * Marks outlines that contain parts: in OSM 3D buildings the parts replace the outline. But mappers often
- * give parts to only some of a building (the low wings of Emmauksen talo, not its 8-storey body), so an
- * outline whose parts cover less than this share of it is drawn as well.
+ * Parts replace the outline they are in, unless they cover less than this share of it: mappers often give
+ * parts to only some of a building.
  */
 const MIN_PARTS_COVER = 0.5;
 
@@ -1625,7 +1577,7 @@ function markBuildingsWithParts(buildings: Building[]): void {
   }
 }
 
-/** The share of an outline under its parts (overlapping ones counted once), from a grid of about 400 points. */
+/** The share of an outline under its parts, sampled on a grid. */
 function partsCover(outline: Polygon, parts: { b: Building; box: ReturnType<typeof bounds> }[]): number {
   const box = bounds(outline.outer);
   const step = Math.max(0.5, Math.sqrt(((box.maxX - box.minX) * (box.maxY - box.minY)) / 400));
@@ -1647,11 +1599,8 @@ function partsCover(outline: Polygon, parts: { b: Building; box: ReturnType<type
 }
 
 /**
- * Parts to fill the building under parts that start above its bottom with nothing under them. The outline
- * says the building is there, but mappers often give parts only to what stands out: the planetarium on
- * the second floor of Särkänniemi's building, whose lower floors have no part. A filler is the part's
- * shape, as the outline, from the outline's bottom up to the part. Balconies, roofs and the like float,
- * and so does a part with a way under it (an arcade or a passage).
+ * Fillers from the outline's bottom up to parts that start higher with nothing under them, as mappers often
+ * give parts only to what stands out. Overhanging parts and parts over a way are left floating.
  */
 function fillUnderFloatingParts(features: MapFeatures): Building[] {
   const buildings = features.buildings;

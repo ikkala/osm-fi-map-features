@@ -1,7 +1,5 @@
-// Maps WGS84 coordinates to meters east and north of an origin point and back.
-//
-// Uses a local tangent plane around the origin, which is accurate to well under a meter within a few
-// kilometres of it.
+// Maps WGS84 coordinates to meters east and north of an origin and back, on a local tangent plane
+// (accurate to well under a meter within a few kilometres).
 import type { Point } from "./geometry.ts";
 import type { GeoBox } from "./osm.ts";
 

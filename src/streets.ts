@@ -1,8 +1,5 @@
-// Crossings, traffic signals and gates on the ways. OSM has them as nodes of the ways they are on: a
-// crossing is on the street and on the footway across it, a gate on a path or a drive and often on the
-// fence it is in. The ways' lines have been simplified by then, so a node is taken to be on the way whose
-// line passes nearest to it, if that is close enough. A crossing's stripes and a signal go on a street
-// (not the footway), and a gate spans the way it is on, or else lies in its fence or wall.
+// Puts crossings, traffic signals and gates (OSM nodes) on their ways. The lines have been simplified by
+// then, so a node is on the way passing nearest to it, if close enough.
 import { deckAt } from "./bridges.ts";
 import { nearestOnLine, type Point } from "./geometry.ts";
 import { bounds, NOT_FOR_VEHICLES, type Crossing, type Gate, type MapFeatures, type Road, type StreetNode, type TrafficSignal, type WayPoint } from "./osm.ts";
@@ -19,9 +16,8 @@ interface Candidate<T> {
 }
 
 /**
- * Puts the crossings, traffic signals and gates on their ways (into features.crossings, signals and
- * gates). Tunnels are left out: a node over one is on the ground above it. Returns how many were left out
- * for being on no way.
+ * Puts the crossings, traffic signals and gates on their ways (features.crossings, signals and gates),
+ * ignoring tunnels. Returns how many were left out for being on no way.
  */
 export function placeStreetNodes(nodes: StreetNode[], features: MapFeatures): { dropped: number } {
   const candidates = <T extends { line: Point[] }>(items: T[]): Candidate<T>[] =>

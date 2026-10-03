@@ -1,7 +1,5 @@
-// Guesses the windows of ordinary buildings. Neither OSM nor the building register has windows, so they
-// are drawn in rows, one per storey, spaced by the kind of building. Buildings of other kinds (churches,
-// sheds, factories, halls, ...) are too varied to guess and get none, and so do buildings tagged as
-// something special (a building=yes with man_made=tower, ...) and slender ones.
+// Guesses window rows (one per storey) for ordinary buildings by their kind; other kinds are too varied to
+// guess and get none.
 import { orientedBox, pointInPolygon, ringCentroid } from "./geometry.ts";
 import { bounds, type Building, type BuildingUse, type WindowStyle } from "./osm.ts";
 
@@ -28,10 +26,7 @@ const BY_KIND: Record<string, WindowStyle> = {
   kindergarten: "office",
 };
 
-/**
- * The building register's main uses and their windows. A public building is mostly a shop, a restaurant, a
- * school or a kindergarten. Work is offices and factories alike (see OFFICE_LEVELS).
- */
+/** The building register's main uses and their windows; work is offices and factories alike (see OFFICE_LEVELS) */
 const BY_USE: Partial<Record<BuildingUse, WindowStyle>> = {
   house: "house",
   holiday: "house",
@@ -39,11 +34,7 @@ const BY_USE: Partial<Record<BuildingUse, WindowStyle>> = {
   public: "office",
 };
 
-/**
- * A work building of this many storeys or more is taken for offices: in Tampere's own register (September
- * 2026), of the work buildings with 4 or more storeys 103 are offices and 32 factories, warehouses, parking
- * garages and others, while lower ones are mostly those (880 of the 952 with 1 to 3)
- */
+/** A work building of this many storeys or more is taken for offices; lower ones are mostly factories and warehouses */
 const OFFICE_LEVELS = 4;
 
 function byUse(b: Building): WindowStyle | undefined {
@@ -60,10 +51,8 @@ const GENERIC_KINDS = new Set(["yes", "building"]);
 const SLENDER = 5;
 
 /**
- * Sets the windows of every building: by its kind, or for a building=yes by its use in the register, and a
- * building:part=yes gets those of the building it is in. Special buildings (towers, churches, ...: see
- * isSpecial) and every part in them get none, and nor do slender ones, glass walls and open shelters.
- * Returns how many buildings got windows.
+ * Sets the windows of every building by its kind, or for a building=yes by its register use; a generic part
+ * takes after its building. Special, slender, glass and open buildings get none. Returns how many got windows.
  */
 export function assignWindows(buildings: Building[]): number {
   // a whole building so slender is a tower; the parts of a building (bays, stairwells) may well be slender

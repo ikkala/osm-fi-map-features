@@ -1,11 +1,6 @@
-// Track beds. A railway does not follow every bump of the ground: the elevation model has the platforms'
-// edges, the roofs of underpasses and the like under the tracks, a metre up and down every few metres,
-// while a railway rises and falls only gently. A railway line's bed is the ground averaged along it over
-// BED_WINDOW_M, but never more than BURY_M under the ground right under it (it would be buried).
-//
-// Lines meet at their ends (switches, where tags change): every line's bed ends at the same height there,
-// the ground averaged around the point, or the deck of a bridge or its approach that ends there (or the
-// floor of a tunnel or of a ramp down to its portal).
+// Track beds: railways rise and fall gently, so a line's bed is the ground averaged along it, never more
+// than BURY_M under the ground. Lines meeting at an end share its height: a deck or tunnel floor ending
+// there, else the ground averaged around it.
 import { densify } from "./tunnels.ts";
 import type { Point } from "./geometry.ts";
 import type { Rail } from "./osm.ts";
@@ -16,7 +11,7 @@ const BED_KINDS = new Set(["rail", "narrow_gauge", "preserved", "subway"]);
 const BED_WINDOW_M = 30;
 /** The ground along a line is sampled this often (m) */
 const SAMPLE_M = 2;
-/** A line gets a point at least this often, before the points that its bed does not need are dropped (m) */
+/** A line is densified to this step before simplifying (m) */
 const BED_STEP_M = 10;
 /** The bed is at most this far under the ground under it (m) */
 const BURY_M = 0.5;
@@ -25,13 +20,10 @@ const END_RADIUS_M = 10;
 /** Points are dropped where the line and its bed stay this close to straight without them (m) */
 const TOLERANCE_M = 0.05;
 
-/**
- * Sets `bed` on every railway line that is not a bridge, tunnel or approach (with deck heights),
- * reshaping its line. heightAt gives the ground at map meters. Returns how many lines got beds.
- */
+/** Sets `bed` (reshaping the line) on railway lines without decks or floors; returns how many got one. */
 export function setTrackBeds(rails: Rail[], heightAt: (e: number, n: number) => number | undefined): number {
   const key = (p: Point) => `${p[0]},${p[1]}`;
-  // where the lines end on a deck (or a tunnel's floor, or a ramp down to it), they end at its height
+  // lines ending on a deck or tunnel floor end at its height
   const decks = new Map<string, number>();
   for (const rail of rails) {
     const heights = rail.deck ?? rail.floor;
@@ -125,10 +117,7 @@ function pointAt(line: Point[], along: number[], d: number): Point {
   return line[0];
 }
 
-/**
- * The indices of the points to keep: from each kept point, as far on as the points between stay within
- * tolerance of the straight line (sideways) and of the straight slope (heights) to the next kept point.
- */
+/** Indices of points to keep so the line and its heights stay within tolerance of straight between them. */
 function simplifyProfile(line: Point[], heights: number[], tolerance: number): number[] {
   const kept = [0];
   let from = 0;

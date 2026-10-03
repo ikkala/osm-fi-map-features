@@ -1,11 +1,6 @@
-// Bridge decks as areas. OSM draws a bridge's ways (the road, its sidewalks, a cycleway) as lines, and
-// bridges.ts gives each span of them a deck of its own, but many bridges are also drawn as an outline
-// (man_made=bridge): the whole deck, with what is on it between the ways, such as planted strips. Within
-// an outline the ways' decks are made one: along the bridge they follow the highest of them (a way that
-// ends in the middle of another took its end's height from the ground under the bridge), except near
-// the ways' free ends, where each keeps its own to meet the way leading on. The outline is then made
-// triangles with the deck's height at their corners, in short pieces along the bridge, so a deck can be
-// drawn between the ways too, and the trees and lamps on it stand on it.
+// Bridge outlines (man_made=bridge) as decks: the bridge ways on an outline follow one shared profile
+// (the highest of their decks), except near their free ends, and the outline is triangulated in short
+// pieces with the deck's heights so the area between the ways, and trees and lamps on it, have a deck.
 import { deckAt, pointAlong } from "./bridges.ts";
 import { dedupe, distanceToSegment, nearestOnLine, orientedBox, pointInPolygon, pointInRing, ringArea, triangulate, type Point, type Polygon, type Ring } from "./geometry.ts";
 import { bounds, type BridgeDeck, type BridgeOutline } from "./osm.ts";
@@ -23,11 +18,11 @@ export interface DeckLine {
 const ON_OUTLINE_SHARE = 0.5;
 /** Lines are sampled this often (m) */
 const SAMPLE_M = 1;
-/** The deck along the bridge: the highest of the ways' decks every this many meters */
+/** The deck profile's step along the bridge (m) */
 const PROFILE_STEP_M = 4;
 /** A way keeps its own deck at its free ends, and has the bridge's this far (m) from them */
 const FADE_M = 15;
-/** A way's end is not free where it is this near (m) another way on the outline (a way leading on along the bridge) */
+/** A way's end this near (m) another way on the outline is not free */
 const TOUCH_M = 0.5;
 /** The ways on an outline get a point at least this often (m), so their decks follow the bridge's */
 const LINE_STEP_M = 5;
@@ -35,17 +30,10 @@ const LINE_STEP_M = 5;
 const PIECE_M = 4;
 /** A corner of a piece this near (m) the line between the corners before and after it is left out */
 const STRAIGHT_M = 0.001;
-/**
- * A triangle steeper than this (rise over run) with the deck's heights at its corners is left out: a
- * sliver (three corners nearly in line) whose corners are at different heights, which would stand on its edge
- */
+/** Triangles steeper than this (rise over run) are left out: slivers that would stand on edge */
 const MAX_DECK_SLOPE = 1;
 
-/**
- * Makes one deck of the decks of the bridge ways on each outline (see above) and returns the outlines'
- * pieces with the deck's height at their corners; outlines with no bridge way with a deck on them are left
- * out. The ways on an outline get points every LINE_STEP_M. Returns also how many ways were on outlines.
- */
+/** Unifies the decks of the bridge ways on each outline; returns the outlines' deck pieces and how many ways were on them */
 export function setOutlineDecks(outlines: BridgeOutline[], lines: DeckLine[]): { decks: BridgeDeck[]; ways: number } {
   const decks: BridgeDeck[] = [];
   const on = new Set<DeckLine>();
@@ -136,10 +124,7 @@ export function setOutlineDecks(outlines: BridgeOutline[], lines: DeckLine[]): {
   return { decks, ways: on.size };
 }
 
-/**
- * The deck's height along the bridge (by `along`, meters along its length): the highest of the ways'
- * decks on the outline every PROFILE_STEP_M, straight between those and level past the last ones
- */
+/** The deck's height by meters along the bridge: the highest way deck per step, interpolated between */
 function deckProfile(members: DeckLine[], polygon: Polygon, along: (p: Point) => number): (t: number) => number {
   const points: { t: number; h: number }[] = [];
   for (const m of members) {
@@ -231,10 +216,8 @@ function densify(line: Point[], step: number): Point[] {
 }
 
 /**
- * A polygon cut across its length (angle: its direction) into pieces `length` meters long, as triangles.
- * Cutting the polygon itself would leave slivers over a gap in it (a notch between two decks side by side:
- * the cut ring runs along the cut and back over the gap), so its triangles are cut instead (each cut is
- * convex), and a piece's cuts joined into polygons again by leaving out the sides they share.
+ * A polygon cut across its length (angle) into pieces `length` meters long, as triangles. Its triangles
+ * are cut and rejoined rather than the polygon itself, which would leave slivers over notches.
  */
 function acrossPieces(polygon: Polygon, angle: number, length: number): { vertices: Point[]; triangles: number[] }[] {
   const [c, s] = [Math.cos(angle), Math.sin(angle)];
@@ -279,9 +262,8 @@ function acrossPieces(polygon: Polygon, angle: number, length: number): { vertic
 }
 
 /**
- * A convex ring cut at x = at, keeping the side at or above it (above) or at or below it. Where a side
- * crosses the cut is worked out from its ends in the same order whichever way the side runs, so the two
- * triangles on a side get the same point.
+ * A convex ring cut at x = at, keeping the side above or below. The crossing is computed from the side's
+ * ends in a fixed order, so neighbouring triangles get the same point.
  */
 function clipBetween(ring: Ring, at: number, above: boolean): Ring {
   const keep = ([x]: Point) => (above ? x >= at : x <= at);
@@ -299,11 +281,7 @@ function clipBetween(ring: Ring, at: number, above: boolean): Ring {
   return dedupe(result);
 }
 
-/**
- * Counter-clockwise convex pieces of a polygon joined into polygons: the sides that two pieces share (in
- * opposite directions) are left out and the rest followed around. Rings running clockwise are holes, in
- * the polygon around them.
- */
+/** Counter-clockwise convex pieces joined into polygons by dropping shared sides; clockwise rings are holes */
 function joined(pieces: Ring[]): Polygon[] {
   const key = ([x, y]: Point) => `${x.toFixed(6)},${y.toFixed(6)}`;
   const sides = new Map<string, [Point, Point]>();
@@ -408,10 +386,7 @@ function barycentric(p: Point, a: Point, b: Point, c: Point): [number, number, n
   return [wa, wb, 1 - wa - wb];
 }
 
-/**
- * Stands the trees and the street lamps (those not on a way's deck already) on the bridge decks they are
- * on. Returns how many of each.
- */
+/** Stands trees and lamps without a base yet on the bridge decks they are on. Returns how many of each. */
 export function standOnDecks(decks: BridgeDeck[], trees: { point: Point; base?: number }[], lamps: { point: Point; base?: number }[]): { trees: number; lamps: number } {
   const index = indexDecks(decks);
   const stand = (list: { point: Point; base?: number }[]) => {

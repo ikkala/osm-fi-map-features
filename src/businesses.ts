@@ -1,9 +1,6 @@
-// Shops, restaurants, offices and other businesses in buildings. OSM has them as points inside the
-// buildings (in central Tampere about 1 270, nearly all with a name and an eighth with a brand; a twentieth
-// are tagged on a building or an area instead), and seldom with their own door: there are some 25
-// entrance=shop or restaurant nodes. So a business shows (its front) at a door of its kind near it, else on
-// the wall nearest to it that faces a street, and nowhere when it is deep inside a large building or in a
-// shopping centre (Ratina has 66, Koskikeskus 40) without a door of its own.
+// Businesses in buildings. OSM has them mostly as points seldom with their own door, so a business's front
+// is at a door of its kind near it, else on the nearest wall facing a street, and none deep inside a large
+// building or a mall.
 import { nearestOnSegment, pointInPolygon, ringArea, type Point, type Ring } from "./geometry.ts";
 import {
   bounds,
@@ -27,10 +24,7 @@ const AMENITIES = [
 ];
 const TOURISM = ["hotel", "hostel", "guest_house", "motel", "apartment", "museum", "gallery"];
 const LEISURE = ["fitness_centre", "sports_centre", "bowling_alley", "escape_game", "amusement_arcade", "adult_gaming_centre", "sauna", "dance"];
-/**
- * The keys that make an element a business, in the order they decide its category (a pharmacy tagged with
- * both amenity=pharmacy and healthcare=pharmacy is an amenity); undefined takes any value
- */
+/** The keys that make an element a business, first match decides the category; undefined takes any value */
 const CATEGORIES: [BusinessCategory, string[] | undefined][] = [
   ["shop", undefined],
   ["office", undefined],
@@ -102,11 +96,7 @@ export function lowestLevel(value: string | undefined): number | undefined {
   return levels.length > 0 ? Math.min(...levels) : undefined;
 }
 
-/**
- * Puts the businesses into the drawn buildings (outlines without parts, and parts) they are in, and gives
- * them their fronts. Run after the entrances are assigned. Returns how many are in a building, how many of
- * those got a front, and how many fronts are at a door.
- */
+/** Puts businesses into the drawn buildings and gives them fronts; run after entrances are assigned. */
 export function placeBusinesses(buildings: Building[], businesses: Business[], roads: Road[]): { placed: number; fronts: number; atDoors: number } {
   const drawn = buildings.filter((b) => !b.hasParts && b.shelter === undefined);
   const buildingCells = new Cells<Building>();
@@ -119,7 +109,7 @@ export function placeBusinesses(buildings: Building[], businesses: Business[], r
       streetCells.add(road, bounds(road.line));
     }
   }
-  // the buildings tagged shop=mall: the shops inside them show outside only at their own doors
+  // shops inside a shop=mall show only at their own doors
   const mallIds = new Set(businesses.filter((b) => b.category === "shop" && b.kind === "mall").map((b) => b.osm));
   const malls = buildings.filter((b) => mallIds.has(b.osm));
   const counts = { placed: 0, fronts: 0, atDoors: 0 };
@@ -152,17 +142,12 @@ export function placeBusinesses(buildings: Building[], businesses: Business[], r
   return counts;
 }
 
-/**
- * Moves the fronts of a building's businesses apart along their walls, FRONT_SPACING_M from each other: several
- * businesses often share a door or the nearest spot of a wall. Those at doors stay first; a front that finds no
- * room on its edge of the outline is dropped.
- */
+/** Spreads a building's fronts apart along their walls (doors first); a front with no room on its edge is dropped */
 function spreadFronts(building: Building): void {
   const rings = [building.polygon.outer, ...building.polygon.holes];
   const taken: Point[] = [];
   const free = (p: Point) => taken.every((q) => Math.hypot(p[0] - q[0], p[1] - q[1]) >= FRONT_SPACING_M - 1e-6);
   const businesses = (building.businesses ?? []).filter((b) => b.front);
-  // doors first, keeping the order otherwise
   businesses.sort((a, b) => Number(b.front?.entrance ?? false) - Number(a.front?.entrance ?? false));
   for (const business of businesses) {
     const front = business.front;
@@ -210,10 +195,7 @@ function nearestEdge(p: Point, rings: Ring[]): [Point, Point] | undefined {
   return best;
 }
 
-/**
- * The building a business is in: the one it is tagged on, else the one around its point (the lowest, then
- * the smallest: a part on the ground rather than one over it), else one whose wall it is on
- */
+/** The building a business is in: the one tagged, else the lowest and smallest around it, else one whose wall it is on */
 function buildingOf(business: Business, cells: Cells<Building>): Building | undefined {
   const near = cells.near(business.point, ON_WALL_M);
   const tagged = near.filter((b) => b.osm === business.osm);
@@ -259,10 +241,7 @@ function nearestDoor(p: Point, building: Building, kinds: Set<string>, reach: nu
   return best;
 }
 
-/**
- * On the open wall (not against another building) nearest to the business that faces a street, else on the
- * nearest open wall; none when they are all farther than MAX_DEPTH_M
- */
+/** On the nearest open wall facing a street, else the nearest open wall, within MAX_DEPTH_M */
 function wallFront(business: Business, building: Building, buildings: Cells<Building>, streets: Cells<Road>): BusinessFront | undefined {
   let facing: { at: Point; toward: number; distance: number } | undefined;
   let open: typeof facing;

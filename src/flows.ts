@@ -1,28 +1,15 @@
-// How many people walk and cycle and how many motor vehicles drive along roads on an average day of the year,
-// at each point of their lines, pulled towards counts at points: for a user of the map that has counts (such
-// as a city's traffic counts) and combines them with the map when it uses it, instead of building them into
-// the map.
+// Daily walking, cycling and motor traffic along roads: the map's estimates pulled towards a user's counts
+// at points, combined at use time rather than built into the map. The flows are a Derivative Database under
+// the ODbL (see the README's Licences); the counts stay a database of their own.
 //
-// The estimates are the map's: footfall and cycling (footfall.ts), and motor traffic from the kind of road
-// (estimateMotorTraffic: KIND_TRAFFIC, none where cars may not drive). The roads combined with counts are
-// still OpenStreetMap data: the flows are a Derivative Database under the ODbL however briefly they exist, and
-// this is the way they are made (see the README's Licences). The counts themselves stay a database of
-// their own.
-//
-// Each count is on the nearest road of its mode within MATCH_M (one walking or cycling on one sidewalk of a
-// street counting for both its sidewalks). Around it the estimate is pulled towards it: the ratio of count to
-// estimate there spreads, fading out, along the counted road (the roads of its id or name, and for walking
-// and cycling the walkways of its kind in line with it, as OpenStreetMap cuts a sidewalk into many unnamed
-// pieces) within the mode's `reach`, and onto other roads within `otherReach`, `other` as much. A street's
-// cars keep their count much farther along it than people walking do theirs. A road where only some may drive
-// (a pedestrian or transit street open to deliveries) keeps its few cars: a motor count there is of the buses,
-// taxis and deliveries, so it is left out, and the counts around do not pull it.
+// Each count matches the nearest road of its mode; the count/estimate ratio spreads, fading, along the counted
+// road (same id or name, or walkways in line with it) and less onto other roads.
 import { NOT_FOR_VEHICLES, type Road } from "./osm.ts";
 import type { Point } from "./geometry.ts";
 
 export type FlowMode = "walking" | "cycling" | "driving";
 
-/** A road as the flows need it: what of a map Road they use */
+/** The parts of a map Road the flows use */
 export type FlowRoad = Pick<Road, "kind" | "line"> &
   Partial<Pick<Road, "osm" | "name" | "footfall" | "cycling" | "motorVehicle" | "service" | "sidewalks" | "tunnel" | "floor" | "lid">>;
 
@@ -55,10 +42,7 @@ interface ModeSettings {
 }
 
 const MODES: FlowMode[] = ["walking", "cycling", "driving"];
-/**
- * Each mode: how far (m) a count pulls the estimate along its road and on others, the pull on others, and the
- * weight of the estimate against the counts' pull (at a count its road gets about the count)
- */
+/** Per mode: a count's reach (m) along its road and onto others, the pull on others, and the estimate's weight against counts */
 const SETTINGS: Record<FlowMode, ModeSettings> = {
   walking: { field: "footfall", out: "footfall", reach: 80, otherReach: 80, other: 0.3, weight: 0.1 },
   cycling: { field: "cycling", out: "cycling", reach: 80, otherReach: 80, other: 0.3, weight: 0.1 },
@@ -71,7 +55,7 @@ const MATCH_M = 25;
 /** A walkway goes on from the counted one when it is within this (m) of the counted segment's line */
 const IN_LINE_M = 6;
 
-/** Vehicles a day on a road of a kind when nothing else is known (about Tampere's counts); other kinds none */
+/** Typical vehicles a day by road kind (fitted to traffic counts); other kinds none */
 const KIND_TRAFFIC: Record<string, number> = {
   motorway: 30000,
   trunk: 20000,
@@ -88,17 +72,14 @@ const KIND_TRAFFIC: Record<string, number> = {
   living_street: 60,
   service: 60,
 };
-/** Service roads by service=*: a parking aisle or a driveway sees few cars */
+/** Service roads by service=* */
 const SERVICE_TRAFFIC: Record<string, number> = { parking_aisle: 30, driveway: 15, alley: 30, "drive-through": 40 };
 /** Who may drive (motorVehicle): none, or only some (FEW_ALLOWED_SHARE) */
 const NOT_ALLOWED = new Set(["no", "private", "agricultural", "forestry", "emergency", "psv", "bus"]);
 const FEW_ALLOWED = new Set(["destination", "delivery", "customers", "permit"]);
 const FEW_ALLOWED_SHARE = 0.2;
 
-/**
- * A road's motor vehicles a day by its kind and who may drive on it: 0 on walkways, busways, roads where cars
- * may not drive and tunnels drawn neither on a floor nor under a lid
- */
+/** A road's motor vehicles a day by kind and access; 0 where cars may not drive and in undrawn tunnels */
 export function estimateMotorTraffic(road: FlowRoad): number {
   const base = road.kind === "service" && road.service !== undefined ? (SERVICE_TRAFFIC[road.service] ?? KIND_TRAFFIC.service) : (KIND_TRAFFIC[road.kind] ?? 0);
   const hidden = road.tunnel === true && road.floor === undefined && road.lid === undefined;
@@ -198,9 +179,8 @@ function goesOn(r: Match, road: FlowRoad, p: Point, mode: FlowMode): boolean {
 }
 
 /**
- * The flows of `roads`, pulled towards `counts` (those within FLOW_REACH_M of them). `others` are the roads the
- * counts are matched on: `roads` and those around them (a count near the edge of an area is on a road beside
- * it). Also whether any count was on a road.
+ * The flows of `roads` pulled towards `counts`, and whether any count matched. `others` are the roads counts
+ * match on: `roads` and those around them, for counts near the area's edge.
  */
 export function pullFlows(roads: FlowRoad[], others: FlowRoad[], counts: FlowCount[]): { flows: RoadFlows[]; counted: boolean } {
   const residuals: Record<FlowMode, (Match & { log: number })[]> = { walking: [], cycling: [], driving: [] };
@@ -212,13 +192,11 @@ export function pullFlows(roads: FlowRoad[], others: FlowRoad[], counts: FlowCou
       grids.set(count.mode, grid);
     }
     const match = nearestRoad(grid, count.point);
-    // a motor count on a road where only some may drive (a street for buses, trams, taxis and deliveries) is of
-    // those, not of cars
+    // a motor count on a restricted road is of buses and deliveries, not cars
     if (!match || (count.mode === "driving" && restricted(match.road))) {
       continue;
     }
-    // a street's walking is on both its sidewalks, so a count on one of them is about half of it; the same for
-    // the cycling of a street with its cycle paths beside it not drawn
+    // a count on one sidewalk of a street is about half the street's
     const street = !NOT_FOR_VEHICLES.has(match.road.kind) && match.road.kind !== "living_street";
     const sides = match.road.sidewalks === "left" || match.road.sidewalks === "right" ? 1 : 2;
     const daily = count.mode !== "driving" && street && !count.whole ? count.daily * sides : count.daily;
@@ -235,7 +213,7 @@ export function pullFlows(roads: FlowRoad[], others: FlowRoad[], counts: FlowCou
         continue;
       }
       if (mode === "driving" && restricted(road)) {
-        // only the few that may drive there, whatever is counted around
+        // counts around do not pull a restricted road
         result[settings.out] = values.map((value) => Math.round(value));
         continue;
       }

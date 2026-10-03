@@ -1,12 +1,6 @@
-// How many people walk (footfall) and cycle (cycling) along each way on an average day of the year, on
-// every point of its line, estimated from what OpenStreetMap has around: shops, restaurants and offices draw
-// people, homes send them out, and the kind of way decides how many of them use it. A centre full of
-// businesses gets thousands a day on its sidewalks, a suburb's footways a few hundred.
-//
-// The estimate is kind × (base + scale × draw), where draw is the businesses and doors near the point,
-// each weighed down with its distance, and kind is the way's for walking or for cycling. Base and scale
-// (DEFAULT_MODELS) were fitted to the City of Tampere's pedestrian and cycling counts in 2026. The counts
-// themselves are not in the map: a user that has counts can pull the estimate towards them (flows.ts).
+// People walking and cycling per average day at each point of a way, estimated as
+// kind × (base + scale × draw), where draw is the nearby businesses and doors weighed by distance.
+// Counts, where a user has them, can pull the estimate towards them (flows.ts).
 import { distanceToSegment, nearestOnSegment, type Point } from "./geometry.ts";
 import { NOT_FOR_VEHICLES, type Building, type Road } from "./osm.ts";
 
@@ -18,7 +12,7 @@ const WALKING_FACTORS: Record<string, number> = {
   living_street: 1.0,
   footway: 1.0,
   steps: 0.6,
-  // in Finland mostly shared with people walking (foot=designated), and the main routes between districts
+  // in Finland mostly shared with pedestrians
   cycleway: 1.0,
   path: 0.35,
   track: 0.2,
@@ -33,13 +27,10 @@ const WALKING_FACTORS: Record<string, number> = {
 };
 /** A cycleway without foot=designated, yes or permissive is mostly for bicycles: this many walk on it */
 const CYCLEWAY_ONLY_WALKING = 0.3;
-/**
- * How many cycle on a way of a kind compared with a cycleway in the same surroundings; other kinds (steps,
- * motorways, trunk roads and their links): none. On streets they ride in the carriageway.
- */
+/** How many cycle on a way of a kind compared with a cycleway in the same surroundings; other kinds: none */
 const CYCLING_FACTORS: Record<string, number> = {
   cycleway: 1.0,
-  // in Finland only children may cycle on a footway, unless it is shared (bicycle=yes or designated)
+  // in Finland only children may cycle on an unshared footway
   footway: 0.1,
   pedestrian: 0.2,
   path: 0.4,
@@ -63,10 +54,7 @@ const WITHOUT_SIDEWALKS = new Set(["motorway", "motorway_link", "trunk", "trunk_
 const TAGGED_SIDEWALK_FACTOR = 0.7;
 /** foot=* and bicycle=* values that keep people walking or cycling off a way */
 const NOT_ALLOWED = new Set(["no", "use_sidepath", "private"]);
-/**
- * A street with bicycle=use_sidepath (in Tampere most main streets) has a cycleway beside it, which takes
- * most of its cyclists; this share of them still rides in the carriageway
- */
+/** The share of cyclists still in the carriageway of a bicycle=use_sidepath street */
 const SIDEPATH_CYCLING = 0.15;
 const ALLOWED = new Set(["yes", "designated", "permissive"]);
 
@@ -77,7 +65,7 @@ const DOOR_REACH_M = 120;
 const BUSINESS_WEIGHTS: Record<string, number> = { shop: 1, amenity: 1.5, office: 0.5 };
 /** A door draws this much of a business */
 const DOOR_WEIGHT = 0.15;
-/** Base and scale of each mode: fitted to Tampere's counts in 2026 */
+/** Base and scale of each mode, fitted to pedestrian and cycling counts */
 export const DEFAULT_MODELS: Record<Mode, { base: number; scale: number }> = {
   walking: { base: 330, scale: 19.2 },
   cycling: { base: 330, scale: 0.5 },
@@ -95,15 +83,12 @@ export interface FootfallResult {
   separate: number;
 }
 
-/**
- * Sets the footfall of the roads, estimated from the buildings' businesses and doors (after businesses.ts and
- * entrances.ts). Roads where no one walks get none.
- */
+/** Sets the roads' footfall from the buildings' businesses and doors (run after those are placed) */
 export function estimateFootfall(roads: Road[], buildings: Building[]): FootfallResult {
   return estimate(roads, buildings, "walking");
 }
 
-/** Sets the cycling of the roads, as estimateFootfall the footfall. Roads where no one cycles get none. */
+/** Sets the roads' cycling, as estimateFootfall */
 export function estimateCycling(roads: Road[], buildings: Building[]): FootfallResult {
   return estimate(roads, buildings, "cycling");
 }
@@ -131,11 +116,7 @@ function falloff(distance: number, reach: number): number {
   return t > 0 ? t * t : 0;
 }
 
-/**
- * The kind factor of every road for walking or cycling, 0 where no one does: where foot=* or bicycle=*
- * says no, tunnels for vehicles, and for walking streets whose sidewalks are ways of their own (tagged so,
- * or found beside them) or that have none
- */
+/** Each road's kind factor for the mode; 0 where not allowed, in vehicle tunnels, or (walking) where sidewalks are separate or missing */
 function kindFactors(roads: Road[], mode: Mode): { factors: Map<Road, number>; separate: number } {
   const sidewalkWays = new SegmentGrid(SEPARATE_SIDEWALK_M * 2);
   for (const road of roads) {
@@ -170,7 +151,6 @@ function kindFactors(roads: Road[], mode: Mode): { factors: Map<Road, number>; s
       if (road.tunnel) {
         factor = 0;
       } else if (mode === "cycling") {
-        // (a use_sidepath street has its share already)
         if (!sidepath && (road.sidewalks === "separate" || beside())) {
           factor *= SEPARATE_CYCLING;
         }
@@ -218,7 +198,7 @@ function drawField(buildings: Building[]): (p: Point) => number {
     for (const business of building.businesses ?? []) {
       sources.push({ point: business.front?.at ?? business.point, weight: BUSINESS_WEIGHTS[business.category] ?? 0.7, reach: BUSINESS_REACH_M });
     }
-    // the doors of homes, offices and the like; a door of a shop is its business's
+    // shop doors are counted with their businesses
     for (const entrance of building.entrances ?? []) {
       if (entrance.kind !== "shop" && entrance.kind !== "service") {
         sources.push({ point: entrance.at, weight: DOOR_WEIGHT, reach: DOOR_REACH_M });

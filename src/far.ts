@@ -1,6 +1,4 @@
-// A tile seen from afar: a summary small enough to draw dozens of tiles around a viewer high up, where
-// their full features would be far too many. What covers the ground as a coarse picture (water, grass,
-// streets, ...), the ground's heights on a coarse grid, and every building as a box.
+// A tile seen from afar: a coarse ground cover picture, coarse heights and every building as a box.
 import { orientedBox, triangulate, type Point } from "./geometry.ts";
 import type { AreaKind } from "./osm.ts";
 import { tileRect, type Heights, type Tile } from "./tiles.ts";
@@ -18,7 +16,7 @@ export interface FarBox {
   /** Meters along and across that direction */
   length: number;
   width: number;
-  /** As the building's: meters above sea level it stands at (unset without an elevation model) */
+  /** Meters above sea level it stands at (unset without an elevation model) */
   base?: number;
   /** Meters above base to its bottom and its top */
   minHeight: number;
@@ -28,10 +26,7 @@ export interface FarBox {
 }
 
 export interface FarTile {
-  /**
-   * What covers the ground: size × size cells over the tile, row by row from the north-west corner,
-   * eastward then southward, one character each, the index in FAR_CLASSES as a base-36 digit
-   */
+  /** size × size cells from the north-west corner, row by row, each a base-36 index into FAR_CLASSES */
   cover: { size: number; cells: string };
   /** The ground's heights on a coarse grid (unset when the tile has none) */
   heights?: Heights;
@@ -43,7 +38,7 @@ export interface FarOptions {
   coverSize?: number;
   /** Grid points along each side of the heights, edges included */
   heightCount?: number;
-  /** Buildings whose box is smaller than this (m²) are left out: sheds and kiosks do not show from afar */
+  /** Buildings whose box is smaller than this (m²) are left out */
   minArea?: number;
 }
 

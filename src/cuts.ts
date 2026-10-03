@@ -1,12 +1,6 @@
-// Tunnels in cuts. The elevation model is the bare ground: a shallow tunnel whose roof is a deck (an
-// underpass under a railway station or a street) is in it as an open cut down to the road, and what
-// runs over the tunnel would dip into the cut. Such a tunnel is drawn in its cut with a lid on it at
-// the ground beside the cut, the ways over it become bridges over the lid (their decks and approaches
-// come from setBridgeDecks), and the walls of buildings over it open under their floor.
-//
-// A tunnel under a hill or a lake is not in the model as a cut: there the ground over the tunnel is as
-// high as beside it, and tunnels.ts gives the tunnel a floor under it instead. A tunnel beside one in a
-// cut (a pavement beside a tramway) is in the same cut and gets the same lid.
+// Tunnels in cuts. The bare-ground elevation model shows a shallow decked tunnel as an open cut, so it gets
+// a lid at the cut's rim, the ways over it become bridges, and buildings over it open. Deep tunnels are
+// left to tunnels.ts.
 import { crossing, openPassages, type MapFeatures, type Rail, type Road } from "./osm.ts";
 import { deckAt } from "./bridges.ts";
 import type { Point } from "./geometry.ts";
@@ -26,10 +20,7 @@ const CUT_SHARE = 0.5;
 const SAMPLE_M = 2;
 /** The rim of a cut is where the ground rises less than this in a step (m), as at a bridge's approach */
 const RIM_RISE_M = 0.2;
-/**
- * The lid is at the rim of the cut, but leaves at least this much room over the tunnel's floor (m): an
- * underpass is often 3.5 m tall.
- */
+/** The lid leaves at least this much room over the floor (m), a typical underpass height */
 const CLEARANCE_M = 3.5;
 /** A tunnel this close to the lid of a tunnel in a cut (m, edge to edge) is beside it, in the same cut */
 const BESIDE_M = 2;
@@ -38,10 +29,7 @@ const AT_PORTAL_M = 1;
 
 type Way = Road | Rail;
 
-/**
- * Finds the tunnels in cuts and gives them lids; splits the ways over them into bridges over the lids,
- * and opens the walls of buildings over them. heightAt gives the ground at map meters.
- */
+/** Gives tunnels in cuts lids, makes the ways over them bridges and opens the buildings over them */
 export function coverCutTunnels(features: MapFeatures, heightAt: (e: number, n: number) => number | undefined): { tunnels: number; crossings: number } {
   const tunnels: { way: Way; width: number }[] = [];
   const ways: { way: Way; width: number }[] = [
@@ -57,9 +45,8 @@ export function coverCutTunnels(features: MapFeatures, heightAt: (e: number, n: 
       }
     }
   }
-  // a tunnel beside one in a cut (a pavement beside a tramway) is in the same cut: the elevation model
-  // has the cut's floor beside it too, so its own rims are not found. It is often mapped at the cut's
-  // edge, where the model has the cut's wall, so its floor is the cut's floor beside it.
+  // a tunnel beside one in a cut shares its cut, whose rims it would not find itself; it is often mapped
+  // on the cut's wall, so its floor is taken from the cut tunnel
   const cuts = [...tunnels];
   for (const { way, width } of ways) {
     if (way.tunnel && !way.lid && way.layer >= -1 && way.line.length >= 2) {
@@ -80,13 +67,9 @@ export function coverCutTunnels(features: MapFeatures, heightAt: (e: number, n: 
   return { tunnels: tunnels.length, crossings };
 }
 
-/**
- * The lid's top at every point of a tunnel's line, or undefined when the tunnel is not in a cut: the
- * lower of the cut's rims on either side, and at least CLEARANCE_M and the lid over the floor.
- */
+/** The lid's top at each point of a tunnel's line (the lower rim, at least clearance over the floor), or undefined if not in a cut */
 export function cutLid(line: Point[], heightAt: (e: number, n: number) => number | undefined): number[] | undefined {
-  // the ground at the rim of the cut beside p: walking out from the floor, where it stops rising once it
-  // has risen MIN_CUT_M (as bridges.ts finds the top of a bridge's approach), else the highest ground
+  // the rim beside p: walking out, where the ground stops rising after MIN_CUT_M, else the highest ground
   const beside = (p: Point, along: Point) => {
     const [dx, dy] = along;
     const [nx, ny] = [-dy, dx];
@@ -111,7 +94,6 @@ export function cutLid(line: Point[], heightAt: (e: number, n: number) => number
     const length = Math.hypot(c[0] - a[0], c[1] - a[1]);
     return length > 0 ? [(c[0] - a[0]) / length, (c[1] - a[1]) / length] : [1, 0];
   };
-  // is the tunnel in a cut along most of its length?
   let samples = 0;
   let deep = 0;
   for (let i = 0; i + 1 < line.length; i++) {
@@ -137,12 +119,7 @@ export function cutLid(line: Point[], heightAt: (e: number, n: number) => number
   });
 }
 
-/**
- * The lid and the floor of a tunnel beside tunnels in cuts, or undefined when it is not: along most of it
- * (CUT_SHARE of the points every SAMPLE_M) it is within BESIDE_M of a cut tunnel's lid (widths are lids'
- * and the way's). At every point of its line its lid is at the nearest cut tunnel's lid, and its floor at
- * the ground at the nearest point of that tunnel.
- */
+/** The lid and floor of a tunnel mostly beside cut tunnels, from the nearest one's; undefined when not beside */
 function besideCut(
   line: Point[],
   width: number,
@@ -207,10 +184,7 @@ function nearestOnLine(p: Point, line: Point[]): { distance: number; at: Point }
   return best;
 }
 
-/**
- * Splits the ways (not tunnels or bridges) that cross the tunnels' lids, and makes the stretches over
- * the lids bridges. Returns how many stretches became bridges.
- */
+/** Splits the ways crossing the lids and makes the stretches over them bridges. Returns how many. */
 function bridgeOverLids<T extends Way>(ways: T[], tunnels: { way: Way; width: number }[]): number {
   const portals = tunnels.flatMap(({ way }) => [way.line[0], way.line[way.line.length - 1]]);
   const added: T[] = [];
@@ -219,7 +193,6 @@ function bridgeOverLids<T extends Way>(ways: T[], tunnels: { way: Way; width: nu
     if (way.tunnel || way.bridge || way.lid) {
       continue;
     }
-    // the stretches of the way over lids, as meters along it
     const along = [0];
     for (let i = 1; i < way.line.length; i++) {
       along.push(along[i - 1] + Math.hypot(way.line[i][0] - way.line[i - 1][0], way.line[i][1] - way.line[i - 1][1]));

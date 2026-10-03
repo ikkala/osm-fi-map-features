@@ -1,15 +1,5 @@
-// The height buildings stand at on sloping ground. A building with an entrance in OSM stands at the ground
-// by it (entrance=main first), others at their highest ground, so that an entrance on the uphill side is
-// not in the hill. The walls reach down to the lowest ground: on the downhill side a building has a plinth
-// or a basement storey, as real buildings on slopes do.
-//
-// A building over a tunnel in a cut (cuts.ts) stands at least at the top of the tunnel's lid: the
-// elevation model has the cut under it, and the ground by its door may be at the cut's rim or in it,
-// while the building really stands on the deck. Its walls are open under its floor over the tunnel.
-//
-// A building or part raised off the ground (min_height) with nothing under it, such as a canopy on a
-// building that stands at its door down the slope, counts its min_height from its own highest ground, so
-// the ground rising under it does not come up to it.
+// The height buildings stand at on sloping ground: at an OSM entrance, else at their highest ground, with
+// walls down to the lowest ground (a plinth or basement on the downhill side).
 import { pointInPolygon, ringCentroid, type Point, type Ring } from "./geometry.ts";
 import { bounds, LEVEL_HEIGHT_M, type Building, type Entrance } from "./osm.ts";
 
@@ -23,17 +13,12 @@ const NOT_FLOOR_ENTRANCES = new Set(["service", "emergency", "exit", "garage", "
 const ROOM_OVER_DOOR_M = 2.5;
 
 /**
- * Sets every building's base (m above sea level): the ground at its OSM entrance (a main one first), or
- * else its highest ground; at most MAX_PLINTH_M above its lowest ground and not above its highest; and
- * at least the top of the lids of the tunnels in cuts under it. A part gets the base of the building it
- * is in, so its parts stand on one floor. A building (not a part) whose roof would be lower than
- * ROOM_OVER_DOOR_M over the ground at one of its doors in OSM (a stair hall from a street up a slope to a
- * platform, with a door at each end) is as tall as it is over the ground at that door, and goes into raised.
- * A building or part with a minHeight and no other building under it has its minHeight over its own
- * highest ground; its top stays, but at least a storey (or its height, if less) over its bottom. Open
- * shelters stand on their lowest ground and get none, unless they are over a lid: then they stand on its top.
- * heightAt gives the ground height at map meters (undefined outside the elevation model). Returns how
- * many buildings got a base.
+ * Sets every building's base (m above sea level): the ground at its OSM entrance (a main one first), else its
+ * highest ground; at most MAX_PLINTH_M above its lowest ground, and at least the top of any tunnel lid under it.
+ * Parts share the base of their outline. A building lower than ROOM_OVER_DOOR_M over the ground at one of its
+ * doors (a stair hall up a slope) is made taller and pushed to raised. A building or part with a minHeight and
+ * nothing under it counts that minHeight from its own highest ground. Open shelters get a base only on a lid.
+ * Returns how many buildings got a base.
  */
 export function setBuildingBases(
   buildings: Building[],
@@ -81,8 +66,7 @@ export function setBuildingBases(
   for (const b of buildings) {
     delete b.base;
     if (b.shelter !== undefined) {
-      // an open shelter stands on a lid under it (a platform's roof over a tunnel in a cut): its posts
-      // would reach down through the lid into the tunnel
+      // on a lid, so its posts do not reach down into the tunnel
       const lid = lidUnder(b, lids);
       if (Number.isFinite(lid)) {
         b.base = lid;
