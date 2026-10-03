@@ -108,6 +108,11 @@ export interface Building {
   /** The height is a guess (no height or levels in OSM), which better data may replace */
   heightEstimated?: boolean;
   /**
+   * The estimated height is guessed from what the building is (a tower, a tank, a church, see
+   * HEIGHTS_BY_TYPE): a building register's storeys would tell it worse
+   */
+  heightByType?: boolean;
+  /**
    * The height is counted from storeys (building:levels or a building register's) at LEVEL_HEIGHT_M each:
    * an old building's taller storeys may replace it (see ages.ts)
    */
@@ -140,8 +145,10 @@ export interface Building {
   roofAngle?: number;
   colour?: string;
   roofColour?: string;
-  /** Wall material: building:material, or the facade from a building register */
+  /** Wall material: building:material or material, or the facade from a building register */
   material?: string;
+  /** The material is a guess (brick for an untagged chimney), which a building register's facade replaces */
+  materialEstimated?: boolean;
   /**
    * An open structure, a roof on posts: "public_transport" for a bus or tram stop shelter, another
    * shelter_type (gazebo, ...) or "shelter" for other shelters, "roof" for building=roof (canopies)
@@ -428,6 +435,28 @@ const SMALL_BUILDINGS = new Set(["shed", "kiosk", "garage", "garages", "carport"
 /** Height of a bus or tram stop shelter's roof when OSM does not have it */
 const STOP_SHELTER_HEIGHT_M = 2.7;
 /**
+ * Structures (man_made=*) drawn as buildings even without building=*: tall or big enough to stand out
+ */
+const STRUCTURES = new Set(["chimney", "ventilation_shaft", "storage_tank", "silo", "water_tower", "tower", "gasometer"]);
+/**
+ * How tall a structure (by man_made=*, else building=*) or a church without a height or levels is guessed:
+ * perWidth times its base's longest side, at most max meters. Storeys say little about these. From those
+ * with a height in OSM in southern Finland (October 2026): the median of height / width, and about the upper
+ * quartile of the heights; chimneys from Tampere's (10 to 18 times, mostly 12).
+ */
+const HEIGHTS_BY_TYPE = new Map<string, { perWidth: number; max: number }>([
+  ["chimney", { perWidth: 12, max: 100 }],
+  ["water_tower", { perWidth: 1.3, max: 45 }],
+  ["gasometer", { perWidth: 1, max: 40 }],
+  ["silo", { perWidth: 1.2, max: 40 }],
+  ["storage_tank", { perWidth: 0.8, max: 15 }],
+  ["tower", { perWidth: 3.9, max: 50 }],
+  ["bell_tower", { perWidth: 3.9, max: 50 }],
+  ["church", { perWidth: 0.45, max: 30 }],
+  ["cathedral", { perWidth: 0.45, max: 30 }],
+  ["chapel", { perWidth: 0.45, max: 30 }],
+]);
+/**
  * A roof that a road runs under (a canopy over a bus stop's lanes or a petrol station) is at least this
  * tall when OSM does not have its height: vehicles in Finland may be 4.4 m tall.
  */
@@ -516,7 +545,7 @@ export function estimatedLevels(kind: string, area: number): number {
 
 export function overpassQuery(box: GeoBox): string {
   const selectors = ["way[highway]", "way[railway]", "way[building]", "way[\"building:part\"]", "node[natural~\"^(tree|shrub)$\"]", "way[natural=tree_row]", "node[highway=street_lamp]",
-    "node[highway~\"^(crossing|traffic_signals)$\"]", "node[barrier=gate]", "way[barrier~\"^(fence|wall|retaining_wall|hedge)$\"]", "way[man_made=bridge]"];
+    "node[highway~\"^(crossing|traffic_signals)$\"]", "node[barrier=gate]", "way[barrier~\"^(fence|wall|retaining_wall|hedge)$\"]", "way[man_made=bridge]", `way[man_made~"^(${[...STRUCTURES].join("|")})$"]`];
   const relations = ["relation[building][type=multipolygon]", "relation[\"building:part\"][type=multipolygon]", "relation[man_made=bridge][type=multipolygon]"];
   const byKey = new Map<string, string[]>();
   for (const [key, values] of AREA_RULES) {
@@ -824,7 +853,8 @@ function addPolygonFeature(features: MapFeatures, bridgeOutlines: BridgeOutline[
   }
   const buildingKind = tags.building && tags.building !== "no" ? tags.building : undefined;
   const partKind = tags["building:part"] && tags["building:part"] !== "no" ? tags["building:part"] : undefined;
-  const buildingOrPart = partKind ?? buildingKind;
+  // many chimneys, tanks and towers are mapped as man_made=* alone
+  const buildingOrPart = partKind ?? buildingKind ?? (tags.man_made !== undefined && STRUCTURES.has(tags.man_made) ? tags.man_made : undefined);
   if (buildingOrPart) {
     features.buildings.push(building(osm, tags, buildingOrPart, partKind !== undefined, polygon));
     return;
@@ -1006,8 +1036,16 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
   // levels say little about how tall an open roof is
   const heightEstimated = height === undefined && (levelCount === undefined || shelter !== undefined);
   const heightFromLevels = height === undefined && !heightEstimated;
+  const chimney = tags.man_made === "chimney" || kind === "chimney";
+  const structure = tags.man_made !== undefined && STRUCTURES.has(tags.man_made);
+  // a church's parts are its tower, nave, ... (a chimney part is a chimney)
+  const byType = heightEstimated && (!part || chimney) ? HEIGHTS_BY_TYPE.get(structure ? (tags.man_made ?? kind) : kind) : undefined;
+  if (byType) {
+    height = Math.max(LEVEL_HEIGHT_M, Math.min(byType.max, byType.perWidth * orientedBox(polygon.outer).length));
+  }
   const area = Math.abs(ringArea(polygon.outer));
-  const roof = pitchedRoof(tags, kind, part || shelter !== undefined, polygon, area, levelCount, taggedHeight);
+  // no guessed roof on a tower or a tank
+  const roof = pitchedRoof(tags, kind, part || shelter !== undefined || structure || chimney, polygon, area, levelCount, taggedHeight);
   // roof:levels=0 is a roof without a storey in it, not a flat one
   let roofHeight = taggedRoofHeight ?? (roof && roofLevels ? roofLevels * LEVEL_HEIGHT_M : undefined);
   if (height === undefined) {
@@ -1035,6 +1073,7 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
     hasParts: false,
     height,
     ...(heightEstimated && { heightEstimated }),
+    ...(byType && { heightByType: true }),
     ...(heightFromLevels && { heightFromLevels }),
     minHeight,
     ...(wallLevels !== undefined && wallLevels >= 1 && { levels: Math.round(wallLevels) }),
@@ -1042,13 +1081,28 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
     ...(roofHeight !== undefined && { roofHeight }),
     ...(tags["building:colour"] && { colour: tags["building:colour"] }),
     ...(tags["roof:colour"] && { roofColour: tags["roof:colour"] }),
-    ...(tags["building:material"] && { material: tags["building:material"] }),
+    ...wallMaterial(tags, chimney),
     ...(year !== undefined && { year }),
     ...(shelter && { shelter }),
     ...(isSpecial(tags) && { special: true }),
     ...optionalName(tags),
     polygon,
   };
+}
+
+/**
+ * A building's wall material: building:material, or material (common on chimneys). A chimney with neither
+ * gets brick as a guess: Tampere's old factory chimneys are brick.
+ */
+function wallMaterial(tags: Tags, chimney: boolean): { material?: string; materialEstimated?: boolean } {
+  const tagged = tags["building:material"] ?? tags.material;
+  if (tagged) {
+    return { material: tagged };
+  }
+  if (chimney) {
+    return { material: "brick", materialEstimated: true };
+  }
+  return {};
 }
 
 /**

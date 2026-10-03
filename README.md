@@ -75,8 +75,13 @@ a way runs under it (an arcade or a passage).
 Buildings without `height` or `building:levels` in OSM get their storeys from the City of Tampere's
 [building register](https://data.tampere.fi/data/dataset/tampereen-rakennukset) (a point per building, matched to
 the OSM outline it is in; empty outside Tampere), which also gives most buildings their facade material (brick,
-concrete, wood, ...) unless OSM has `building:material`. The rest get a guess: one storey for sheds and anything
-under 40 m², two for houses and anything under 150 m², three otherwise.
+concrete, wood, ...) unless OSM has `building:material` or `material`. The rest get a guess: one storey for sheds
+and anything under 40 m², two for houses and anything under 150 m², three otherwise. Chimneys, towers, water towers,
+silos, tanks, gasometers and ventilation shafts (`man_made=*`) are buildings even without `building`. These and
+churches, whose storeys say little about their height, are guessed by type from the base's longest side instead
+(a chimney 12 times as tall, a water tower 1.3 times, a church 0.45 times, ..., see `HEIGHTS_BY_TYPE`), and the
+register's storeys do not replace that. A chimney with no material in OSM or the register is taken for brick,
+as Tampere's old factory chimneys are.
 
 How OSM and the register compare (September 2026, the 1 143 outlines drawn without parts that have both
 `building:levels` and register storeys): 57 % agree, 20 % have one storey fewer in OSM and 18 % one more, 5 % differ

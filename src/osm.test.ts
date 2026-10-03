@@ -227,6 +227,7 @@ test("overpassQuery asks for every area rule key", () => {
   assert.match(query, /way\["area:highway"\];/);
   assert.match(query, /node\[natural~"\^\(tree\|shrub\)\$"\];/);
   assert.match(query, /way\[natural=tree_row\];/);
+  assert.match(query, /way\[man_made~"\^\(chimney\|ventilation_shaft\|storage_tank\|silo\|water_tower\|tower\|gasometer\)\$"\];/);
 });
 
 /** A width x depth rectangle (east x north) with its south-west corner at east, north */
@@ -430,6 +431,80 @@ test("an open roof over a road is lifted above vehicles; stop shelters get their
   const height = (osm: string) => defined(features.buildings.find((b) => b.osm === osm)).height;
   assert.deepEqual([height("w22"), height("w23"), height("w24"), height("w25")], [5, 3, 3.5, 2.7]);
   assert.equal(defined(features.buildings.find((b) => b.osm === "w25")).shelter, "public_transport");
+});
+
+test("wall material comes from building:material or material, and an untagged chimney is taken for brick", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 30, tags: { building: "yes", "building:material": "concrete", material: "brick" }, geometry: square(0, 0, 10) },
+      { type: "way", id: 31, tags: { building: "yes", man_made: "chimney", material: "steel" }, geometry: square(20, 0, 3) },
+      { type: "way", id: 32, tags: { building: "yes", man_made: "chimney" }, geometry: square(30, 0, 3) },
+      { type: "way", id: 33, tags: { building: "chimney" }, geometry: square(40, 0, 3) },
+      { type: "way", id: 34, tags: { building: "yes" }, geometry: square(50, 0, 10) },
+    ],
+    origin,
+  );
+  const material = (osm: string) => {
+    const b = defined(features.buildings.find((b) => b.osm === osm));
+    return [b.material, b.materialEstimated];
+  };
+  assert.deepEqual(
+    ["w30", "w31", "w32", "w33", "w34"].map(material),
+    [["concrete", undefined], ["steel", undefined], ["brick", true], ["brick", true], [undefined, undefined]],
+  );
+});
+
+test("a chimney mapped as man_made=chimney alone is a building, as tall as tagged or 12 times its width", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 40, tags: { man_made: "chimney", height: "84", name: "Piippu" }, geometry: square(0, 0, 5) },
+      { type: "way", id: 41, tags: { man_made: "chimney" }, geometry: square(20, 0, 4) },
+      // with no height, a small building=yes would get a guessed gabled roof
+      { type: "way", id: 42, tags: { building: "yes", man_made: "chimney" }, geometry: square(40, 0, 6) },
+    ],
+    origin,
+  );
+  const chimney = (osm: string) => {
+    const b = defined(features.buildings.find((b) => b.osm === osm));
+    return [b.kind, Math.round(b.height), b.heightEstimated, b.roofShape, b.special];
+  };
+  assert.deepEqual(
+    ["w40", "w41", "w42"].map(chimney),
+    [["chimney", 84, undefined, undefined, true], ["chimney", 48, true, undefined, true], ["yes", 72, true, undefined, true]],
+  );
+  assert.equal(features.areas.length, 0);
+});
+
+test("towers, tanks and churches without a height are guessed by type and width, not by storeys", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 50, tags: { man_made: "ventilation_shaft", height: "40" }, geometry: square(0, 0, 6) },
+      { type: "way", id: 51, tags: { building: "yes", man_made: "water_tower" }, geometry: square(20, 0, 20) },
+      // capped at the type's most
+      { type: "way", id: 52, tags: { man_made: "storage_tank" }, geometry: square(50, 0, 25) },
+      { type: "way", id: 53, tags: { building: "church" }, geometry: rectangle(0, 50, 20, 40) },
+      // tagged storeys win, and a parish hall is an ordinary building
+      { type: "way", id: 54, tags: { building: "church", "building:levels": "1" }, geometry: square(100, 0, 30) },
+      { type: "way", id: 55, tags: { building: "yes", amenity: "place_of_worship" }, geometry: square(150, 0, 30) },
+      // a ventilation shaft has no type height: a storey
+      { type: "way", id: 56, tags: { man_made: "ventilation_shaft" }, geometry: square(200, 0, 3) },
+    ],
+    origin,
+  );
+  const guess = (osm: string) => {
+    const b = defined(features.buildings.find((b) => b.osm === osm));
+    return [b.kind, Math.round(b.height), b.heightByType, b.roofShape];
+  };
+  assert.deepEqual(["w50", "w51", "w52", "w53", "w54", "w55", "w56"].map(guess), [
+    ["ventilation_shaft", 40, undefined, undefined],
+    ["yes", 26, true, undefined],
+    ["storage_tank", 15, true, undefined],
+    ["church", 18, true, "gabled"],
+    // a storey and a guessed roof on it
+    ["church", 9, undefined, "gabled"],
+    ["yes", 9, undefined, undefined],
+    ["ventilation_shaft", 3, undefined, undefined],
+  ]);
 });
 
 test("a part that starts above the ground with nothing under it gets its building filled in under it", () => {

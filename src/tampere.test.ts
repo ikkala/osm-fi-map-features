@@ -62,6 +62,19 @@ test("applyRegister replaces estimated heights and sets materials from the point
   assert.equal(empty.heightEstimated, true);
 });
 
+test("applyRegister keeps a height guessed by type", () => {
+  const church = square(0, 20, { kind: "church", height: 9, heightByType: true });
+  applyRegister([church], [{ longitude: 2, latitude: 2, floors: 1 }], (r) => [r.longitude, r.latitude]);
+  assert.deepEqual([church.height, church.heightEstimated, church.levels], [9, true, 1]);
+});
+
+test("applyRegister replaces a guessed material", () => {
+  const chimney = square(0, 4, { material: "brick", materialEstimated: true });
+  const match = applyRegister([chimney], [{ longitude: 2, latitude: 2, facade: "concrete" }], (r) => [r.longitude, r.latitude]);
+  assert.equal(match.materials, 1);
+  assert.deepEqual([chimney.material, chimney.materialEstimated], ["concrete", undefined]);
+});
+
 test("registerTreeHeight takes the middle of the height class, or guesses from the trunk", () => {
   assert.equal(registerTreeHeight("11 - 15m", 100, "broadleaved"), 13);
   assert.equal(registerTreeHeight("30m ->", undefined, "conifer"), 32);

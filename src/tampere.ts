@@ -235,7 +235,7 @@ export interface RegisterMatch {
 /**
  * Gives OSM buildings the storeys, facades, uses and completion years of the register buildings inside them.
  * With several register buildings in one outline, the most storeys, the most common facade and use and the
- * earliest year win. Heights from OSM are kept, and so are OSM materials, levels and start_dates. toPoint maps a register building to map meters.
+ * earliest year win. Heights from OSM are kept, and so are heights guessed by type (towers, tanks, churches), OSM materials (not guessed ones), levels and start_dates. toPoint maps a register building to map meters.
  */
 export function applyRegister(buildings: Building[], register: RegisterBuilding[], toPoint: (r: RegisterBuilding) => Point): RegisterMatch {
   const inside = new Map<Building, RegisterBuilding[]>();
@@ -257,7 +257,7 @@ export function applyRegister(buildings: Building[], register: RegisterBuilding[
   const result: RegisterMatch = { heights: 0, materials: 0, unmatched };
   for (const [b, rs] of inside) {
     const floors = Math.max(0, ...rs.map((r) => r.floors ?? 0));
-    if (b.heightEstimated && !b.part && floors > 0) {
+    if (b.heightEstimated && !b.heightByType && !b.part && floors > 0) {
       b.height = Math.max(floors * LEVEL_HEIGHT_M + (b.roofHeight ?? 0), b.minHeight + LEVEL_HEIGHT_M);
       delete b.heightEstimated;
       b.heightFromLevels = true;
@@ -275,8 +275,9 @@ export function applyRegister(buildings: Building[], register: RegisterBuilding[
       b.year = Math.min(...years);
     }
     const facade = mostCommon(rs.map((r) => r.facade).filter((f) => f !== undefined));
-    if (facade && !b.material) {
+    if (facade && (!b.material || b.materialEstimated)) {
       b.material = facade;
+      delete b.materialEstimated;
       result.materials++;
     }
   }
