@@ -86,7 +86,7 @@ silos, tanks, gasometers and ventilation shafts (`man_made=*`) are buildings eve
 churches, whose storeys say little about their height, are guessed by type from the base's longest side instead
 (a chimney 12 times as tall, a water tower 1.3 times, a church 0.45 times, ..., see `HEIGHTS_BY_TYPE`), and the
 register's storeys do not replace that. A chimney with no material in OSM or the register is taken for brick,
-as Tampere's old factory chimneys are.
+as Tampere's old factory chimneys are (see [Measured in Tampere](#measured-in-tampere)).
 
 The register used to come from the City of Tampere's own
 [building register](https://data.tampere.fi/data/dataset/tampereen-rakennukset), which is the same national register.
@@ -272,7 +272,7 @@ takes most of its cyclists. No one cycles on steps, motorways, trunk roads and t
 where `bicycle=no` or `private`. Ways have their `foot`, `bicycle` and
 `segregated` (`segregated=yes`: people walking and cycling each have a side of their own; OSM does not tell which).
 
-`base` and `scale` (`DEFAULT_MODELS`) were fitted, in September 2026, to the City of Tampere's
+`base` and `scale` (`footfallModels` in [`FINNISH_DEFAULTS_MEASURED_IN_TAMPERE`](#measured-in-tampere)) were fitted, in September 2026, to the City of Tampere's
 [pedestrian and cycling counts](https://data.tampere.fi/data/dataset/tampereen-jalankulun-ja-pyorailyn-liikennemaaria)
 around the centre: 432 walking counts fit `330 + 19.2 × draw` and 445 cycling counts `330 + 0.5 × draw` (cycling
 hardly depends on the businesses around), within a factor of two of 55 % of the walking counts and 43 % of the
@@ -320,6 +320,20 @@ viewer high up, where their full features would be far too many:
 - `boxes`: each building as the smallest box around its outline with a side along one of its edges (its centre,
   the long side's direction, length and width) with the building's base, heights and colours. Outlines with parts
   and buildings smaller than 40 m² are left out; a block with a courtyard is a full box.
+
+## Measured in Tampere
+
+Some constants could only be measured from one city's open data, Tampere's. They are kept together in
+`FINNISH_DEFAULTS_MEASURED_IN_TAMPERE` (`src/measuredDefaults.ts`, exported) and used on purpose for every Finnish
+city, until there is data of another city's own to measure them from:
+
+- `footfallModels`: the base and scale of people walking and cycling, fitted to the city's pedestrian and cycling counts
+- `vehiclesByRoadKind`: motor vehicles a day by `highway=*`, from the city's motor traffic counts
+- `stairSpacingM`: 18 m between the staircases of a block of flats, from the staircases mapped in OSM
+- `officeLevels`: 4 storeys, from which a building of the register's offices-and-factories class is offices, from the
+  city's own building register
+- `chimneyHeight` and `chimneyMaterial`: an untagged chimney 12 times as tall as its base is wide (at most 100 m)
+  and brick, from the city's chimneys
 
 ## Licences
 

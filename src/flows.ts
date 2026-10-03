@@ -4,6 +4,7 @@
 //
 // Each count matches the nearest road of its mode; the count/estimate ratio spreads, fading, along the counted
 // road (same id or name, or walkways in line with it) and less onto other roads.
+import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
 import { NOT_FOR_VEHICLES, type Road } from "./osm.ts";
 import type { Point } from "./geometry.ts";
 
@@ -55,23 +56,6 @@ const MATCH_M = 25;
 /** A walkway goes on from the counted one when it is within this (m) of the counted segment's line */
 const IN_LINE_M = 6;
 
-/** Typical vehicles a day by road kind (fitted to traffic counts); other kinds none */
-const KIND_TRAFFIC: Record<string, number> = {
-  motorway: 30000,
-  trunk: 20000,
-  primary: 12000,
-  secondary: 7000,
-  tertiary: 3500,
-  motorway_link: 6000,
-  trunk_link: 4000,
-  primary_link: 3000,
-  secondary_link: 2000,
-  tertiary_link: 1200,
-  unclassified: 800,
-  residential: 250,
-  living_street: 60,
-  service: 60,
-};
 /** Service roads by service=* */
 const SERVICE_TRAFFIC: Record<string, number> = { parking_aisle: 30, driveway: 15, alley: 30, "drive-through": 40 };
 /** Who may drive (motorVehicle): none, or only some (FEW_ALLOWED_SHARE) */
@@ -81,7 +65,8 @@ const FEW_ALLOWED_SHARE = 0.2;
 
 /** A road's motor vehicles a day by kind and access; 0 where cars may not drive and in undrawn tunnels */
 export function estimateMotorTraffic(road: FlowRoad): number {
-  const base = road.kind === "service" && road.service !== undefined ? (SERVICE_TRAFFIC[road.service] ?? KIND_TRAFFIC.service) : (KIND_TRAFFIC[road.kind] ?? 0);
+  const byKind = FINNISH_DEFAULTS_MEASURED_IN_TAMPERE.vehiclesByRoadKind;
+  const base = road.kind === "service" && road.service !== undefined ? (SERVICE_TRAFFIC[road.service] ?? byKind.service) : (byKind[road.kind] ?? 0);
   const hidden = road.tunnel === true && road.floor === undefined && road.lid === undefined;
   if (hidden || (road.motorVehicle !== undefined && NOT_ALLOWED.has(road.motorVehicle))) {
     return 0;

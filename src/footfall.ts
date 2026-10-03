@@ -1,6 +1,7 @@
 // People walking and cycling per average day at each point of a way, estimated as
 // kind × (base + scale × draw), where draw is the nearby businesses and doors weighed by distance.
 // Counts, where a user has them, can pull the estimate towards them (flows.ts).
+import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
 import { distanceToSegment, nearestOnSegment, type Point } from "./geometry.ts";
 import { NOT_FOR_VEHICLES, type Building, type Road } from "./osm.ts";
 
@@ -65,11 +66,6 @@ const DOOR_REACH_M = 120;
 const BUSINESS_WEIGHTS: Record<string, number> = { shop: 1, amenity: 1.5, office: 0.5 };
 /** A door draws this much of a business */
 const DOOR_WEIGHT = 0.15;
-/** Base and scale of each mode, fitted to pedestrian and cycling counts */
-export const DEFAULT_MODELS: Record<Mode, { base: number; scale: number }> = {
-  walking: { base: 330, scale: 19.2 },
-  cycling: { base: 330, scale: 0.5 },
-};
 
 /** A street has its sidewalks drawn as ways of their own when footway=sidewalk runs this close beside it */
 const SEPARATE_SIDEWALK_M = 8;
@@ -96,7 +92,7 @@ export function estimateCycling(roads: Road[], buildings: Building[]): FootfallR
 function estimate(roads: Road[], buildings: Building[], mode: Mode): FootfallResult {
   const { factors, separate } = kindFactors(roads, mode);
   const draw = drawField(buildings);
-  const model = DEFAULT_MODELS[mode];
+  const model = FINNISH_DEFAULTS_MEASURED_IN_TAMPERE.footfallModels[mode];
   const used = roads.filter((road) => (factors.get(road) ?? 0) > 0);
   for (const road of used) {
     const factor = factors.get(road) ?? 0;

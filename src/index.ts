@@ -2,6 +2,7 @@ export { MapBuilder, DEFAULT_OVERPASS_URL, OSM_ATTRIBUTION, type Logger, type Ma
 export { BUILDING_REGISTER_ATTRIBUTION } from "./buildingRegister.ts";
 export { fileCache, memoryCache, type SourceCache } from "./cache.ts";
 export { ELEVATION_ATTRIBUTION } from "./elevation.ts";
+export { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE, type MeasuredDefaults } from "./measuredDefaults.ts";
 export { FAR_CLASSES, farTile, type FarBox, type FarClass, type FarOptions, type FarTile } from "./far.ts";
 export {
   estimateMotorTraffic,

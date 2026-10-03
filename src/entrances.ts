@@ -1,12 +1,11 @@
 // Building entrances: OSM entrance nodes where mapped, else guessed. A slab block of flats gets
 // staircases along its side facing the nearest street, other buildings with windows one main door on
 // that side. Wider blocks of flats get none: their doors are as often in the yard.
+import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
 import { distanceToRing, nearestOnSegment, orientedBox, RectGrid, ringArea, ringCentroid, type Point, type Rect, type Ring } from "./geometry.ts";
 import { bounds, type Building, type Entrance, type GeoBox, type OverpassResponse, type Road } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 
-/** Staircases of a guessed block of flats are this far apart (m), as measured from mapped ones */
-export const STAIR_SPACING_M = 18;
 /** A block of flats this narrow (m) and this rectangular (area / oriented box) is a slab */
 const MAX_SLAB_WIDTH_M = 20;
 const MIN_SLAB_FILL = 0.8;
@@ -96,7 +95,7 @@ export function guessEntrances(buildings: Building[], roads: Road[]): number {
         continue;
       }
       const side = dot(toStreet, across) < 0 ? -1 : 1;
-      const stairs = Math.max(1, Math.round(box.length / STAIR_SPACING_M));
+      const stairs = Math.max(1, Math.round(box.length / FINNISH_DEFAULTS_MEASURED_IN_TAMPERE.stairSpacingM));
       for (let i = 0; i < stairs; i++) {
         const k = ((i + 0.5) / stairs - 0.5) * box.length;
         const from: Point = [centre[0] + along[0] * k, centre[1] + along[1] * k];

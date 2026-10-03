@@ -1,4 +1,5 @@
 // Fetches OpenStreetMap data from Overpass and turns it into map features in meters east / north of the origin.
+import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
 import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
 import { field, isObject, items, optionalNumber, optionalString } from "./json.ts";
@@ -421,10 +422,10 @@ const STOP_SHELTER_HEIGHT_M = 2.7;
 const STRUCTURES = new Set(["chimney", "ventilation_shaft", "storage_tank", "silo", "water_tower", "tower", "gasometer"]);
 /**
  * Guessed height of an untagged structure (man_made=*, else building=*) or church: perWidth times its base's
- * longest side, at most max meters. Fitted to tagged heights in OSM.
+ * longest side, at most max meters. Fitted to tagged heights in OSM, a chimney's measured in Tampere.
  */
 const HEIGHTS_BY_TYPE = new Map<string, { perWidth: number; max: number }>([
-  ["chimney", { perWidth: 12, max: 100 }],
+  ["chimney", FINNISH_DEFAULTS_MEASURED_IN_TAMPERE.chimneyHeight],
   ["water_tower", { perWidth: 1.3, max: 45 }],
   ["gasometer", { perWidth: 1, max: 40 }],
   ["silo", { perWidth: 1.2, max: 40 }],
@@ -1060,14 +1061,14 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
   };
 }
 
-/** A building's wall material: building:material or material; brick is guessed for an untagged chimney */
+/** A building's wall material: building:material or material, guessed for an untagged chimney */
 function wallMaterial(tags: Tags, chimney: boolean): { material?: string; materialEstimated?: boolean } {
   const tagged = tags["building:material"] ?? tags.material;
   if (tagged) {
     return { material: tagged };
   }
   if (chimney) {
-    return { material: "brick", materialEstimated: true };
+    return { material: FINNISH_DEFAULTS_MEASURED_IN_TAMPERE.chimneyMaterial, materialEstimated: true };
   }
   return {};
 }

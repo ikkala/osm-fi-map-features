@@ -1,5 +1,6 @@
 // Guesses window rows (one per storey) for ordinary buildings by their kind; other kinds are too varied to
 // guess and get none.
+import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
 import { orientedBox, pointInPolygon, ringCentroid } from "./geometry.ts";
 import { bounds, type Building, type BuildingUse, type WindowStyle } from "./osm.ts";
 
@@ -26,7 +27,7 @@ const BY_KIND: Record<string, WindowStyle> = {
   kindergarten: "office",
 };
 
-/** The building register's main uses and their windows; work is offices and factories alike (see OFFICE_LEVELS) */
+/** The building register's main uses and their windows; work is offices and factories alike (see officeLevels) */
 const BY_USE: Partial<Record<BuildingUse, WindowStyle>> = {
   house: "house",
   holiday: "house",
@@ -34,12 +35,9 @@ const BY_USE: Partial<Record<BuildingUse, WindowStyle>> = {
   public: "office",
 };
 
-/** A work building of this many storeys or more is taken for offices; lower ones are mostly factories and warehouses */
-const OFFICE_LEVELS = 4;
-
 function byUse(b: Building): WindowStyle | undefined {
   if (b.use === "work") {
-    return (b.levels ?? 0) >= OFFICE_LEVELS ? "office" : undefined;
+    return (b.levels ?? 0) >= FINNISH_DEFAULTS_MEASURED_IN_TAMPERE.officeLevels ? "office" : undefined;
   }
   return b.use === undefined ? undefined : BY_USE[b.use];
 }

@@ -1,9 +1,9 @@
+import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   estimateCycling,
   estimateFootfall,
-  DEFAULT_MODELS,
 } from "./footfall.ts";
 import type { Point } from "./geometry.ts";
 import { sidewalks, type Building, type Road } from "./osm.ts";
@@ -66,7 +66,7 @@ test("a street with footway=sidewalk ways along it has its walking on them", () 
 test("a way with nothing around gets its kind's share of the base", () => {
   const far = road("w1", "footway", [[50000, 0], [50100, 0]]);
   estimateFootfall([far], [shops(0, 10, 20)]);
-  assert.deepEqual(far.footfall, [DEFAULT_MODELS.walking.base, DEFAULT_MODELS.walking.base]);
+  assert.deepEqual(far.footfall, [FINNISH_DEFAULTS_MEASURED_IN_TAMPERE.footfallModels.walking.base, FINNISH_DEFAULTS_MEASURED_IN_TAMPERE.footfallModels.walking.base]);
 });
 
 test("people cycle on cycleways and streets, not where bicycles may not go, and walk only where they may", () => {
