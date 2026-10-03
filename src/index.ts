@@ -1,4 +1,5 @@
 export { MapBuilder, DEFAULT_OVERPASS_URL, OSM_ATTRIBUTION, type Logger, type MapInfo, type MapOptions } from "./builder.ts";
+export { BUILDING_REGISTER_ATTRIBUTION } from "./buildingRegister.ts";
 export { fileCache, memoryCache, type SourceCache } from "./cache.ts";
 export { ELEVATION_ATTRIBUTION } from "./elevation.ts";
 export { FAR_CLASSES, farTile, type FarBox, type FarClass, type FarOptions, type FarTile } from "./far.ts";
@@ -20,6 +21,7 @@ export type {
   BarrierKind,
   BridgeDeck,
   Building,
+  BuildingUse,
   Business,
   BusinessCategory,
   BusinessFront,
@@ -43,5 +45,5 @@ export type {
   WindowStyle,
 } from "./osm.ts";
 export { isValidGeoPoint, LocalProjection, type GeoPoint } from "./projection.ts";
-export { TAMPERE_ATTRIBUTION, TAMPERE_TREES_ATTRIBUTION } from "./tampere.ts";
+export { TAMPERE_TREE_REGISTER, TREE_REGISTERS, type TreeRegisterSource } from "./treeRegister.ts";
 export { tileName, tileRect, type Heights, type Tile, type TileKey } from "./tiles.ts";

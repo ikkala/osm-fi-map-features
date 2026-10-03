@@ -8,9 +8,10 @@ lamps, crossings, traffic signals, gates, fences and walls, and ground areas fro
 - the ground heights of the [National Land Survey of Finland](https://www.maanmittauslaitos.fi/en)'s
   (Maanmittauslaitos, MML) 2 m elevation model, for tile heights, bridge decks and where buildings stand, and
   roof colours from its orthophoto (needs a free API key from https://omatili.maanmittauslaitos.fi)
-- in Tampere, storeys, facades and building classes from the City of Tampere's
-  [building register](https://data.tampere.fi/data/dataset/tampereen-rakennukset) and street and park trees
-  from its tree register.
+- storeys, facades, uses and completion years from the Finnish building register, which the Finnish
+  Environment Institute (Syke) publishes for the whole country in
+  [Ryhti](https://ryhti.syke.fi/palvelut/palvelut-tiedon-hyodyntajille/)
+- street and park trees from the tree registers of the cities that publish theirs (for now Tampere).
 
 It is published so that how a map is made from OpenStreetMap with it is available to everyone, as the ODbL asks
 of a map that is made public (see [Licences](#licences)).
@@ -36,6 +37,8 @@ const builder = new MapBuilder({
   // the sources' responses are kept here, one file each
   cache: fileCache(".cache"),
   mmlApiKey: process.env.MML_API_KEY,
+  // optional: the tree registers to use, of those whose area the map reaches into (TREE_REGISTERS by default)
+  // treeRegisters: [TAMPERE_TREE_REGISTER],
 });
 const info = await builder.info(); // tiles, OSM timestamp, attributions
 for (const key of info.tiles) {
@@ -55,7 +58,8 @@ Each source's responses are cached apart from the others in a `SourceCache` (`ge
 and the map is only combined from them when it is built. `fileCache(dir)` keeps a file per key and
 `memoryCache()` keeps them in memory; anything else (e.g. object storage) is a `SourceCache` of your own.
 `refresh: true` fetches everything again. The keys name the source and a hash of the request:
-`overpass-*.json`, `mml-elevation-*.asc`, `tampere-buildings-*.json`, `tampere-trees-*.json`, and
+`overpass-*.json`, `mml-elevation-*.asc`, `ryhti-buildings-*.json` (a page each), `tampere-trees-*.json` (a tree
+register's `name`), and
 `mml-roof-colours.json` (the colours worked out from the orthophoto by outline; the images are not kept).
 
 The Overpass server is `https://overpass-api.de/api/interpreter` unless `overpassUrl` is given; mind its
@@ -72,10 +76,11 @@ A building with parts is drawn by its parts. A part that starts above the ground
 building, gets its building filled in under it as the outline, unless it is a balcony, roof, canopy or the like or
 a way runs under it (an arcade or a passage).
 
-Buildings without `height` or `building:levels` in OSM get their storeys from the City of Tampere's
-[building register](https://data.tampere.fi/data/dataset/tampereen-rakennukset) (a point per building, matched to
-the OSM outline it is in; empty outside Tampere), which also gives most buildings their facade material (brick,
-concrete, wood, ...) unless OSM has `building:material` or `material`. The rest get a guess: one storey for sheds
+Buildings without `height` or `building:levels` in OSM get their storeys from the Finnish building register
+(`kerrosluku`), as Ryhti publishes it in the OGC API Features collection `avoimet_rakennukset` at
+`paikkatiedot.ymparisto.fi` (a point per building, matched to the OSM outline it is in; demolished ones left out),
+which also gives most buildings their facade material (brick, concrete, wood, ...; `julkisivumateriaali`) unless OSM
+has `building:material` or `material`, and their main use (`use`, see windows below). The rest get a guess: one storey for sheds
 and anything under 40 m², two for houses and anything under 150 m², three otherwise. Chimneys, towers, water towers,
 silos, tanks, gasometers and ventilation shafts (`man_made=*`) are buildings even without `building`. These and
 churches, whose storeys say little about their height, are guessed by type from the base's longest side instead
@@ -83,7 +88,14 @@ churches, whose storeys say little about their height, are guessed by type from 
 register's storeys do not replace that. A chimney with no material in OSM or the register is taken for brick,
 as Tampere's old factory chimneys are.
 
-How OSM and the register compare (September 2026, the 1 143 outlines drawn without parts that have both
+The register used to come from the City of Tampere's own
+[building register](https://data.tampere.fi/data/dataset/tampereen-rakennukset), which is the same national register.
+Of its 21 932 buildings in and around Tampere (October 2026), Ryhti has 21 542 by the permanent building identifier,
+with the same storeys in 99 % of those both have them and the same facade in nearly all; it has more completion
+years (a real year where the city has 29 February 1904) and also has the neighbouring municipalities. Its use is
+coarser: seven classes instead of some hundred.
+
+How OSM and the register compare (September 2026, with the city's register, the 1 143 outlines drawn without parts that have both
 `building:levels` and register storeys): 57 % agree, 20 % have one storey fewer in OSM and 18 % one more, 5 % differ
 by two or more. The one-storey differences are mostly the attic of a pitched roof: in old buildings with one (160
 wooden ones before 1940), the register counts it as a storey about half the time, and OSM then has it in
@@ -94,9 +106,9 @@ register's storeys over OSM's would do harm; a few look like errors in OSM (Kank
 there. Storeys are 3 m, but old buildings have taller ones: a building whose height is counted from its storeys
 (`building:levels` or the register's) gets 3.6 m storeys when built before 1920 and 3.2 m before 1946, e.g. the
 walls of Tampereen ensimmäinen postitalo by Finlayson (1867, one storey under a hipped roof) are 3.6 m tall, not 3.
-The year (`year`) is `start_date` in OSM, else the register's completion date (`C_VALMPVM`; the
-earliest of the points in an outline). The register has 29 February 1904 on some 5 000 outbuildings and holiday
-homes and 1 January 1900 on some 400 others, both left out as unknown, and a few dates before 1700 are errors. A
+The year (`year`) is `start_date` in OSM, else the register's completion date (`valmistumispaivamaara`; the
+earliest of the points in an outline). The register has 29 February 1904 on outbuildings and holiday homes and 1
+January 1900 on some others whose date is not known, both left out as unknown, and a few dates before 1700 are errors. A
 `building:part` without a year gets the year of the building it is in, but keeps 3 m storeys, so that the parts
 meet (a part higher up starts at a `building:min_level` counted at 3 m).
 
@@ -176,17 +188,23 @@ meet, their beds end at the same height: the ground averaged within 10 m, or the
 Neither OSM nor the register has windows, so ordinary buildings get guessed ones: a row per storey (from
 `building:levels` or the register's storeys, else about every 3 m) and spaced by the kind of building. Houses get
 windows 4 m apart, blocks of flats and hotels 2.8 m, and offices, shops and schools a band of windows 1.6 m apart.
-The kind comes from `building=*`; for `building=yes` the register's building class (`C_RAKENNUSLUOKKA`) decides, and
-a `building:part=yes` gets the windows of the building it is in. Other buildings (churches, sheds, factories,
+The kind comes from `building=*`; for `building=yes` the register's main use (`paaasiallinen_kayttotarkoitus`)
+decides: houses and holiday homes, blocks of flats, and public buildings (shops, restaurants, hotels, schools, ...)
+with offices' windows. Offices and factories are one class there, so of those only buildings of 4 storeys or more
+get offices' windows (in Tampere 103 of 135 such are offices, and 880 of the 952 lower ones not). A
+`building:part=yes` gets the windows of the building it is in. Other buildings (churches, sheds, factories,
 halls, ...) and glass walls get no windows, and neither do storeys under 2.2 m or over 6 m tall. Nor do buildings
 tagged as something special whatever their `building=*` (`man_made=*` such as towers and chimneys,
 `amenity=place_of_worship`, `historic=*` other than `building`, `tourism=attraction` or `museum`) and the parts in
 them, or buildings over five times taller than their longest side (towers that are not tagged so); Näsinneula is
 `building=yes` with `man_made=tower`. The style says nothing of the windows' age: a building's `year` (see above) does.
 
-Street and park trees come from the City of Tampere's tree register (WFS layer `locus:locus_t_RpaVegetation_gsview`
-at `geodata.tampere.fi`, a point per tree with its species, height class and trunk circumference; about 12 500
-around the centre, nearly all trees, few shrubs). The height is the middle of the height class, else a guess from
+Street and park trees come from a city's tree register, in the format of the parks register software many
+Finnish cities use: a WFS layer of a point per tree with its species, height class and trunk circumference.
+`TREE_REGISTERS` lists the open ones known, each with the area it covers, and a map takes those it reaches into
+(`treeRegisters` chooses others): for now only the City of Tampere's (`locus:locus_t_RpaVegetation_gsview` at
+`geodata.tampere.fi`, about 12 500 around the centre, nearly all trees, few shrubs). Elsewhere the trees are OSM's.
+Only a register's trees inside the map's box are taken, as its server also sends ones with broken coordinates. The height is the middle of the height class, else a guess from
 the trunk (3 m + 0.35 × its diameter in cm, at most 25 m). OSM's `natural=tree` and `natural=shrub` nodes and
 `natural=tree_row` ways (a tree every 8 m or less) are added where the register has no tree within 4 m. Woods
 (`natural=wood`, `landuse=forest`) and scrub (`natural=scrub`) are only areas in OSM, so the import plants them,
@@ -314,7 +332,8 @@ The data it builds is not:
   altered and combined with other data, a Derivative Database in ODbL terms: when you make it, or something
   produced from it such as a rendered map, public, you must credit OpenStreetMap and offer the database, or the way it
   was made, under the ODbL. This package is that way for maps built with it; say which commit you used.
-- Elevation model and orthophoto © Maanmittauslaitos, building and tree registers © City of Tampere, all under
+- Elevation model and orthophoto © Maanmittauslaitos, the building register © Finnish Environment Institute Syke
+  (Ryhti), and a tree register © its city (Tampere), all under
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): credit them.
 - Flows pulled towards counts (`pullFlows`) are OSM roads combined with the counts: a Derivative Database under the
   ODbL however briefly they exist, whether they are stored or worked out when they are used, and `flows.ts` is the

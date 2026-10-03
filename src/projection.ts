@@ -3,6 +3,7 @@
 // Uses a local tangent plane around the origin, which is accurate to well under a meter within a few
 // kilometres of it.
 import type { Point } from "./geometry.ts";
+import type { GeoBox } from "./osm.ts";
 
 /** WGS84 ellipsoid */
 const SEMI_MAJOR_AXIS_M = 6378137;
@@ -16,6 +17,13 @@ export interface GeoPoint {
 export function isValidGeoPoint(point: GeoPoint): boolean {
   const { latitude, longitude } = point;
   return Number.isFinite(latitude) && Number.isFinite(longitude) && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180;
+}
+
+/** The points inside the box */
+export function inGeoBox<T extends GeoPoint>(points: T[], box: GeoBox): T[] {
+  return points.filter(
+    (p) => p.latitude >= box.south && p.latitude <= box.north && p.longitude >= box.west && p.longitude <= box.east,
+  );
 }
 
 export class LocalProjection {

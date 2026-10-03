@@ -3,7 +3,7 @@
 // sheds, factories, halls, ...) are too varied to guess and get none, and so do buildings tagged as
 // something special (a building=yes with man_made=tower, ...) and slender ones.
 import { orientedBox, pointInPolygon, ringCentroid } from "./geometry.ts";
-import { bounds, type Building, type WindowStyle } from "./osm.ts";
+import { bounds, type Building, type BuildingUse, type WindowStyle } from "./osm.ts";
 
 /** building=* values and their windows */
 const BY_KIND: Record<string, WindowStyle> = {
@@ -28,25 +28,30 @@ const BY_KIND: Record<string, WindowStyle> = {
   kindergarten: "office",
 };
 
-/** Building classes of the Finnish building register (C_RAKENNUSLUOKKA) and their windows */
-const BY_USE: Record<string, WindowStyle> = {
-  "0110": "house", // detached houses
-  "0111": "house", // semi-detached houses
-  "0112": "house", // terraced houses
-  "0211": "house", // holiday homes
-  "0120": "apartments", // low blocks of flats
-  "0121": "apartments", // blocks of flats
-  "0130": "apartments", // residential homes
-  "0320": "apartments", // hotels
-  "0321": "apartments", // hostels
-  "0319": "office", // other shops
-  "0330": "office", // restaurants
-  "0400": "office", // offices
-  "0810": "office", // kindergartens
-  "0820": "office", // schools
-  "0830": "office", // vocational schools
-  "0840": "office", // universities
+/**
+ * The building register's main uses and their windows. A public building is mostly a shop, a restaurant, a
+ * school or a kindergarten. Work is offices and factories alike (see OFFICE_LEVELS).
+ */
+const BY_USE: Partial<Record<BuildingUse, WindowStyle>> = {
+  house: "house",
+  holiday: "house",
+  apartments: "apartments",
+  public: "office",
 };
+
+/**
+ * A work building of this many storeys or more is taken for offices: in Tampere's own register (September
+ * 2026), of the work buildings with 4 or more storeys 103 are offices and 32 factories, warehouses, parking
+ * garages and others, while lower ones are mostly those (880 of the 952 with 1 to 3)
+ */
+const OFFICE_LEVELS = 4;
+
+function byUse(b: Building): WindowStyle | undefined {
+  if (b.use === "work") {
+    return (b.levels ?? 0) >= OFFICE_LEVELS ? "office" : undefined;
+  }
+  return b.use === undefined ? undefined : BY_USE[b.use];
+}
 
 /** Kinds that say nothing of what a building is: its use in the register, or the outline around a part, decides */
 const GENERIC_KINDS = new Set(["yes", "building"]);
@@ -65,7 +70,7 @@ export function assignWindows(buildings: Building[]): number {
   const tower = (b: Building) => b.special === true || b.height - b.minHeight > SLENDER * orientedBox(b.polygon.outer).length;
   const unusual = (b: Building) => b.special === true || b.shelter !== undefined || b.material === "glass";
   const own = (b: Building): WindowStyle | undefined =>
-    GENERIC_KINDS.has(b.kind) ? (b.use === undefined ? undefined : BY_USE[b.use]) : BY_KIND[b.kind];
+    GENERIC_KINDS.has(b.kind) ? byUse(b) : BY_KIND[b.kind];
   const outlines = buildings
     .filter((b) => b.hasParts)
     .map((b) => ({ polygon: b.polygon, box: bounds(b.polygon.outer), tower: tower(b), windows: unusual(b) ? undefined : own(b) }));

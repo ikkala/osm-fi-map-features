@@ -2,14 +2,15 @@
 //
 // The OpenStreetMap roads, rails, buildings (with the businesses in them), trees, street lamps and ground areas
 // around the area (from an Overpass API server) are laid out in meters around the origin. With an MML API key they get ground heights and
-// bridge decks from the Maanmittauslaitos elevation model and roof colours from its orthophoto; in
-// Tampere, storeys and wall materials from the city's building register, street and park trees from
-// its tree register. The ways get the people walking and cycling on them (footfall.ts). Every tile touching the area can be built.
+// bridge decks from the Maanmittauslaitos elevation model and roof colours from its orthophoto; storeys, wall
+// materials, uses and years from the Finnish building register (Ryhti), and street and park trees from the
+// register of a city that publishes one (treeRegister.ts). The ways get the people walking and cycling on them (footfall.ts). Every tile touching the area can be built.
 //
 // For now the first tile asked for builds the whole area and the rest come from memory: bridge spans,
 // tunnels in cuts and multipolygons reach over tile edges, so they are worked out over the whole area.
 import type { SourceCache } from "./cache.ts";
 import { applyAges } from "./ages.ts";
+import { applyRegister, BUILDING_REGISTER_ATTRIBUTION, fetchBuildingRegister } from "./buildingRegister.ts";
 import { openBarriers } from "./barriers.ts";
 import { MAX_PLINTH_M, setBuildingBases } from "./bases.ts";
 import { setBridgeDecks } from "./bridges.ts";
@@ -26,16 +27,10 @@ import { fetchRoofColours, ORTHO_ATTRIBUTION } from "./ortho.ts";
 import { bounds, fetchOverpass, LEVEL_HEIGHT_M, openDoorways, overpassQuery, parseOsm, type Building, type GeoBox } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { placeStreetNodes } from "./streets.ts";
-import {
-  applyRegister,
-  fetchRegister,
-  fetchTreeRegister,
-  TAMPERE_ATTRIBUTION,
-  TAMPERE_TREES_ATTRIBUTION,
-} from "./tampere.ts";
 import { cutIntoTiles, latticeProjection, tileHeights, tileName, tilesCovering, type Tile, type TileKey } from "./tiles.ts";
 import { setTrackBeds } from "./trackbeds.ts";
 import { setTunnelFloors, uncoverAtGrade } from "./tunnels.ts";
+import { fetchTreeRegister, overlaps, TREE_REGISTERS, type RegisterTree, type TreeRegisterSource } from "./treeRegister.ts";
 import { assignWindows } from "./windows.ts";
 
 export const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
@@ -71,6 +66,8 @@ export interface MapOptions {
   overpassUrl?: string;
   /** Maanmittauslaitos open interfaces: ground heights, bridge decks and roof colours when set */
   mmlApiKey?: string;
+  /** The tree registers to take street and park trees from, of those that cover the area; TREE_REGISTERS by default */
+  treeRegisters?: TreeRegisterSource[];
   /** Progress and warnings; console by default */
   logger?: Logger;
 }
@@ -230,17 +227,17 @@ export class MapBuilder {
       logger.log("no MML API key: the tiles get no ground heights");
     }
 
-    // storeys and wall materials from the City of Tampere's building register (empty outside Tampere)
+    // storeys, wall materials, uses and years from the building register
     const otherAttributions: string[] = [];
     try {
-      const { buildings: register, cached: registerCached } = await fetchRegister(fetchBox, { cache, refresh });
+      const { buildings: register, cached: registerCached } = await fetchBuildingRegister(fetchBox, { cache, refresh });
       const match = applyRegister(features.buildings, register, (r) => toMeters(r.latitude, r.longitude));
       logger.log(
-        `Tampere building register: ${register.length} buildings (${registerCached ? "cached" : "fetched"}), ` +
+        `building register: ${register.length} buildings (${registerCached ? "cached" : "fetched"}), ` +
           `${match.heights} heights and ${match.materials} wall materials set, ${match.unmatched} inside no OSM building`,
       );
-      if (match.heights + match.materials > 0) {
-        otherAttributions.push(TAMPERE_ATTRIBUTION);
+      if (match.matched > 0) {
+        otherAttributions.push(BUILDING_REGISTER_ATTRIBUTION);
       }
     } catch (err) {
       logger.warn(`warning: no building register data: ${err instanceof Error ? err.message : String(err)}`);
@@ -324,24 +321,28 @@ export class MapBuilder {
     const cycling = estimateCycling(features.roads, features.buildings);
     logger.log(`cycling on ${cycling.ways} ways`);
 
-    // street and park trees from the city's register (empty outside Tampere), OSM's trees where it has none
-    // of its own, and trees planted in woods and scrub
+    // street and park trees from the registers that cover the area, OSM's trees where they have none of their
+    // own, and trees planted in woods and scrub
     const osmTrees = features.trees.length;
-    try {
-      const { trees: register, cached: treesCached } = await fetchTreeRegister(fetchBox, { cache, refresh });
+    const registerTrees: RegisterTree[] = [];
+    for (const source of (this.#options.treeRegisters ?? TREE_REGISTERS).filter((s) => overlaps(s.covers, fetchBox))) {
+      try {
+        const { trees, cached: treesCached } = await fetchTreeRegister(source, fetchBox, { cache, refresh });
+        logger.log(`${source.title}: ${trees.length} trees and shrubs (${treesCached ? "cached" : "fetched"})`);
+        registerTrees.push(...trees);
+        if (trees.length > 0) {
+          otherAttributions.push(source.attribution);
+        }
+      } catch (err) {
+        logger.warn(`warning: no data from the ${source.title}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    if (registerTrees.length > 0) {
       features.trees = mergeTrees(
-        register.map(({ latitude, longitude, ...tree }) => ({ point: toMeters(latitude, longitude), ...tree })),
+        registerTrees.map(({ latitude, longitude, ...tree }) => ({ point: toMeters(latitude, longitude), ...tree })),
         features.trees,
       );
-      logger.log(
-        `Tampere tree register: ${register.length} trees and shrubs (${treesCached ? "cached" : "fetched"}), ` +
-          `${osmTrees - (features.trees.length - register.length)} of ${osmTrees} OSM trees at a register tree`,
-      );
-      if (register.length > 0) {
-        otherAttributions.push(TAMPERE_TREES_ATTRIBUTION);
-      }
-    } catch (err) {
-      logger.warn(`warning: no tree register data: ${err instanceof Error ? err.message : String(err)}`);
+      logger.log(`${osmTrees - (features.trees.length - registerTrees.length)} of ${osmTrees} OSM trees at a register tree`);
     }
     // after the decks, which lamps on bridges stand on
     const lamps = placeLamps(features.lamps, features.roads);

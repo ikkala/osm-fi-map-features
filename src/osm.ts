@@ -20,6 +20,14 @@ import {
   type Ring,
 } from "./geometry.ts";
 
+/**
+ * The main use classes of the Finnish building register: house (detached, semi-detached and terraced), holiday
+ * (holiday homes), apartments (blocks of flats, residential homes), public (shops, restaurants, hotels, schools,
+ * sports halls, churches, hospitals, ...), work (offices, factories, warehouses, parking garages and the
+ * unclassified), ancillary (sheds, garages) and sauna
+ */
+export type BuildingUse = "house" | "holiday" | "apartments" | "public" | "work" | "ancillary" | "sauna";
+
 export interface GeoBox {
   south: number;
   west: number;
@@ -128,8 +136,8 @@ export interface Building {
   base?: number;
   /** Storeys in the walls, from minHeight to the eaves, when OSM or a building register has them */
   levels?: number;
-  /** The building class in a building register (e.g. "0121", blocks of flats in Finland) */
-  use?: string;
+  /** Its main use in the building register */
+  use?: BuildingUse;
   /** The year it was built: start_date, or the completion year in a building register */
   year?: number;
   /** How the walls' windows are drawn (see WindowStyle); no windows when unset */

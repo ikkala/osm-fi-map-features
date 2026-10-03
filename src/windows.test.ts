@@ -11,13 +11,16 @@ function square(x: number, size: number, extra: Partial<Building> = {}): Buildin
 
 test("assignWindows goes by kind, and for building=yes by the register's use", () => {
   const flats = square(0, 10, { kind: "apartments" });
-  const church = square(20, 10, { kind: "church", use: "0121" });
-  const registered = square(40, 10, { use: "0110" });
+  const church = square(20, 10, { kind: "church", use: "apartments" });
+  const registered = square(40, 10, { use: "house" });
   const unknown = square(60, 10);
-  const hall = square(80, 10, { use: "0743" });
+  // offices and factories alike: offices when tall
+  const hall = square(80, 10, { use: "work", levels: 2 });
+  const offices = square(140, 10, { use: "work", levels: 5 });
   const glass = square(100, 10, { kind: "office", material: "glass" });
   const shelter = square(120, 10, { kind: "roof", shelter: "roof" });
-  assert.equal(assignWindows([flats, church, registered, unknown, hall, glass, shelter]), 2);
+  assert.equal(assignWindows([flats, church, registered, unknown, hall, glass, shelter, offices]), 3);
+  assert.equal(offices.windows, "office");
   assert.equal(flats.windows, "apartments");
   // the OSM kind wins over the register
   assert.equal(church.windows, undefined);
@@ -39,8 +42,8 @@ test("assignWindows gives parts of unknown kind the windows of their outline", (
 
 test("assignWindows leaves out special buildings, the parts in them and slender ones", () => {
   // an observation tower with a restaurant in the register, drawn by its parts
-  const tower = square(0, 20, { hasParts: true, special: true, use: "0330" });
-  const shaft = square(5, 10, { part: true, height: 130, use: "0330" });
+  const tower = square(0, 20, { hasParts: true, special: true, use: "public" });
+  const shaft = square(5, 10, { part: true, height: 130, use: "public" });
   const pod = square(2, 16, { part: true, height: 128, minHeight: 120 });
   const chimney = square(40, 4, { kind: "apartments", height: 30 });
   const block = square(60, 12, { kind: "apartments", height: 45 });
