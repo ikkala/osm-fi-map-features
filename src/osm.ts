@@ -443,6 +443,8 @@ const PASSAGE_HEIGHT_M = 4;
 const WALKWAY_PASSAGE_HEIGHT_M = 3;
 /** A covered way comes in at a door in OSM when one of its points is this close to it (m) */
 const DOOR_ON_WAY_M = 0.5;
+/** A covered way coming in at a door opens the wall at most this wide (m): a double door */
+const DOORWAY_WIDTH_M = 1.8;
 /** Ways indoors are kept this far on from a tunnel's end (m) */
 const INDOOR_REACH_M = 30;
 /** The passage of a way indoors out of a tunnel starts this far on from the tunnel's end (m) */
@@ -812,6 +814,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
     }
   }
   features.buildings.push(...fillUnderFloatingParts(features));
+  groundFloatingBuildings(features);
   openPassages(features.buildings, passages);
   raiseRoofsOverRoads(features);
   return { features, streetNodes, bridgeOutlines, warnings, levels, covered: covered.filter((r) => !through.has(r)) };
@@ -1196,7 +1199,8 @@ export function openPassages(buildings: Building[], passages: Passage[], rooms =
 
 /**
  * Opens the walls of stair halls (see bases.ts) where a covered way comes in at one of their doors, from the
- * ground there and without a room. heightAt gives the ground at map meters. Returns the number of openings.
+ * ground there, at most a door's width (DOORWAY_WIDTH_M) and without a room. heightAt gives the ground at map
+ * meters. Returns the number of openings.
  */
 export function openDoorways(buildings: Building[], ways: Road[], heightAt: (e: number, n: number) => number | undefined): number {
   let count = 0;
@@ -1212,7 +1216,7 @@ export function openDoorways(buildings: Building[], ways: Road[], heightAt: (e: 
         continue;
       }
       const before = b.passages?.length ?? 0;
-      openPassages([b], [{ line: way.line, width: way.width, height: NOT_FOR_VEHICLES.has(way.kind) ? WALKWAY_PASSAGE_HEIGHT_M : PASSAGE_HEIGHT_M }], false);
+      openPassages([b], [{ line: way.line, width: Math.min(way.width, DOORWAY_WIDTH_M), height: NOT_FOR_VEHICLES.has(way.kind) ? WALKWAY_PASSAGE_HEIGHT_M : PASSAGE_HEIGHT_M }], false);
       for (const opening of (b.passages ?? []).slice(before)) {
         const ground = heightAt((opening.from[0] + opening.to[0]) / 2, (opening.from[1] + opening.to[1]) / 2);
         if (ground !== undefined) {
@@ -1690,6 +1694,37 @@ function fillUnderFloatingParts(features: MapFeatures): Building[] {
     }
   }
   return fillers;
+}
+
+/** A raised building stays raised when at least this share of it is over lower buildings */
+const MIN_OVER_BUILDINGS = 0.5;
+
+/**
+ * Brings buildings without parts that start higher with nothing under them down to the ground, their storeys with
+ * them, as mappers sometimes leave out a ground floor (building:min_level=1 over shops on the street). Overhanging
+ * kinds, buildings over a way (an arcade, a skyway) and buildings over lower ones are left raised.
+ */
+function groundFloatingBuildings(features: MapFeatures): void {
+  const all = features.buildings.map((b) => ({ b, box: bounds(b.polygon.outer) }));
+  const ways = [...features.roads, ...features.rails].filter((w) => !w.tunnel).map((w) => ({ line: w.line, box: bounds(w.line) }));
+  type Box = ReturnType<typeof bounds>;
+  const meet = (a: Box, b: Box) => a.maxX >= b.minX && a.minX <= b.maxX && a.maxY >= b.minY && a.minY <= b.maxY;
+  for (const { b, box } of all) {
+    if (b.part || b.hasParts || b.shelter !== undefined || b.minHeight <= 0 || OVERHANGING_PARTS.has(b.kind)) {
+      continue;
+    }
+    if (ways.some((w) => meet(box, w.box) && lineEntersPolygon(w.line, b.polygon))) {
+      continue;
+    }
+    const lower = all.filter((o) => o.b !== b && o.b.minHeight < b.minHeight && meet(box, o.box));
+    if (lower.length > 0 && partsCover(b.polygon, lower) >= MIN_OVER_BUILDINGS) {
+      continue;
+    }
+    if (b.levels !== undefined) {
+      b.levels += Math.round(b.minHeight / LEVEL_HEIGHT_M);
+    }
+    b.minHeight = 0;
+  }
 }
 
 /** building:part=* values that stick out of a building with nothing under them */

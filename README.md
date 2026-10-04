@@ -75,7 +75,10 @@ a time so that this can change without changing its users.
 A building with parts is drawn by its parts. A part that starts above the ground (`min_height`,
 `building:min_level`) with no other part under it, such as the planetarium on the second floor of Särkänniemi's
 building, gets its building filled in under it as the outline, unless it is a balcony, roof, canopy or the like or
-a way runs under it (an arcade or a passage).
+a way runs under it (an arcade or a passage). A building without parts that starts above the ground with nothing
+under it (a ground floor left out, `building:min_level=1` over shops on a street) comes down to the ground with its
+storeys, unless it is a bridge, roof, canopy or the like, a way runs under it, or at least half of it is over lower
+buildings (volumes mapped on top of each other).
 
 Buildings without `height` or `building:levels` in OSM get their storeys from the Finnish building register
 (`kerrosluku`), as Ryhti publishes it in the OGC API Features collection `avoimet_rakennukset` at

@@ -150,7 +150,7 @@ test("parseOsm leaves out ways indoors, but not the ones on from a tunnel's end,
   assert.deepEqual(openings, [[[8, 19], [8, 21]]]);
 });
 
-test("openDoorways opens a building's walls where a covered way comes in at its door, from the ground there, without a room", () => {
+test("openDoorways opens a building's walls where a covered way comes in at its door, from the ground there, a door wide, without a room", () => {
   // a stair hall (e 0 .. 4, n 0 .. 20): stairs from its door at n 0 up inside, and a way on out at its door at n 20
   const hall: Building = {
     osm: "w1", kind: "yes", part: false, hasParts: false, height: 8, minHeight: 0,
@@ -158,14 +158,16 @@ test("openDoorways opens a building's walls where a covered way comes in at its 
     entrances: [{ at: [2, 0], kind: "yes" }, { at: [2, 20], kind: "yes" }],
   };
   const way = (osm: string, line: Point[], kind: string): Road => ({ osm, kind, width: 2, layer: 0, bridge: false, tunnel: false, line });
-  const stairs = way("w2", [[2, 0], [2, 14]], "steps");
-  const on = way("w3", [[2, 14], [2, 20], [2, 30]], "footway");
+  // narrow stairs open the wall as wide as they are, a wide way only as wide as a double door
+  const stairs = { ...way("w2", [[2, 0], [2, 14]], "steps"), width: 1.6 };
+  const on = { ...way("w3", [[2, 14], [2, 20], [2, 30]], "footway"), width: 2.5 };
   // a covered way past the building, at no door
   const past = way("w4", [[5, 0], [5, 20]], "footway");
   assert.equal(openDoorways([hall], [stairs, on, past], (_e, n) => 100 + n / 4), 2);
-  assert.deepEqual(defined(hall.passages).map((o) => [o.from, o.to, o.height, o.ground]), [
-    [[1, 0], [3, 0], 3, 100],
-    [[3, 20], [1, 20], 3, 105],
+  const round = (p: Point) => p.map((v) => Math.round(v * 100) / 100);
+  assert.deepEqual(defined(hall.passages).map((o) => [round(o.from), round(o.to), o.height, o.ground]), [
+    [[1.2, 0], [2.8, 0], 3, 100],
+    [[2.9, 20], [1.1, 20], 3, 105],
   ]);
   assert.equal(hall.passageRooms, undefined);
 });
@@ -551,6 +553,32 @@ test("a part that starts above the ground with nothing under it gets its buildin
   const [filler] = fillers;
   assert.deepEqual([filler.kind, filler.minHeight, filler.height, filler.colour], ["commercial", 0, 6, "white"]);
   assert.ok(Math.abs(filler.polygon.outer[0][0] - 5) < 0.01);
+});
+
+test("a building without parts that starts above the ground with nothing under it comes down with its storeys", () => {
+  const { features } = parseOsm(
+    [
+      // its ground floor left out
+      { type: "way", id: 60, tags: { building: "yes", "building:levels": "3", "building:min_level": "1", height: "12" }, geometry: square(0, 0, 20) },
+      // a skyway, upper floors over a footway, and a volume on a lower building
+      { type: "way", id: 61, tags: { building: "bridge", "building:min_level": "1", "building:levels": "2" }, geometry: rectangle(40, 0, 20, 4) },
+      { type: "way", id: 62, tags: { building: "yes", "building:min_level": "1", "building:levels": "3" }, geometry: square(80, 0, 10) },
+      { type: "way", id: 63, tags: { highway: "footway" }, geometry: [at(85, -5), at(85, 15)] },
+      { type: "way", id: 64, tags: { building: "yes", "building:levels": "2" }, geometry: square(120, 0, 20) },
+      { type: "way", id: 65, tags: { building: "yes", "building:min_level": "2", "building:levels": "5" }, geometry: square(122, 2, 16) },
+    ],
+    origin,
+  );
+  const shape = (osm: string) => {
+    const b = defined(features.buildings.find((b) => b.osm === osm));
+    return [b.minHeight, b.height, b.levels];
+  };
+  assert.deepEqual(["w60", "w61", "w62", "w65"].map(shape), [
+    [0, 12, 3],
+    [3, 6, 1],
+    [3, 9, 2],
+    [6, 15, 3],
+  ]);
 });
 
 test("an outline whose parts cover under half of it is drawn as well", () => {
