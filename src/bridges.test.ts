@@ -43,6 +43,18 @@ test("a short bridge over a hollow wider than it takes its ends' height up the w
   assert.deepEqual([eastRamp.line, eastRamp.deck], [[[13, 0], [7, 0]], [102, 102]]);
 });
 
+test("a bridge's end at the bottom of a hollow reaching past it takes its height from where the ground stops rising", () => {
+  // the hollow's level bottom at 100 goes on 4 m past the bridge's west end; the bank rises to 110 by e = -18
+  const hollow = (e: number) => (e >= -4 ? 100 : e <= -18 ? 110 : 100 + ((-4 - e) * 10) / 14);
+  const west: BridgeLine = { bridge: false, line: [[-60, 0], [0, 0]] };
+  const bridge: BridgeLine = { bridge: true, line: [[0, 0], [10, 0]] };
+  const lines = [west, bridge];
+  setBridgeDecks(lines, hollow);
+  // the east end, with no way on, stays on the ground
+  assert.deepEqual(bridge.deck, [110, 100]);
+  assert.deepEqual(west.line, [[-60, 0], [-18, 0]]);
+});
+
 test("the ground falling away from a bridge's end leaves the ways leading on as they are", () => {
   const road: BridgeLine = { bridge: false, line: [[0, 0], [10, 0]] };
   const bridge: BridgeLine = { bridge: true, line: [[10, 0], [20, 0], [30, 0]] };

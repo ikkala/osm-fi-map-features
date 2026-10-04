@@ -12,9 +12,11 @@ export interface BridgeLine {
 
 /** The approach is walked this often, and at most this far from the bridge's end (m) */
 const APPROACH_STEP_M = 2;
-const APPROACH_REACH_M = 12;
+const APPROACH_REACH_M = 24;
 /** The ground has stopped rising steeply where it rises less than this in a step (m) */
 const APPROACH_RISE_M = 0.2;
+/** The hollow's bottom may reach on this far from the bridge's end before the ground starts rising (m) */
+const APPROACH_LEVEL_M = 6;
 /** Maximum rounds of junction height averaging */
 const JUNCTION_ROUNDS = 1000;
 
@@ -180,8 +182,14 @@ function approach<T extends BridgeLine>(line: T, atStart: boolean, heightAt: (e:
   for (let d = APPROACH_STEP_M; d <= APPROACH_REACH_M; d += APPROACH_STEP_M) {
     const p = pointAlong(points, d);
     const h = p && heightAt(...p);
-    if (h === undefined || top === undefined || h - top < APPROACH_RISE_M) {
+    if (h === undefined || top === undefined) {
       break;
+    }
+    if (h - top < APPROACH_RISE_M) {
+      if (length > 0 || d >= APPROACH_LEVEL_M) {
+        break;
+      }
+      continue;
     }
     length = d;
     top = h;

@@ -62,7 +62,8 @@ interface Node {
 /**
  * Turns tunnels (`layer` >= -1, not in a cut) that run at the ground under buildings into ground ways,
  * opening the buildings' walls and raising what is over them. The elevation model leaves buildings out, so
- * such a way's ground is level with its ends. Returns how many there are.
+ * such a way's ground is level with its ends. Tunnels joined at a point are one network, which runs at the
+ * ground or under it as a whole. Returns how many ways run at the ground.
  */
 export function uncoverAtGrade(features: MapFeatures, heightAt: (e: number, n: number) => number | undefined): number {
   const buildings = features.buildings
@@ -70,23 +71,44 @@ export function uncoverAtGrade(features: MapFeatures, heightAt: (e: number, n: n
     .map((b) => ({ polygon: b.polygon, box: bounds(b.polygon.outer) }));
   const underBuilding = ([e, n]: Point) =>
     buildings.some(({ polygon, box }) => e >= box.minX && e <= box.maxX && n >= box.minY && n <= box.maxY && pointInPolygon([e, n], polygon));
+  const tunnels = [...features.roads, ...features.rails]
+    .filter((way) => way.tunnel && !way.lid && way.layer >= -1 && way.line.length >= 2)
+    .map((way) => {
+      const points = densify(way.line, AT_GRADE_STEP_M);
+      const ground = points.map((p) => heightAt(...p));
+      const ends = [ground[0], ground[ground.length - 1]];
+      const top = Math.max(...ends.map((h) => h ?? Infinity));
+      const level = ground.every((h) => h !== undefined && h <= top + AT_GRADE_RISE_M);
+      // a road under a street has the street's level in the model, so it must be mostly under buildings;
+      // railways are not under basements, and tracks beside them under one deck are only partly covered
+      const road = "width" in way;
+      return { way, level, points: road ? points.length : 0, covered: road ? points.filter(underBuilding).length : 0 };
+    });
+  const networks = new Map<string, string>();
+  const root = (k: string): string => {
+    const parent = networks.get(k) ?? k;
+    return parent === k ? k : root(parent);
+  };
+  for (const { way } of tunnels) {
+    const [first, ...rest] = way.line.map((p) => root(pointKey(p)));
+    for (const k of rest) {
+      networks.set(k, first);
+    }
+  }
+  const byNetwork = new Map<string, typeof tunnels>();
+  for (const tunnel of tunnels) {
+    const k = root(pointKey(tunnel.way.line[0]));
+    byNetwork.set(k, [...(byNetwork.get(k) ?? []), tunnel]);
+  }
   const passages: { line: Point[]; width: number; height: number; railway: boolean }[] = [];
-  for (const way of [...features.roads, ...features.rails]) {
-    if (!way.tunnel || way.lid || way.layer < -1 || way.line.length < 2) {
+  for (const network of byNetwork.values()) {
+    const points = network.reduce((sum, t) => sum + t.points, 0);
+    const covered = network.reduce((sum, t) => sum + t.covered, 0);
+    if (!network.every((t) => t.level) || covered < points * UNDER_BUILDINGS_SHARE) {
       continue;
     }
-    const points = densify(way.line, AT_GRADE_STEP_M);
-    const ends = [heightAt(...points[0]), heightAt(...points[points.length - 1])];
-    const ground = points.map((p) => heightAt(...p));
-    if (ends.some((h) => h === undefined) || ground.some((h) => h === undefined)) {
-      continue;
-    }
-    const top = Math.max(...ends.filter((h) => h !== undefined));
-    const road = "width" in way;
-    // a road under a street has the street's level in the model, so it must be mostly under buildings;
-    // railways are not under basements, and tracks beside them under one deck are only partly covered
-    const covered = !road || points.filter(underBuilding).length >= points.length * UNDER_BUILDINGS_SHARE;
-    if (ground.every((h) => h !== undefined && h <= top + AT_GRADE_RISE_M) && covered) {
+    for (const { way } of network) {
+      const road = "width" in way;
       way.tunnel = false;
       passages.push({
         line: way.line,

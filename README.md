@@ -151,7 +151,8 @@ Other tunnels get heights from the elevation model, which has the bare ground ov
 whose ground rises nowhere more than 3 m over its ends runs at the ground under something built over it, which the
 model leaves out: a railway anywhere (the tracks under Tampere's Kansi and its arena), a road or path when at least
 half of it is under buildings (not open roofs; under a street or a railway the model has their level, not the
-tunnel's). It becomes a way on the ground, the walls of buildings over it open for it (as tall as a tunnel's room,
+tunnel's). Tunnels joined at a point are one network, which runs at the ground only as a whole: a short branch of a
+tunnel under the ground, ending under a building, stays in it. It becomes a way on the ground, the walls of buildings over it open for it (as tall as a tunnel's room,
 below), an open roof over it is raised over that room, and so is the underside of a building raised off the ground
 (`min_height`), its top where it was. Over a railway every building starts over the room (it stands on a deck over
 the tracks), and an open roof becomes a deck 1 m thick over it, without posts. A building is over a way where the
@@ -168,14 +169,17 @@ steeper than 7 %.
 Where the ground at a portal (the top of its wall) is over the floor, a ramp is split off each way leading on, with
 a `floor` of its own: straight from the portal's floor to where a 7 % slope from it meets the ground, at most 40 m
 on. A way leads on from a tunnel's end only on the tunnel's storey (`level`, when both have one): one on another
-goes on from a lift. Stairs leading on (`highway=steps`, also indoors, which is otherwise left out) go up out of the
+goes on from a lift. Ways indoors (`indoor=yes`, and corridors, `highway=corridor`, tagged so or not) are left out,
+except up to 30 m on from a tunnel's end. Stairs leading on (`highway=steps`, also indoors) go up out of the
 tunnel, such as from an underpass to the platforms over it: they rise from its floor to the ground at 60 %, and
 their foot is no portal the floor hangs from, unless the tunnel has no other way out (then it is as deep as the
 room and the roof need). Lines are simplified to 0.3 m, but not where other ways join them, so a tunnel's branches
 stay joined to it.
 
 A bridge's ways (the road, its sidewalks, a cycleway) each get a `deck` (`src/bridges.ts`): ways meeting end to end
-are one span, straight from the ground at one end to the other. Many bridges are also drawn as an outline
+are one span, straight from the ground at one end to the other. The model smooths the cut under a bridge into a
+wider hollow, so an end's ground is taken up the ways leading on as far as it rises steeply (0.2 m every 2 m), past
+at most 6 m of the hollow's level bottom and at most 24 m on, and those ways get a deck up to there. Many bridges are also drawn as an outline
 (`man_made=bridge`, a way or a multipolygon): the whole deck, with what is between the ways, such as planted strips
 (`src/decks.ts`). The bridge ways at least half inside an outline get one deck: along the bridge the highest of
 their decks every 4 m (a way ending in the middle of another took its end's height from the ground under the

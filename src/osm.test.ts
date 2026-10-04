@@ -150,6 +150,19 @@ test("parseOsm leaves out ways indoors, but not the ones on from a tunnel's end,
   assert.deepEqual(openings, [[[8, 19], [8, 21]]]);
 });
 
+test("parseOsm takes corridors for ways indoors, tagged so or not", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 70, tags: { highway: "footway", tunnel: "yes", layer: "-1" }, geometry: [at(0, 0), at(0, 10)] },
+      { type: "way", id: 71, tags: { highway: "corridor", indoor: "yes" }, geometry: [at(0, 10), at(0, 20)] },
+      { type: "way", id: 72, tags: { highway: "corridor" }, geometry: [at(0, 0), at(0, -10)] },
+      { type: "way", id: 73, tags: { highway: "corridor" }, geometry: [at(100, 0), at(100, 10)] },
+    ],
+    origin,
+  );
+  assert.deepEqual(features.roads.map((r) => [r.osm, r.kind, r.width]), [["w70", "footway", 2.5], ["w71", "corridor", 3], ["w72", "corridor", 3]]);
+});
+
 test("openDoorways opens a building's walls where a covered way comes in at its door, from the ground there, a door wide, without a room", () => {
   // a stair hall (e 0 .. 4, n 0 .. 20): stairs from its door at n 0 up inside, and a way on out at its door at n 20
   const hall: Building = {

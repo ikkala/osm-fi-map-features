@@ -400,6 +400,8 @@ const ROAD_WIDTHS: Record<string, number> = {
   path: 1.5,
   bridleway: 2,
   steps: 2,
+  // indoors wherever it is tagged
+  corridor: 3,
 };
 
 const LANE_WIDTH_M = 3.25;
@@ -716,7 +718,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
         if (storeys) {
           levels.set(way, storeys);
         }
-        if (road.indoor === "yes") {
+        if (road.indoor === "yes" || road.highway === "corridor") {
           indoors.push(way);
         } else {
           features.roads.push(way);

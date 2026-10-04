@@ -157,3 +157,18 @@ test("tunnels on level ground run at the ground: railways anywhere, roads and pa
   const underHill: Rail = { ...railway, tunnel: true };
   assert.equal(uncoverAtGrade(features([], [underHill]), hill), 0);
 });
+
+test("a tunnel's short branch into a building stays in the tunnel it leaves", () => {
+  const tunnel = road("w1", [[0, -50], [0, 0], [0, 50]], { tunnel: true, layer: -1, kind: "footway", width: 2.5 });
+  // its far end inside the building: one of its two points
+  const branch = road("w2", [[0, 0], [1.98, 0]], { tunnel: true, layer: -1, kind: "footway", width: 2.5 });
+  const house: Building = { osm: "w9", kind: "yes", part: false, hasParts: false, height: 3, minHeight: 0, polygon: { outer: [[1.5, -5], [10, -5], [10, 5], [1.5, 5]], holes: [] } };
+  const map = features([tunnel, branch]);
+  map.buildings.push(house);
+  assert.equal(uncoverAtGrade(map, () => 100), 0);
+  assert.deepEqual([tunnel.tunnel, branch.tunnel], [true, true]);
+  // alone it would run at the ground
+  const alone = features([road("w3", branch.line, { tunnel: true, layer: -1, kind: "footway", width: 2.5 })]);
+  alone.buildings.push({ ...house, passages: undefined });
+  assert.equal(uncoverAtGrade(alone, () => 100), 1);
+});
