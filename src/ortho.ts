@@ -1,5 +1,6 @@
 // Roof colours from the National Land Survey's colour orthophoto (WCS, uncompressed GeoTIFF in
-// ETRS-TM35FIN, CC BY 4.0): the median of the pixels inside each outline. Only colours are cached.
+// ETRS-TM35FIN, CC BY 4.0): the median of the pixels inside each outline. Only colours are cached, a file per
+// square of the photo, so maps of different places keep theirs.
 import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
 import { distanceToRing, pointInPolygon, type Point, type Polygon } from "./geometry.ts";
@@ -19,7 +20,10 @@ const SQUARE_M = MAX_SIDE_M - 2 * SQUARE_MARGIN_M;
 const EDGE_MARGIN_M = 1;
 /** Fewer pixels than this is no colour */
 const MIN_PIXELS = 4;
-const CACHE_KEY = "mml-roof-colours.json";
+/** Followed by the square, "<e>_<n>.json" */
+const CACHE_PREFIX = "mml-roof-colours-";
+/** Every outline's colour in one file, as an earlier version kept them: read so they are not fetched again */
+const LEGACY_CACHE_KEY = "mml-roof-colours.json";
 /** Bump when the colour computation changes, so cached colours are computed again */
 const CACHE_VERSION = 1;
 
@@ -187,65 +191,82 @@ export async function fetchRoofColours(
   outlines: Polygon[],
   options: CacheOptions & { apiKey: string; log?: (message: string) => void },
 ): Promise<RoofColourResult> {
-  const known = new Map<string, string>();
-  const cachedText = options.refresh ? undefined : await options.cache.get(CACHE_KEY);
-  if (cachedText !== undefined) {
-    const json: unknown = JSON.parse(cachedText);
-    const colours = field(json, "colours");
-    if (field(json, "version") === CACHE_VERSION && isObject(colours)) {
-      for (const [key, colour] of Object.entries(colours)) {
-        if (typeof colour === "string") {
-          known.set(key, colour);
-        }
-      }
-    }
-  }
   const keys = outlines.map(outlineKey);
   const result: RoofColourResult = { colours: new Map(), cached: 0, fetched: 0 };
-  // the outlines not in the cache, by the square their box's centre is in
+  // the outlines by the square their box's centre is in
   const squares = new Map<string, number[]>();
   outlines.forEach((outline, index) => {
-    const colour = known.get(keys[index]);
-    if (colour !== undefined) {
-      // "" is a roof the photo had no colour for
-      if (colour !== "") {
-        result.colours.set(index, colour);
-      }
-      result.cached++;
-      return;
-    }
     const box = ringBox(outline.outer);
-    const square = `${Math.floor((box.minE + box.maxE) / 2 / SQUARE_M)},${Math.floor((box.minN + box.maxN) / 2 / SQUARE_M)}`;
+    const square = `${Math.floor((box.minE + box.maxE) / 2 / SQUARE_M)}_${Math.floor((box.minN + box.maxN) / 2 / SQUARE_M)}`;
     squares.set(square, [...(squares.get(square) ?? []), index]);
   });
+  const legacy = await readColours(LEGACY_CACHE_KEY, options);
   for (const [square, indices] of squares) {
-    const [se, sn] = square.split(",").map(Number);
-    // the whole square, so the haze is measured the same way however few roofs are missing
-    const box = {
-      minE: se * SQUARE_M - SQUARE_MARGIN_M,
-      minN: sn * SQUARE_M - SQUARE_MARGIN_M,
-      maxE: (se + 1) * SQUARE_M + SQUARE_MARGIN_M,
-      maxN: (sn + 1) * SQUARE_M + SQUARE_MARGIN_M,
-    };
-    options.log?.(`fetching the orthophoto for ${indices.length} roofs in ${box.minE}..${box.maxE} E, ${box.minN}..${box.maxN} N`);
-    const raster = await fetchOrtho(box, options.apiKey);
-    result.fetched++;
-    const dark = darkPoint(raster);
+    const cacheKey = `${CACHE_PREFIX}${square}.json`;
+    const known = await readColours(cacheKey, options);
+    let changed = false;
     for (const index of indices) {
-      const colour = roofColour(raster, outlines[index], dark);
-      known.set(keys[index], colour ?? "");
-      if (colour !== undefined) {
+      const colour = legacy.get(keys[index]);
+      if (!known.has(keys[index]) && colour !== undefined) {
+        known.set(keys[index], colour);
+        changed = true;
+      }
+    }
+    const missing = indices.filter((index) => !known.has(keys[index]));
+    if (missing.length > 0) {
+      const [se, sn] = square.split("_").map(Number);
+      // the whole square, so the haze is measured the same way however few roofs are missing
+      const box = {
+        minE: se * SQUARE_M - SQUARE_MARGIN_M,
+        minN: sn * SQUARE_M - SQUARE_MARGIN_M,
+        maxE: (se + 1) * SQUARE_M + SQUARE_MARGIN_M,
+        maxN: (sn + 1) * SQUARE_M + SQUARE_MARGIN_M,
+      };
+      options.log?.(`fetching the orthophoto for ${missing.length} roofs in ${box.minE}..${box.maxE} E, ${box.minN}..${box.maxN} N`);
+      const raster = await fetchOrtho(box, options.apiKey);
+      result.fetched++;
+      const dark = darkPoint(raster);
+      for (const index of missing) {
+        known.set(keys[index], roofColour(raster, outlines[index], dark) ?? "");
+      }
+      changed = true;
+    }
+    result.cached += indices.length - missing.length;
+    for (const index of indices) {
+      const colour = known.get(keys[index]);
+      // "" is a roof the photo had no colour for
+      if (colour) {
         result.colours.set(index, colour);
       }
     }
-    // after every square, so an interrupted import does not fetch it again; only the current outlines
-    const current = keys.filter((key) => known.has(key)).map((key) => [key, known.get(key)]);
-    await options.cache.put(CACHE_KEY, JSON.stringify({ version: CACHE_VERSION, colours: Object.fromEntries(current) }));
+    // after every square, so an interrupted import does not fetch it again; outlines of other maps are kept
+    if (changed) {
+      await options.cache.put(cacheKey, JSON.stringify({ version: CACHE_VERSION, colours: Object.fromEntries(known) }));
+    }
   }
   return result;
 }
 
-function outlineKey(outline: Polygon): string {
+/** The colours cached under the key, by outline; none with `refresh` or of another version */
+async function readColours(key: string, options: CacheOptions): Promise<Map<string, string>> {
+  const known = new Map<string, string>();
+  const text = options.refresh ? undefined : await options.cache.get(key);
+  if (text !== undefined) {
+    const json: unknown = JSON.parse(text);
+    const colours = field(json, "colours");
+    if (field(json, "version") === CACHE_VERSION && isObject(colours)) {
+      for (const [outline, colour] of Object.entries(colours)) {
+        if (typeof colour === "string") {
+          known.set(outline, colour);
+        }
+      }
+    }
+  }
+  return known;
+}
+
+/** The cache's key of an outline: a hash of its shape */
+export function outlineKey(outline: Polygon): string {
   const text = [outline.outer, ...outline.holes].map((ring) => ring.map(([e, n]) => `${e.toFixed(1)} ${n.toFixed(1)}`).join(",")).join(";");
   return createHash("sha256").update(text).digest("hex").slice(0, 20);
 }

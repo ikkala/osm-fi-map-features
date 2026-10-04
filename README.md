@@ -60,7 +60,8 @@ and the map is only combined from them when it is built. `fileCache(dir)` keeps 
 `refresh: true` fetches everything again. The keys name the source and a hash of the request:
 `overpass-*.json`, `mml-elevation-*.asc`, `ryhti-buildings-*.json` (a page each), `tampere-trees-*.json` (a tree
 register's `name`), and
-`mml-roof-colours.json` (the colours worked out from the orthophoto by outline; the images are not kept).
+`mml-roof-colours-<e>_<n>.json` (the colours worked out from the orthophoto by outline, a file per square of the
+photo, so maps of different places keep theirs; the images are not kept).
 
 The Overpass server is `https://overpass-api.de/api/interpreter` unless `overpassUrl` is given; mind its
 [usage policy](https://wiki.openstreetmap.org/wiki/Overpass_API#Public_Overpass_API_instances).

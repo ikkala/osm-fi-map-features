@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { darkPoint, parseTiff, roofColour, type Raster } from "./ortho.ts";
+import { memoryCache } from "./cache.ts";
+import type { Polygon } from "./geometry.ts";
+import { darkPoint, fetchRoofColours, outlineKey, parseTiff, roofColour, type Raster } from "./ortho.ts";
 
 /** A little-endian uncompressed RGB TIFF in strips of stripRows rows */
 function tiff(width: number, height: number, rgb: number[], stripRows: number): Uint8Array {
@@ -88,4 +90,20 @@ test("roofColour is the median of the lit pixels inside, away from the edges, wi
   assert.equal(roofColour(kiosk, square(1010, 5010, 1.5), [0, 0, 0]), "#0a141e");
   // off the raster
   assert.equal(roofColour(r, square(2000, 5000, 10), [0, 0, 0]), undefined);
+});
+
+test("roof colours come from the square's cache file, else from the one file of the earlier version, without fetching", async () => {
+  const roof = (e: number, n: number): Polygon => ({ outer: [[e, n], [e + 10, n], [e + 10, n + 10], [e, n + 10]], holes: [] });
+  // in squares 0_2 and 5_2 of the photo (1 800 m a side)
+  const near = roof(1005, 5005);
+  const far = roof(9005, 5005);
+  const cache = memoryCache();
+  await cache.put("mml-roof-colours-0_2.json", JSON.stringify({ version: 1, colours: { [outlineKey(near)]: "#112233" } }));
+  // "" is a roof the photo had no colour for
+  await cache.put("mml-roof-colours.json", JSON.stringify({ version: 1, colours: { [outlineKey(far)]: "" } }));
+  // a fetch would fail without an API key
+  const result = await fetchRoofColours([near, far], { cache, refresh: false, apiKey: "none" });
+  assert.deepEqual(result, { colours: new Map([[0, "#112233"]]), cached: 2, fetched: 0 });
+  // the earlier version's colour is now in its square's file too
+  assert.equal(await cache.get("mml-roof-colours-5_2.json"), JSON.stringify({ version: 1, colours: { [outlineKey(far)]: "" } }));
 });
