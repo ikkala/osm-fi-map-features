@@ -2,7 +2,7 @@
 // Features, one point per building, CC BY 4.0), applied to the OSM outlines the points fall in.
 import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
-import { bounds, LEVEL_HEIGHT_M, type Building, type BuildingUse, type GeoBox } from "./osm.ts";
+import { bounds, LEVEL_HEIGHT_M, partOutlines, type Building, type BuildingUse, type GeoBox } from "./osm.ts";
 import { pointInPolygon, type Point } from "./geometry.ts";
 import { field, items, optionalNumber, optionalString } from "./json.ts";
 import { inGeoBox } from "./projection.ts";
@@ -150,13 +150,16 @@ export interface RegisterMatch {
 
 /**
  * Gives OSM buildings the storeys, facades, uses and years of the register buildings inside them (most
- * storeys, most common facade and use, earliest year). OSM values and heights guessed by type are kept;
+ * storeys, most common facade and use, earliest year); a part in an outline gets nothing, its outline does.
+ * OSM values and heights guessed by type are kept;
  * toPoint maps a register building to map meters.
  */
 export function applyRegister(buildings: Building[], register: RegisterBuilding[], toPoint: (r: RegisterBuilding) => Point): RegisterMatch {
   const inside = new Map<Building, RegisterBuilding[]>();
   let unmatched = 0;
-  const boxes = buildings.map((b) => ({ b, box: bounds(b.polygon.outer) }));
+  // a register building is the whole building: its parts take after the outline (inheritFromOutlines)
+  const inOutline = partOutlines(buildings);
+  const boxes = buildings.filter((b) => !inOutline.has(b)).map((b) => ({ b, box: bounds(b.polygon.outer) }));
   for (const r of register) {
     const p = toPoint(r);
     let found = false;

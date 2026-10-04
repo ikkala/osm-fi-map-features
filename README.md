@@ -111,7 +111,10 @@ The year (`year`) is `start_date` in OSM, else the register's completion date (`
 earliest of the points in an outline). The register has 29 February 1904 on outbuildings and holiday homes and 1
 January 1900 on some others whose date is not known, both left out as unknown, and a few dates before 1700 are errors. A
 `building:part` without a year gets the year of the building it is in, but keeps 3 m storeys, so that the parts
-meet (a part higher up starts at a `building:min_level` counted at 3 m).
+meet (a part higher up starts at a `building:min_level` counted at 3 m). It likewise gets the building's wall
+material and colour, which mappers often tag on the outline only (Jyväskylä's Vesilinna: a brick outline, its
+tower part untagged). A register point in a part goes to the outline around it, as the register describes the
+whole building, and so reaches every part; a part in no outline still gets the points inside it.
 
 On a slope a building stands at its highest ground, so its entrance on the uphill side is not in the hill, and its
 walls reach down to its lowest ground: a plinth or a basement storey on the downhill side, with windows in it. On a

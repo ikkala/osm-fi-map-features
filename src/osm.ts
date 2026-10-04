@@ -1556,6 +1556,55 @@ function raiseRoofsOverRoads(features: MapFeatures): void {
   }
 }
 
+/** Each part with the building outline its centroid is in, the smallest of nested ones */
+export function partOutlines(buildings: Building[]): Map<Building, Building> {
+  const outlines = buildings.filter((b) => !b.part).map((b) => ({ b, box: bounds(b.polygon.outer), area: Math.abs(ringArea(b.polygon.outer)) }));
+  const result = new Map<Building, Building>();
+  for (const part of buildings.filter((b) => b.part)) {
+    const [x, y] = ringCentroid(part.polygon.outer);
+    let best: { b: Building; area: number } | undefined;
+    for (const o of outlines) {
+      if (x >= o.box.minX && x <= o.box.maxX && y >= o.box.minY && y <= o.box.maxY && (!best || o.area < best.area) && pointInPolygon([x, y], o.b.polygon)) {
+        best = o;
+      }
+    }
+    if (best) {
+      result.set(part, best.b);
+    }
+  }
+  return result;
+}
+
+/**
+ * Gives parts what their building outline has and they do not: the wall material and colour and the year
+ * (mappers tag these on the outline). Returns how many parts got any.
+ */
+export function inheritFromOutlines(buildings: Building[]): number {
+  let count = 0;
+  for (const [part, outline] of partOutlines(buildings)) {
+    let got = false;
+    if (part.material === undefined && outline.material !== undefined) {
+      part.material = outline.material;
+      if (outline.materialEstimated) {
+        part.materialEstimated = true;
+      }
+      got = true;
+    }
+    if (part.colour === undefined && outline.colour !== undefined) {
+      part.colour = outline.colour;
+      got = true;
+    }
+    if (part.year === undefined && outline.year !== undefined) {
+      part.year = outline.year;
+      got = true;
+    }
+    if (got) {
+      count++;
+    }
+  }
+  return count;
+}
+
 /**
  * Parts replace the outline they are in, unless they cover less than this share of it: mappers often give
  * parts to only some of a building.

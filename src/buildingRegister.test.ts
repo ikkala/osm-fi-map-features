@@ -75,6 +75,18 @@ test("applyRegister keeps a height guessed by type", () => {
   assert.deepEqual([church.height, church.heightEstimated, church.levels], [9, true, 1]);
 });
 
+test("applyRegister gives a point in a part to the outline around it, and to a part in none", () => {
+  const outline = square(0, 40, { hasParts: true });
+  const base = square(2, 5, { part: true });
+  const alone = square(100, 5, { part: true });
+  const at = (e: number, n: number): RegisterBuilding => ({ longitude: e, latitude: n, facade: "brick", year: 1952 });
+  const match = applyRegister([outline, base, alone], [at(4, 4), at(102, 2)], (r) => [r.longitude, r.latitude]);
+  assert.equal(match.matched, 2);
+  assert.deepEqual([outline.material, outline.year], ["brick", 1952]);
+  assert.deepEqual([base.material, base.year], [undefined, undefined]);
+  assert.deepEqual([alone.material, alone.year], ["brick", 1952]);
+});
+
 test("applyRegister replaces a guessed material", () => {
   const chimney = square(0, 4, { material: "brick", materialEstimated: true });
   const match = applyRegister([chimney], [{ longitude: 2, latitude: 2, facade: "concrete" }], (r) => [r.longitude, r.latitude]);
