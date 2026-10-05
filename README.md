@@ -147,6 +147,8 @@ the opening's height. Where ways beside or across each other meet inside, their 
 Passages are often tagged `tunnel=yes` or `covered=yes` instead: such a way is taken for a passage when it is at
 most 60 m long and not deeper than `layer=-1`, neither end is more than 1 m inside a building, and at least half
 of it is inside buildings.
+A railway (not in a tunnel or on a bridge) running into a building, such as a depot whose doors OSM does not map,
+opens its walls 4.5 m wide, and a building lower than 6 m becomes 6 m tall, without a room.
 
 Other tunnels get heights from the elevation model, which has the bare ground over them. A tunnel (`layer` -1 or above)
 whose ground rises nowhere more than 3 m over its ends runs at the ground under something built over it, which the
@@ -170,7 +172,9 @@ lowest within 4 m outside, since at the portal the model has the top of its wall
 hanging between its branches' ends by distance, but at least room and a 1 m roof under the ground (3 m of
 room for people, 4.8 m for vehicles, 6 m for trains; reached 30 m in from a portal; under water areas 3 m more, since the model has the water's surface) and no
 steeper than 7 %. Under a way over it (where the way's width and the tunnel's room overlap, but not at the tunnel's
-free ends) it is that deep from the start, and rises from there no steeper than 7 %, to the portals too.
+free ends) it is that deep from the start, and rises from there no steeper than 7 %, to the portals too. Where it
+would follow the ground's humps it is smoothed, lowered only: no point is more than 0.1 m over the line between its
+neighbours (portals and junctions stay).
 Where the ground at a portal (the top of its wall) is over the floor, a ramp is split off each way leading on, with
 a `floor` of its own: straight from the portal's floor to where a 7 % slope from it meets the ground, at most 40 m
 on. A way leads on from a tunnel's end only on the tunnel's storey (`level`, when both have one): one on another
