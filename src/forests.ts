@@ -1,6 +1,6 @@
 // Trees for the map: register and OSM trees merged, and woods and scrub areas planted sparsely and
 // deterministically (each plant's place and look come from its grid cell alone).
-import { bounds, type Area, type MapFeatures, type Tree } from "./osm.ts";
+import { bounds, type Area, type MapFeatures, type Rail, type Road, type Tree } from "./osm.ts";
 import { distanceToRing, distanceToSegment, pointInPolygon, polygonTest, RectGrid, type Point, type Rect } from "./geometry.ts";
 
 /** An OSM tree this close (m) to a register tree is the same tree */
@@ -86,6 +86,65 @@ export function mergeTrees(register: Tree[], osm: Tree[]): Tree[] {
     grid.add(tree.point);
   }
   return [...register, ...osm.filter((tree) => !grid.near(tree.point, SAME_TREE_M))];
+}
+
+/** A tree on a way is moved this far (m) beyond the way's edge */
+const OFF_WAY_M = 0.5;
+
+/**
+ * The trees, those standing on a way (within its width; not on a bridge or over a tunnel) moved off it to beside
+ * its edge: OSM draws a path as a line, which may pass a tree that the path really goes round. A tree with no
+ * room beside the way, on another way there too, is left out.
+ */
+export function moveTreesOffWays(trees: Tree[], roads: Road[], rails: Rail[]): Tree[] {
+  const lines = [
+    ...roads.filter((r) => !r.tunnel && !r.bridge).map((r) => ({ line: r.line, half: r.width / 2 })),
+    ...rails.filter((r) => !r.tunnel && !r.bridge).map((r) => ({ line: r.line, half: RAIL_WIDTH_M / 2 })),
+  ];
+  if (trees.length === 0 || lines.length === 0) {
+    return trees;
+  }
+  const over = bounds(trees.map((t) => t.point));
+  const reach = 20;
+  const grid = new RectGrid<{ a: Point; b: Point; half: number }>(25, { minX: over.minX - reach, minY: over.minY - reach, maxX: over.maxX + reach, maxY: over.maxY + reach });
+  for (const { line, half } of lines) {
+    for (let i = 0; i + 1 < line.length; i++) {
+      const [a, b] = [line[i], line[i + 1]];
+      grid.add({ minX: Math.min(a[0], b[0]) - half, minY: Math.min(a[1], b[1]) - half, maxX: Math.max(a[0], b[0]) + half, maxY: Math.max(a[1], b[1]) + half }, { a, b, half });
+    }
+  }
+  // the segment the point is on (within its half width), the nearest such
+  const on = (p: Point) => {
+    let best: { a: Point; b: Point; half: number; d: number } | undefined;
+    for (const s of grid.at(p)) {
+      const d = distanceToSegment(p, s.a, s.b);
+      if (d < s.half && (!best || d - s.half < best.d - best.half)) {
+        best = { ...s, d };
+      }
+    }
+    return best;
+  };
+  const kept: Tree[] = [];
+  for (const tree of trees) {
+    const s = tree.base === undefined ? on(tree.point) : undefined;
+    if (!s) {
+      kept.push(tree);
+      continue;
+    }
+    const [dx, dy] = [s.b[0] - s.a[0], s.b[1] - s.a[1]];
+    const length = Math.hypot(dx, dy) || 1;
+    const t = Math.min(Math.max(((tree.point[0] - s.a[0]) * dx + (tree.point[1] - s.a[1]) * dy) / (length * length), 0), 1);
+    const foot: Point = [s.a[0] + dx * t, s.a[1] + dy * t];
+    // away from the line, on the side the tree is on (left of it when on it)
+    let [nx, ny] = [tree.point[0] - foot[0], tree.point[1] - foot[1]];
+    const off = Math.hypot(nx, ny);
+    [nx, ny] = off > 1e-6 ? [nx / off, ny / off] : [-dy / length, dx / length];
+    const moved: Point = [foot[0] + nx * (s.half + OFF_WAY_M), foot[1] + ny * (s.half + OFF_WAY_M)];
+    if (!on(moved)) {
+      kept.push({ ...tree, point: moved });
+    }
+  }
+  return kept;
 }
 
 /** A random number 0 .. 1 from a grid cell and a salt, the same on every run */

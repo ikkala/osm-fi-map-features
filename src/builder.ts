@@ -12,7 +12,7 @@ import { coverCutTunnels, fitLidsToDecks } from "./cuts.ts";
 import { ELEVATION_ATTRIBUTION, fetchElevation, sampleElevation, toTm35fin, type ElevationGrid } from "./elevation.ts";
 import { assignEntrances, entranceQuery, guessEntrances, parseEntrances } from "./entrances.ts";
 import { estimateCycling, estimateFootfall } from "./footfall.ts";
-import { mergeTrees, plantForests } from "./forests.ts";
+import { mergeTrees, moveTreesOffWays, plantForests } from "./forests.ts";
 import { pointKey, simplifyLine, type Point } from "./geometry.ts";
 import { placeLamps } from "./lamps.ts";
 import { fetchRoofColours, ORTHO_ATTRIBUTION } from "./ortho.ts";
@@ -329,6 +329,9 @@ export class MapBuilder {
       );
       logger.log(`${osmTrees - (features.trees.length - registerTrees.length)} of ${osmTrees} OSM trees at a register tree`);
     }
+    const standing = features.trees.length;
+    features.trees = moveTreesOffWays(features.trees, features.roads, features.rails);
+    logger.log(`trees on ways moved beside them, ${standing - features.trees.length} with no room there left out`);
     // after the decks, which lamps on bridges stand on
     const lamps = placeLamps(features.lamps, features.roads);
     logger.log(

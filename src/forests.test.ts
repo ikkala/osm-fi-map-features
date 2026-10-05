@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cellRandom, mergeTrees, plantForests } from "./forests.ts";
+import { cellRandom, mergeTrees, moveTreesOffWays, plantForests } from "./forests.ts";
 import type { Point } from "./geometry.ts";
-import type { Area, MapFeatures, Tree } from "./osm.ts";
+import type { Area, MapFeatures, Road, Tree } from "./osm.ts";
 
 const EVERYWHERE = { minX: -1000, minY: -1000, maxX: 1000, maxY: 1000 };
 
@@ -93,4 +93,17 @@ test("plantForests puts mostly shrubs in scrub, closer together", () => {
   assert.ok(map.trees.filter((t) => t.kind === "shrub").length > count / 2);
   const park: Area = { osm: "w9", kind: "grass", polygon: { outer: square(0, 0, 50), holes: [] } };
   assert.equal(plantForests(features({ areas: [park] }), EVERYWHERE), 0);
+});
+
+test("moveTreesOffWays moves a tree standing on a way to beside it, and leaves out one with no room beside", () => {
+  const path: Road = { osm: "w1", kind: "footway", width: 2, layer: 0, bridge: false, tunnel: false, line: [[0, 0], [20, 0]] };
+  const tunnel: Road = { ...path, osm: "w2", tunnel: true, line: [[0, 10], [20, 10]] };
+  const onPath: Tree = { point: [5, 0.4], kind: "broadleaved", height: 10 };
+  const beside: Tree = { point: [5, 3], kind: "broadleaved", height: 10 };
+  const overTunnel: Tree = { point: [5, 10], kind: "broadleaved", height: 10 };
+  // between two paths 2.2 m apart there is no room
+  const other: Road = { ...path, osm: "w3", line: [[0, -2.2], [20, -2.2]] };
+  const squeezed: Tree = { point: [15, -0.8], kind: "broadleaved", height: 10 };
+  const trees = moveTreesOffWays([onPath, beside, overTunnel, squeezed], [path, tunnel, other], []);
+  assert.deepEqual(trees.map((t) => t.point), [[5, 1 + 0.5], [5, 3], [5, 10]]);
 });
