@@ -225,13 +225,15 @@ export interface PassageRoom {
   walls: [Point, Point][];
 }
 
-export type AreaKind = "water" | "grass" | "forest" | "sand" | "rock" | "pitch" | "paved";
+export type AreaKind = "water" | "grass" | "forest" | "sand" | "rock" | "pitch" | "paved" | "platform";
 
 export interface Area {
   osm: string;
   kind: AreaKind;
   /** What grows there: woods get trees and scrub shrubs (see forests.ts) */
   cover?: "trees" | "shrubs";
+  /** A platform's top, meters above sea level (see platforms.ts) */
+  top?: number;
   polygon: Polygon;
 }
 
@@ -364,6 +366,7 @@ export interface MapFeatures {
  * the first one. "*" matches any value.
  */
 const AREA_RULES: [key: string, values: Record<string, AreaKind>][] = [
+  ["railway", { platform: "platform" }],
   ["natural", { water: "water" }],
   ["waterway", { riverbank: "water" }],
   ["landuse", { reservoir: "water", basin: "water" }],

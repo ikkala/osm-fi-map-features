@@ -45,8 +45,18 @@ export interface FarOptions {
 const COVER_SIZE = 128;
 const HEIGHT_COUNT = 17;
 const MIN_AREA_M2 = 40;
-/** Areas in painting order, as FAR_CLASSES has them */
-const AREA_ORDER: AreaKind[] = ["grass", "forest", "sand", "rock", "pitch", "paved", "water"];
+/** Areas in painting order, as FAR_CLASSES has them, and the class each is painted as */
+const AREA_ORDER: AreaKind[] = ["grass", "forest", "sand", "rock", "pitch", "paved", "platform", "water"];
+const AREA_CLASS: Record<AreaKind, FarClass> = {
+  grass: "grass",
+  forest: "forest",
+  sand: "sand",
+  rock: "rock",
+  pitch: "pitch",
+  paved: "paved",
+  platform: "paved",
+  water: "water",
+};
 /** highway=* values drawn as paths rather than roads */
 const PATHS = new Set(["footway", "pedestrian", "cycleway", "path", "track", "bridleway", "steps"]);
 const PATH_WIDTH_M = 2;
@@ -77,7 +87,7 @@ function cover(tile: Tile, tileSize: number, size: number): { size: number; cell
   const toCell = ([e, n]: Point): Point => [(e - rect.minX) * scale, (rect.maxY - n) * scale];
 
   for (const kind of AREA_ORDER) {
-    const value = classIndex(kind);
+    const value = classIndex(AREA_CLASS[kind]);
     for (const area of tile.areas) {
       if (area.kind !== kind) {
         continue;

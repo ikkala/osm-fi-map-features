@@ -125,7 +125,8 @@ steep slope it stands at most 6 m above its lowest ground. The build takes the g
 along the outline (`base` in the tiles); a building's parts all stand at the building's base, so they line up.
 Without an elevation model buildings stand at their lowest ground. A building over a tunnel in a cut (see below)
 stands at least at the top of the tunnel's lid, since it really stands on the deck over the cut, and so does an open
-roof over a lid (a platform's roof), which otherwise stands on its lowest ground. A building or part raised off
+roof over a lid (a platform's roof), which otherwise stands on its lowest ground; an open roof over a railway
+platform stands on the platform's top (see below), though it reaches out over the tracks. A building or part raised off
 the ground (`min_height`) with nothing under it, such as a canopy on a building that stands at its door down the
 slope, counts its `min_height` from its own highest ground, so the rising ground does not come up to it; its top
 stays, unless that would leave it thinner than a storey (or than it was).
@@ -195,6 +196,10 @@ Railways (not tramways) that are not bridges or tunnels get a track bed (`bed`):
 platform edges, underpass roofs and the like under the tracks, a metre up and down every few metres, so the bed is
 the ground averaged over 30 m along the line, never more than 0.5 m under the ground right under it. Where lines
 meet, their beds end at the same height: the ground averaged within 10 m, or the deck of a bridge ending there.
+
+Railway platforms (`railway=platform`, ways and multipolygons, their holes kept) are areas of kind `platform`
+with a `top`: a platform is level, while the elevation model has it as a ridge smoothed at its edges, so its top is
+the ground's median inside its outline, sampled every 2 m.
 
 Neither OSM nor the register has windows, so ordinary buildings get guessed ones: a row per storey (from
 `building:levels` or the register's storeys, else about every 3 m) and spaced by the kind of building. Houses get
@@ -325,7 +330,7 @@ viewer high up, where their full features would be far too many:
 
 - `cover`: what covers the ground as a coarse picture, 128 × 128 cells by default, row by row from the north-west
   corner, one character each (the index in `FAR_CLASSES` as a base-36 digit): ground, grass, forest, sand, rock,
-  pitch, paved, water, road, path, rail. Areas are painted in that order, and roads, paths (footways, cycleways,
+  pitch, paved, water, road, path, rail. Areas are painted in that order (platforms as paved), and roads, paths (footways, cycleways,
   steps, ...) and railways over them at their width; tunnels are left out.
 - `heights`: the ground's heights resampled to 17 × 17 points over the tile, in the tile's `Heights` format.
 - `boxes`: each building as the smallest box around its outline with a side along one of its edges (its centre,

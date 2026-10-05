@@ -20,6 +20,7 @@ import { bounds, fetchOverpass, inheritFromOutlines, LEVEL_HEIGHT_M, openDoorway
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { placeStreetNodes } from "./streets.ts";
 import { cutIntoTiles, latticeProjection, tileHeights, tileName, tilesCovering, type Tile, type TileKey } from "./tiles.ts";
+import { setPlatformTops } from "./platforms.ts";
 import { setTrackBeds } from "./trackbeds.ts";
 import { setTunnelFloors, uncoverAtGrade } from "./tunnels.ts";
 import { fetchTreeRegister, overlaps, TREE_REGISTERS, type RegisterTree, type TreeRegisterSource } from "./treeRegister.ts";
@@ -210,6 +211,7 @@ export class MapBuilder {
       logger.log(`${bridgeOutlines.length} bridge outlines, ${new Set(outlined.decks.map((d) => d.osm)).size} with decks for the ${outlined.ways} ways on them`);
       // after the decks: the railways end at their bridges' and approaches' heights
       logger.log(`${setTrackBeds(features.rails, heightAt)} railway lines get smoothed track beds`);
+      logger.log(`${setPlatformTops(features.areas, heightAt)} railway platforms get their top`);
     } else {
       logger.log("no MML API key: the tiles get no ground heights");
     }
@@ -289,7 +291,8 @@ export class MapBuilder {
     if (heightAt) {
       const lids = [...features.roads, ...features.rails].flatMap((w) => (w.lid ? [{ line: w.line, lid: w.lid }] : []));
       const raised: Building[] = [];
-      const based = setBuildingBases(features.buildings, heightAt, lids, raised);
+      const platforms = features.areas.filter((a) => a.kind === "platform");
+      const based = setBuildingBases(features.buildings, heightAt, lids, raised, platforms);
       logger.log(`${based} buildings stand at their OSM entrance or highest ground (at most ${MAX_PLINTH_M} m above their lowest)`);
       // buildings raised to a door up a slope are stair halls: open them where covered ways come in
       const openings = openDoorways(raised, covered, heightAt);

@@ -1,7 +1,7 @@
 // The height buildings stand at on sloping ground: at an OSM entrance, else at their highest ground, with
 // walls down to the lowest ground (a plinth or basement on the downhill side).
 import { pointInPolygon, ringCentroid, type Point, type Ring } from "./geometry.ts";
-import { bounds, LEVEL_HEIGHT_M, type Building, type Entrance } from "./osm.ts";
+import { bounds, LEVEL_HEIGHT_M, type Area, type Building, type Entrance } from "./osm.ts";
 
 /** A building stands at most this far above its lowest ground (m), so it does not tower on a steep slope */
 export const MAX_PLINTH_M = 6;
@@ -17,14 +17,15 @@ const ROOM_OVER_DOOR_M = 2.5;
  * highest ground; at most MAX_PLINTH_M above its lowest ground, and at least the top of any tunnel lid under it.
  * Parts share the base of their outline. A building lower than ROOM_OVER_DOOR_M over the ground at one of its
  * doors (a stair hall up a slope) is made taller and pushed to raised. A building or part with a minHeight and
- * nothing under it counts that minHeight from its own highest ground. Open shelters get a base only on a lid.
- * Returns how many buildings got a base.
+ * nothing under it counts that minHeight from its own highest ground. Open shelters get a base only on a lid or
+ * a railway platform (an area with a top) under them. Returns how many buildings got a base.
  */
 export function setBuildingBases(
   buildings: Building[],
   heightAt: (e: number, n: number) => number | undefined,
   lids: { line: Point[]; lid: number[] }[] = [],
   raised: Building[] = [],
+  platforms: Area[] = [],
 ): number {
   const baseOf = (b: Building, entrances: Entrance[]) => {
     const range = groundRange(b.polygon.outer, heightAt);
@@ -66,10 +67,10 @@ export function setBuildingBases(
   for (const b of buildings) {
     delete b.base;
     if (b.shelter !== undefined) {
-      // on a lid, so its posts do not reach down into the tunnel
-      const lid = lidUnder(b, lids);
-      if (Number.isFinite(lid)) {
-        b.base = lid;
+      // on a lid, so its posts do not reach down into the tunnel, or on a platform, its roof over the platform
+      const under = Math.max(lidUnder(b, lids), platformUnder(b, platforms));
+      if (Number.isFinite(under)) {
+        b.base = under;
         count++;
       }
       continue;
@@ -96,6 +97,39 @@ export function setBuildingBases(
     }
   }
   return count;
+}
+
+/** The highest top of the platforms under a building (its outline sampled), or -Infinity */
+function platformUnder(b: Building, platforms: Area[]): number {
+  const box = bounds(b.polygon.outer);
+  let top = -Infinity;
+  for (const platform of platforms) {
+    if (platform.top === undefined || platform.top <= top) {
+      continue;
+    }
+    const p = bounds(platform.polygon.outer);
+    if (p.maxX < box.minX || p.minX > box.maxX || p.maxY < box.minY || p.minY > box.maxY) {
+      continue;
+    }
+    const samples = [ringCentroid(b.polygon.outer), ...alongRing(b.polygon.outer)];
+    if (samples.some((s) => pointInPolygon(s, platform.polygon))) {
+      top = platform.top;
+    }
+  }
+  return top;
+}
+
+/** The ring's corners and points every SAMPLE_M along its edges */
+function alongRing(ring: Ring): Point[] {
+  const points: Point[] = [];
+  for (let i = 0; i < ring.length; i++) {
+    const [a, c] = [ring[i], ring[(i + 1) % ring.length]];
+    const steps = Math.max(1, Math.ceil(Math.hypot(c[0] - a[0], c[1] - a[1]) / SAMPLE_M));
+    for (let k = 0; k < steps; k++) {
+      points.push([a[0] + ((c[0] - a[0]) * k) / steps, a[1] + ((c[1] - a[1]) * k) / steps]);
+    }
+  }
+  return points;
 }
 
 /** The highest top of the lids under a building (sampled along the tunnels), or -Infinity */

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { MAX_PLINTH_M, setBuildingBases } from "./bases.ts";
 import type { Point } from "./geometry.ts";
-import type { Building } from "./osm.ts";
+import type { Area, Building } from "./osm.ts";
 
 function square(x: number, size: number, extra: Partial<Building> = {}): Building {
   const outer: Point[] = [[x, 0], [x + size, 0], [x + size, size], [x, size]];
@@ -77,6 +77,15 @@ test("setBuildingBases stands an open shelter over a tunnel in a cut on the lid,
   const lid = { line: [[-10, 5], [20, 5]] satisfies Point[], lid: [108, 108] };
   setBuildingBases([platformRoof, busShelter], heightAt, [lid]);
   assert.deepEqual([platformRoof.base, busShelter.base], [108, undefined]);
+});
+
+test("setBuildingBases stands a canopy reaching over a platform on the platform's top, not over the tracks beside it", () => {
+  // a platform at 96 from e = 2 to 8; the canopy over it reaches 2 m out over the tracks on both sides
+  const platform: Area = { osm: "r7", kind: "platform", top: 96, polygon: { outer: [[2, -20], [8, -20], [8, 30], [2, 30]], holes: [] } };
+  const canopy = square(0, 10, { kind: "roof", shelter: "roof" });
+  const elsewhere = square(40, 4, { kind: "roof", shelter: "roof" });
+  setBuildingBases([canopy, elsewhere], heightAt, [], [], [platform]);
+  assert.deepEqual([canopy.base, elsewhere.base], [96, undefined]);
 });
 
 test("setBuildingBases counts the minHeight of a raised part with nothing under it from its own highest ground", () => {
