@@ -170,7 +170,7 @@ Where the ground at a portal (the top of its wall) is over the floor, a ramp is 
 a `floor` of its own: straight from the portal's floor to where a 7 % slope from it meets the ground, at most 40 m
 on. A way leads on from a tunnel's end only on the tunnel's storey (`level`, when both have one): one on another
 goes on from a lift. Ways indoors (`indoor=yes`, and corridors, `highway=corridor`, tagged so or not) are left out,
-except up to 30 m on from a tunnel's end. Stairs leading on (`highway=steps`, also indoors) go up out of the
+except up to 30 m on from a tunnel's end. Stairs leading on (`highway=steps`, also indoors), and corridors (on at the tunnel's level into a building), go up out of the
 tunnel, such as from an underpass to the platforms over it: they rise from its floor to the ground at 60 %, and
 their foot is no portal the floor hangs from, unless the tunnel has no other way out (then it is as deep as the
 room and the roof need). Lines are simplified to 0.3 m, but not where other ways join them, so a tunnel's branches

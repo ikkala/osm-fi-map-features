@@ -29,6 +29,21 @@ test("a tunnel's floor goes straight from portal to portal when the ground over 
   assert.deepEqual(round(tunnel.floor), tunnel.line.map(([e]) => Math.round((100 - e / 20) * 10) / 10));
 });
 
+test("a corridor on from a tunnel's end rises out of it as stairs do, and does not lift its floor to the ground", () => {
+  // a passage under the tracks (ground 96) with a corridor on into a building at its west end
+  const tunnel = road("w1", [[0, 0], [100, 0]], { tunnel: true, layer: -1, kind: "footway", width: 2.5 });
+  const corridor = road("w2", [[-14, 0], [0, 0]], { kind: "corridor", width: 3 });
+  const map = features([corridor, tunnel, road("w3", [[100, 0], [150, 0]], { kind: "footway", width: 2.5 })]);
+  setTunnelFloors(map, (e) => (e > 100 ? 92 : 96));
+  // the west end as deep as the room and roof need, not at the ground
+  assert.equal(round(tunnel.floor)?.[0], 96 - 3 - ROOF_M);
+  // a stretch of the corridor rises from it, as steeply as stairs
+  const [rising] = map.roads.filter((r) => r.osm === "w2" && r.floor);
+  assert.deepEqual(rising.line[rising.line.length - 1], [0, 0]);
+  assert.equal(defined(rising.floor)[rising.line.length - 1], defined(tunnel.floor)[0]);
+  assert.ok(Math.hypot(rising.line[0][0], rising.line[0][1]) < 10);
+});
+
 test("a portal's floor is the ramp's just outside it, not the top of the portal's wall", () => {
   const ground = (e: number) => (e < 0 ? 95 + e / 2 : 120);
   const tunnel = road("w1", [[0, 0], [100, 0]], { tunnel: true, layer: -1 });

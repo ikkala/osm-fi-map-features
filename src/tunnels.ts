@@ -21,6 +21,8 @@ const FLOOR_STEP_M = 10;
 const MAX_GRADE = 0.07;
 /** Stairs out of a tunnel rise at most this much a meter */
 const STAIRS_GRADE = 0.6;
+/** Ways that rise out of a tunnel as stairs do: a corridor goes on at the tunnel's level into a building and up in it */
+const RISING = new Set(["steps", "corridor"]);
 /** A portal's floor is the lowest ground at the tunnel's end and this far out along the ways leading on (m) */
 const PORTAL_REACH_M = 4;
 const PORTAL_STEP_M = 2;
@@ -206,8 +208,8 @@ export function setTunnelFloors(
       if (node && node.storeys && storeys && !storeys.some((s) => node.storeys?.includes(s))) {
         continue;
       }
-      if (node && node.next.length === 1 && "width" in way && way.kind === "steps") {
-        // stairs up out: the floor at their foot is just deep enough, and they rise the rest
+      if (node && node.next.length === 1 && "width" in way && RISING.has(way.kind)) {
+        // stairs (or a corridor) up out: the floor at their foot is just deep enough, and they rise the rest
         const ground = heightAt(...node.p);
         if (ground !== undefined) {
           node.portal = Math.min(node.portal ?? Infinity, ground - node.depth);
@@ -306,7 +308,7 @@ function rampOut<T extends Way>(
       }
       const length = along[along.length - 1];
       const reach = Math.min(RAMP_REACH_M, length);
-      const grade = "width" in way && way.kind === "steps" ? STAIRS_GRADE : MAX_GRADE;
+      const grade = "width" in way && RISING.has(way.kind) ? STAIRS_GRADE : MAX_GRADE;
       let end = reach;
       for (let d = RAMP_STEP_M; d < reach; d += RAMP_STEP_M) {
         const p = pointAlong(outward, d);
