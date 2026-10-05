@@ -8,7 +8,7 @@ import { MAX_PLINTH_M, setBuildingBases } from "./bases.ts";
 import { setBridgeDecks } from "./bridges.ts";
 import { setOutlineDecks, standOnDecks } from "./decks.ts";
 import { businessQuery, parseBusinesses, placeBusinesses } from "./businesses.ts";
-import { coverCutTunnels } from "./cuts.ts";
+import { coverCutTunnels, fitLidsToDecks } from "./cuts.ts";
 import { ELEVATION_ATTRIBUTION, fetchElevation, sampleElevation, toTm35fin, type ElevationGrid } from "./elevation.ts";
 import { assignEntrances, entranceQuery, guessEntrances, parseEntrances } from "./entrances.ts";
 import { estimateCycling, estimateFootfall } from "./footfall.ts";
@@ -209,6 +209,7 @@ export class MapBuilder {
       const outlined = setOutlineDecks(bridgeOutlines, [...features.roads, ...features.rails]);
       features.bridgeDecks = outlined.decks;
       logger.log(`${bridgeOutlines.length} bridge outlines, ${new Set(outlined.decks.map((d) => d.osm)).size} with decks for the ${outlined.ways} ways on them`);
+      logger.log(`${fitLidsToDecks([...features.roads, ...features.rails])} lids lowered to the decks over them`);
       // after the decks: the railways end at their bridges' and approaches' heights
       logger.log(`${setTrackBeds(features.rails, heightAt)} railway lines get smoothed track beds`);
       logger.log(`${setPlatformTops(features.areas, heightAt)} railway platforms get their top`);

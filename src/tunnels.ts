@@ -14,7 +14,7 @@ export const ROOF_M = 1;
 /** The elevation model has the water's surface: the water is taken this deep over a tunnel (m) */
 export const WATER_DEPTH_M = 3;
 /** Ways for people only (as osm.ts's NOT_FOR_VEHICLES) */
-const WALKWAYS = new Set(["footway", "pedestrian", "cycleway", "path", "track", "bridleway", "steps", "corridor"]);
+export const WALKWAYS = new Set(["footway", "pedestrian", "cycleway", "path", "track", "bridleway", "steps", "corridor"]);
 /** A tunnel's lines get a point at least this often (m) */
 const FLOOR_STEP_M = 10;
 /** The floor rises or falls at most this much a meter */

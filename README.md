@@ -163,7 +163,8 @@ along most of it (an underpass under a deck), gets the top of a lid over it at t
 least 3.5 m and the lid's 1 m over the floor), and the ways over it become bridges. Its `floor` is the ground at its
 ends, where it leads on, and between them the lowest ground across the cut within 4 m of the way's edges: the model
 rounds the cut's sides off, and a way mapped on them would rise and fall with them. A tunnel beside it (within 2 m of
-the lid along most of it, such as a pavement beside a tramway) is in the same cut, under the same lid and on its floor. Any other tunnel, under a
+the lid along most of it, such as a pavement beside a tramway) is in the same cut, under the same lid and on its floor. Once the bridges have their decks, a lid is lowered to the decks over it (they run from the ground at their ends),
+leaving at least 2.5 m of room over the floor for people, 3.5 m for vehicles and 4 m for trains. Any other tunnel, under a
 hill or a lake, gets its floor (`floor`, with a point every 10 m): straight between its portals' ground (the
 lowest within 4 m outside, since at the portal the model has the top of its wall), a junction underground
 hanging between its branches' ends by distance, but at least room and a 1 m roof under the ground (3 m of

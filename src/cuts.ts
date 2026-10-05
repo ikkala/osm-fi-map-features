@@ -3,6 +3,7 @@
 // open. Deep tunnels are left to tunnels.ts.
 import { crossing, openPassages, type MapFeatures, type Rail, type Road } from "./osm.ts";
 import { deckAt } from "./bridges.ts";
+import { WALKWAYS } from "./tunnels.ts";
 import type { Point } from "./geometry.ts";
 
 /** How far beyond its way a tunnel's lid reaches on both sides (m), and how thick it is */
@@ -24,6 +25,8 @@ const RIM_RISE_M = 0.2;
 const CLEARANCE_M = 3.5;
 /** A tunnel this close to the lid of a tunnel in a cut (m, edge to edge) is beside it, in the same cut */
 const BESIDE_M = 2;
+/** A lid lowered to the decks over it leaves at least this much room over the floor (m) */
+const LID_ROOM_M = { people: 2.5, vehicles: 3.5, trains: 4 };
 /** A cut's bottom under a way is looked for this far beyond the way's edges (m) */
 const FLOOR_REACH_M = 4;
 /** A way meeting a tunnel this close to the tunnel's end (m) leads on from it */
@@ -190,6 +193,44 @@ function besideCut(
     floor.push(deckAt(near.way.line, near.way.floor, p));
   }
   return { lid, floor };
+}
+
+/**
+ * Lowers the lids of tunnels in cuts to the decks of the bridges over them, which run from the ground at their
+ * ends: a lid at the clearance over the floor stood over them. At least LID_ROOM_M stays over the floor.
+ * Returns how many lids were lowered.
+ */
+export function fitLidsToDecks(ways: Way[]): number {
+  const decks = ways.filter((w) => w.bridge && w.deck && w.line.length >= 2);
+  let count = 0;
+  for (const way of ways) {
+    const { lid, floor } = way;
+    if (!lid || !floor) {
+      continue;
+    }
+    const room = !("width" in way) ? LID_ROOM_M.trains : WALKWAYS.has(way.kind) ? LID_ROOM_M.people : LID_ROOM_M.vehicles;
+    const width = "width" in way ? way.width : RAIL_WIDTH_M;
+    const fitted = [...lid];
+    for (let i = 0; i + 1 < way.line.length; i++) {
+      let lowest = Infinity;
+      for (const bridge of decks) {
+        for (let k = 0; k + 1 < bridge.line.length; k++) {
+          const hit = crossing(bridge.line[k], bridge.line[k + 1], way.line[i], way.line[i + 1], width);
+          if (hit && bridge.deck) {
+            lowest = Math.min(lowest, bridge.deck[k] + (bridge.deck[k + 1] - bridge.deck[k]) * hit.at);
+          }
+        }
+      }
+      for (const j of [i, i + 1]) {
+        fitted[j] = Math.min(fitted[j], Math.max(lowest, floor[j] + room + LID_THICKNESS_M));
+      }
+    }
+    if (fitted.some((h, i) => h < lid[i])) {
+      way.lid = fitted;
+      count++;
+    }
+  }
+  return count;
 }
 
 /** The nearest point of a line to p, and how far it is */

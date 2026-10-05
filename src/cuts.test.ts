@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { coverCutTunnels, cutLid } from "./cuts.ts";
+import { coverCutTunnels, cutLid, fitLidsToDecks } from "./cuts.ts";
 import type { Point } from "./geometry.ts";
 import type { Building, MapFeatures, Rail, Road } from "./osm.ts";
 
@@ -74,4 +74,15 @@ test("a tunnel in a cut has a floor at the cut's bottom, not on the cut's side t
   const features: MapFeatures = { roads: [], rails: [tram], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], bridgeDecks: [] };
   coverCutTunnels(features, sloped);
   assert.deepEqual(tram.floor, [sloped(10, 3.5), 95, 95, sloped(60, 3.5)]);
+});
+
+test("fitLidsToDecks lowers a lid to the decks of the bridges over it, leaving room under it", () => {
+  const underpass = road("w1", [[0, 0], [20, 0]], { kind: "cycleway", width: 2.5, layer: -1, tunnel: true, lid: [105.3, 105.3], floor: [100.8, 100.8] });
+  const street = road("w2", [[10, -5], [10, 5]], { bridge: true, deck: [104.5, 104.5] });
+  const low = road("w3", [[0, 10], [20, 10]], { kind: "footway", width: 2.5, layer: -1, tunnel: true, lid: [105.3, 105.3], floor: [100.8, 100.8] });
+  const lowStreet = road("w4", [[10, 5], [10, 15]], { bridge: true, deck: [102, 102] });
+  fitLidsToDecks([underpass, street, low, lowStreet]);
+  assert.deepEqual(underpass.lid, [104.5, 104.5]);
+  // no lower than 2.5 m of room and the lid over the floor
+  assert.deepEqual(low.lid, [100.8 + 2.5 + 1, 100.8 + 2.5 + 1]);
 });
