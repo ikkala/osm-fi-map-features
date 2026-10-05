@@ -187,3 +187,28 @@ test("a tunnel's short branch into a building stays in the tunnel it leaves", ()
   alone.buildings.push({ ...house, passages: undefined });
   assert.equal(uncoverAtGrade(alone, () => 100), 1);
 });
+
+test("under a way crossing over it the floor is deep enough under that way, falling to it from the portals", () => {
+  // a footway underpass 12 m long under a street across its middle, on level ground at 100
+  const tunnel = road("w1", [[0, 0], [12, 0]], { tunnel: true, layer: -1, kind: "footway", width: 2.5 });
+  const street = road("w2", [[6, -20], [6, 20]]);
+  const west = road("w3", [[-60, 0], [0, 0]], { kind: "footway", width: 2.5 });
+  const east = road("w4", [[12, 0], [72, 0]], { kind: "footway", width: 2.5 });
+  // a street crossing at the same level beyond the portal, and a deep tunnel crossing under it, are not over it
+  const beyond = road("w5", [[-40, -20], [-40, 20]]);
+  const under = road("w6", [[3, -20], [3, 20]], { tunnel: true, layer: -2 });
+  const map = features([west, tunnel, east, street, beyond, under]);
+  setTunnelFloors(map, () => 100);
+  const depth = 3 + ROOF_M;
+  const floor = defined(tunnel.floor);
+  const middle = tunnel.line.findIndex(([e]) => e === 6);
+  // the tunnel's points either side of the street are deep enough under it
+  for (const [i, [e]] of tunnel.line.entries()) {
+    assert.ok(floor[i] <= 100 - depth + 0.07 * Math.abs(e - 6) + 1e-9, `floor ${floor[i]} at ${e}`);
+  }
+  assert.ok(middle < 0 || floor[middle] <= 100 - depth);
+  // the ways leading on ramp down to the portals
+  const ramps = map.roads.filter((r) => (r.osm === "w3" || r.osm === "w4") && r.floor);
+  assert.equal(ramps.length, 2);
+  assert.equal(beyond.floor, undefined);
+});

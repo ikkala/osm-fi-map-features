@@ -1,6 +1,6 @@
 // Tunnel floors. OSM does not tell a tunnel's depth, so the floor hangs between its portals' ground (a
 // branching network like a stretched net), deep enough for the room and roof, and no steeper than a road
-// tunnel. Tunnels in cuts (cuts.ts) are left to their cut.
+// tunnel, and deep enough under the ways crossing over it. Tunnels in cuts (cuts.ts) are left to their cut.
 import { pointAlong } from "./bridges.ts";
 import { pointInPolygon, pointKey, type Point } from "./geometry.ts";
 import { bounds, openPassages, type MapFeatures, type Rail, type Road } from "./osm.ts";
@@ -42,6 +42,8 @@ const ROOM_SIDE_M = 1;
 const MIN_RAISED_M = 3;
 /** A railway's width, for the openings in the walls of buildings over it (as cuts.ts's) */
 const RAIL_WIDTH_M = 3;
+/** A way crossing a tunnel this near its free end (m) passes its portal, not over it */
+const OVER_PORTAL_M = 1;
 /** Junction floors are averaged this many rounds (they settle in far fewer) */
 const ROUNDS = 1000;
 
@@ -253,6 +255,13 @@ export function setTunnelFloors(
     }
   }
 
+  // deep enough under the ways crossing over: from there the floor rises no steeper than MAX_GRADE, also to
+  // the portals, whose ways leading on then ramp down to them
+  const crossed = spread(nodes, underCrossings(features, tunnels, nodes, heightAt), (length) => MAX_GRADE * length);
+  for (const [k, node] of nodes) {
+    node.floor = Math.min(node.floor, crossed.get(k) ?? Infinity);
+  }
+
   // no steeper than MAX_GRADE: the floor is lowered toward the low points, but not at the portals
   const lowest = spread(
     nodes,
@@ -281,6 +290,72 @@ export function setTunnelFloors(
   };
   const ramps = rampOut(features.roads, inTunnels, portalFloor, heightAt) + rampOut(features.rails, inTunnels, portalFloor, heightAt);
   return { floors, ramps };
+}
+
+/**
+ * The floors the ways over tunnels need at the tunnels' points either side of where a way passes over: the
+ * room and roof under the ground there. A way is over a tunnel where its width and the tunnel's room overlap,
+ * looked at every meter along the tunnel but not at its free ends. Ways at a tunnel's level or under it,
+ * bridges, tunnels and the ways meeting it are not over it.
+ */
+function underCrossings(features: MapFeatures, tunnels: Way[], nodes: Map<string, Node>, heightAt: (e: number, n: number) => number | undefined): [string, number][] {
+  const inTunnels = new Set(tunnels);
+  const over = [...features.roads, ...features.rails]
+    .filter((w) => !inTunnels.has(w) && !w.tunnel && !w.bridge && w.line.length >= 2)
+    .map((way) => ({ way, box: bounds(way.line), half: ("width" in way ? way.width : RAIL_WIDTH_M) / 2 }));
+  const floors: [string, number][] = [];
+  for (const tunnel of tunnels) {
+    const reach = ("width" in tunnel ? tunnel.width : RAIL_WIDTH_M) / 2 + ROOM_SIDE_M;
+    const box = bounds(tunnel.line);
+    const points = new Set(tunnel.line.map(pointKey));
+    const freeEnds = [tunnel.line[0], tunnel.line[tunnel.line.length - 1]].filter((p) => nodes.get(pointKey(p))?.next.length === 1);
+    for (const { way, box: b, half } of over) {
+      const margin = reach + half;
+      if (
+        way.layer <= tunnel.layer ||
+        b.maxX < box.minX - margin || b.minX > box.maxX + margin || b.maxY < box.minY - margin || b.minY > box.maxY + margin ||
+        way.line.some((p) => points.has(pointKey(p)))
+      ) {
+        continue;
+      }
+      for (let i = 0; i + 1 < tunnel.line.length; i++) {
+        const [a, c] = [tunnel.line[i], tunnel.line[i + 1]];
+        const length = Math.hypot(c[0] - a[0], c[1] - a[1]);
+        let deepest = Infinity;
+        for (let d = 0; d <= length; d += 1) {
+          const p: Point = length > 0 ? [a[0] + ((c[0] - a[0]) * d) / length, a[1] + ((c[1] - a[1]) * d) / length] : a;
+          if (freeEnds.some((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) < OVER_PORTAL_M)) {
+            continue;
+          }
+          for (let k = 0; k + 1 < way.line.length; k++) {
+            const { distance, at } = nearestOnSegment(p, way.line[k], way.line[k + 1]);
+            const ground = distance <= margin ? heightAt(...at) : undefined;
+            if (ground !== undefined) {
+              deepest = Math.min(deepest, ground);
+            }
+          }
+        }
+        if (Number.isFinite(deepest)) {
+          for (const q of [a, c]) {
+            const node = nodes.get(pointKey(q));
+            if (node) {
+              floors.push([pointKey(q), deepest - node.depth]);
+            }
+          }
+        }
+      }
+    }
+  }
+  return floors;
+}
+
+/** The nearest point of segment a-c to p, and how far it is */
+function nearestOnSegment(p: Point, a: Point, c: Point): { distance: number; at: Point } {
+  const [dx, dy] = [c[0] - a[0], c[1] - a[1]];
+  const lengthSq = dx * dx + dy * dy;
+  const t = lengthSq > 0 ? Math.min(Math.max(((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / lengthSq, 0), 1) : 0;
+  const at: Point = [a[0] + dx * t, a[1] + dy * t];
+  return { distance: Math.hypot(at[0] - p[0], at[1] - p[1]), at };
 }
 
 /** Splits ramps off ways leading on from portals, rising from the floor until they meet the ground. Returns the count. */
