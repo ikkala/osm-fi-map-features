@@ -293,7 +293,8 @@ export class MapBuilder {
       const lids = [...features.roads, ...features.rails].flatMap((w) => (w.lid ? [{ line: w.line, lid: w.lid }] : []));
       const raised: Building[] = [];
       const platforms = features.areas.filter((a) => a.kind === "platform");
-      const based = setBuildingBases(features.buildings, heightAt, lids, raised, platforms);
+      const ways = [...features.roads, ...features.rails].filter((w) => !w.tunnel && !w.bridge);
+      const based = setBuildingBases(features.buildings, heightAt, lids, raised, platforms, ways);
       logger.log(`${based} buildings stand at their OSM entrance or highest ground (at most ${MAX_PLINTH_M} m above their lowest)`);
       // buildings raised to a door up a slope are stair halls: open them where covered ways come in
       const openings = openDoorways(raised, covered, heightAt);

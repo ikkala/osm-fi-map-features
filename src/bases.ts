@@ -11,6 +11,9 @@ const SAMPLE_M = 2;
 const NOT_FLOOR_ENTRANCES = new Set(["service", "emergency", "exit", "garage", "underground"]);
 /** A door has at least this much room over the ground by it under the roof (m) */
 const ROOM_OVER_DOOR_M = 2.5;
+/** An open roof of an estimated height has this much room over the ways under it, under its own thickness (m) */
+const ROOM_UNDER_ROOF_M = 2.5;
+const ROOF_THICKNESS_M = 0.3;
 
 /**
  * Sets every building's base (m above sea level): the ground at its OSM entrance (a main one first), else its
@@ -18,7 +21,9 @@ const ROOM_OVER_DOOR_M = 2.5;
  * Parts share the base of their outline. A building lower than ROOM_OVER_DOOR_M over the ground at one of its
  * doors (a stair hall up a slope) is made taller and pushed to raised. A building or part with a minHeight and
  * nothing under it counts that minHeight from its own highest ground. Open shelters get a base only on a lid or
- * a railway platform (an area with a top) under them. Returns how many buildings got a base.
+ * a railway platform (an area with a top) under them; one of an estimated height is made tall enough for
+ * ROOM_UNDER_ROOF_M over the ways under it, standing at its lowest corner on a slope. Returns how many
+ * buildings got a base.
  */
 export function setBuildingBases(
   buildings: Building[],
@@ -26,6 +31,7 @@ export function setBuildingBases(
   lids: { line: Point[]; lid: number[] }[] = [],
   raised: Building[] = [],
   platforms: Area[] = [],
+  ways: { line: Point[] }[] = [],
 ): number {
   const baseOf = (b: Building, entrances: Entrance[]) => {
     const range = groundRange(b.polygon.outer, heightAt);
@@ -73,6 +79,9 @@ export function setBuildingBases(
         b.base = under;
         count++;
       }
+      if (b.heightEstimated) {
+        raiseOverWays(b, ways, heightAt);
+      }
       continue;
     }
     const outline = partOutline.get(b) ?? outlines.find((o) => o.b === b);
@@ -97,6 +106,34 @@ export function setBuildingBases(
     }
   }
   return count;
+}
+
+/** Makes an open roof tall enough for ROOM_UNDER_ROOF_M over the highest ground of the ways under it */
+function raiseOverWays(b: Building, ways: { line: Point[] }[], heightAt: (e: number, n: number) => number | undefined): void {
+  const box = bounds(b.polygon.outer);
+  const corners = b.polygon.outer.map((p) => heightAt(...p)).filter((h) => h !== undefined);
+  const base = b.base ?? (corners.length > 0 ? Math.min(...corners) : undefined);
+  if (base === undefined) {
+    return;
+  }
+  let high = -Infinity;
+  for (const { line } of ways) {
+    for (let i = 0; i + 1 < line.length; i++) {
+      const [a, c] = [line[i], line[i + 1]];
+      if (Math.max(a[0], c[0]) < box.minX || Math.min(a[0], c[0]) > box.maxX || Math.max(a[1], c[1]) < box.minY || Math.min(a[1], c[1]) > box.maxY) {
+        continue;
+      }
+      const steps = Math.max(1, Math.ceil(Math.hypot(c[0] - a[0], c[1] - a[1])));
+      for (let k = 0; k <= steps; k++) {
+        const p: Point = [a[0] + ((c[0] - a[0]) * k) / steps, a[1] + ((c[1] - a[1]) * k) / steps];
+        const h = pointInPolygon(p, b.polygon) ? heightAt(...p) : undefined;
+        if (h !== undefined) {
+          high = Math.max(high, h);
+        }
+      }
+    }
+  }
+  b.height = Math.max(b.height, high + ROOM_UNDER_ROOF_M + ROOF_THICKNESS_M - base);
 }
 
 /** The highest top of the platforms under a building (its outline sampled), or -Infinity */

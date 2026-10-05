@@ -103,3 +103,15 @@ test("setBuildingBases counts the minHeight of a raised part with nothing under 
   assert.deepEqual([arcade.minHeight, arcade.height], [9.5, 20]);
   assert.deepEqual([upper.minHeight, upper.height], [6, 20]);
 });
+
+test("an open roof of an estimated height is raised to leave room over the ways under it, on a slope", () => {
+  // a covered walkway 10 m long up a slope of 1 in 2 (ground 100 at e = 0, 105 at e = 10), its roof 2.5 m tall
+  const roof = square(0, 10, { kind: "roof", shelter: "roof", height: 2.5, heightEstimated: true });
+  const tagged = square(20, 10, { kind: "roof", shelter: "roof", height: 2.5 });
+  const walk = { line: [[-5, 5], [35, 5]] as Point[] };
+  setBuildingBases([roof, tagged], heightAt, [], [], [], [walk]);
+  // it stands at its lowest corner (100): the way's highest ground under it is 104.5 .. 105, at its edge
+  assert.ok(roof.height >= 104.5 - 100 + 2.8 - 1e-9 && roof.height <= 105 - 100 + 2.8 + 1e-9, `height ${roof.height}`);
+  // a tagged height stays
+  assert.equal(tagged.height, 2.5);
+});
