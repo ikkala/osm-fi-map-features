@@ -2,6 +2,7 @@
 // one end of a span (bridge ways joined end to end) to the other. The model smooths the cut under a
 // bridge into a wider hollow, so ends are taken where the approach stops rising steeply.
 import type { Point } from "./geometry.ts";
+import { crossing, NOT_FOR_VEHICLES, type Rail, type Road } from "./osm.ts";
 
 export interface BridgeLine {
   bridge: boolean;
@@ -17,6 +18,12 @@ const APPROACH_REACH_M = 24;
 const APPROACH_RISE_M = 0.2;
 /** The hollow's bottom may reach on this far from the bridge's end before the ground starts rising (m) */
 const APPROACH_LEVEL_M = 6;
+/** Room a bridge leaves over a way under it (m), and its deck's thickness */
+const ROOM_OVER_M = { people: 2.7, vehicles: 4.2, trams: 4.7, trains: 5.5 };
+const DECK_THICKNESS_M = 1;
+/** The deck's other points rise toward such a point no steeper than this, on bridges for people, vehicles and trains */
+const RISE_GRADE = { people: 0.1, vehicles: 0.07, trains: 0.03 };
+const TRAMS = new Set(["tram", "light_rail"]);
 /** Maximum rounds of junction height averaging */
 const JUNCTION_ROUNDS = 1000;
 
@@ -265,4 +272,77 @@ export function deckAt(line: Point[], deck: number[], p: Point): number {
     }
   }
   return height;
+}
+
+/**
+ * Lifts bridge decks to leave room over the ways under them: the elevation model leaves out a bridge's ramps and
+ * steps, so a deck from the ground at its ends is often too low over a road or railway it crosses. Where a way
+ * crosses under a bridge line (at a lower layer, not in a tunnel) with less than ROOM_OVER_M and the deck's
+ * thickness over its ground (or floor), the line gets a point there at that height; its ends stay. Returns how
+ * many points were added.
+ */
+export function raiseDecksOverWays(bridges: (Road | Rail)[], ways: (Road | Rail)[], heightAt: (e: number, n: number) => number | undefined): number {
+  const under = ways.filter((w) => !w.bridge && !w.tunnel && !w.deck && w.line.length >= 2);
+  let count = 0;
+  for (const bridge of bridges) {
+    const deck = bridge.deck;
+    if (!bridge.bridge || !deck || bridge.line.length < 2) {
+      continue;
+    }
+    const width = "width" in bridge ? bridge.width : 3;
+    const raised: { i: number; at: number; p: Point; height: number }[] = [];
+    for (let i = 0; i + 1 < bridge.line.length; i++) {
+      const [a, c] = [bridge.line[i], bridge.line[i + 1]];
+      for (const way of under) {
+        if (way.layer >= bridge.layer) {
+          continue;
+        }
+        const room = "width" in way ? (NOT_FOR_VEHICLES.has(way.kind) ? ROOM_OVER_M.people : ROOM_OVER_M.vehicles) : TRAMS.has(way.kind) ? ROOM_OVER_M.trams : ROOM_OVER_M.trains;
+        for (let k = 0; k + 1 < way.line.length; k++) {
+          const hit = crossing(a, c, way.line[k], way.line[k + 1], width);
+          if (!hit || hit.at <= 0 || hit.at >= 1) {
+            continue;
+          }
+          const p: Point = [a[0] + (c[0] - a[0]) * hit.at, a[1] + (c[1] - a[1]) * hit.at];
+          const ground = way.floor ? deckAt(way.line, way.floor, p) : heightAt(...p);
+          const needed = ground === undefined ? undefined : ground + room + DECK_THICKNESS_M;
+          if (needed !== undefined && needed > deck[i] + (deck[i + 1] - deck[i]) * hit.at) {
+            raised.push({ i, at: hit.at, p, height: needed });
+          }
+        }
+      }
+    }
+    if (raised.length === 0) {
+      continue;
+    }
+    // the new points in order along the line
+    raised.sort((x, y) => x.i - y.i || x.at - y.at);
+    const line: Point[] = [];
+    const heights: number[] = [];
+    const peaks: number[] = [];
+    for (let i = 0; i < bridge.line.length; i++) {
+      line.push(bridge.line[i]);
+      heights.push(deck[i]);
+      for (const r of raised.filter((r) => r.i === i)) {
+        peaks.push(line.length);
+        line.push(r.p);
+        heights.push(r.height);
+        count++;
+      }
+    }
+    // the points between the ends rise toward the new ones
+    const grade = "width" in bridge ? (NOT_FOR_VEHICLES.has(bridge.kind) ? RISE_GRADE.people : RISE_GRADE.vehicles) : RISE_GRADE.trains;
+    const along = [0];
+    for (let j = 1; j < line.length; j++) {
+      along.push(along[j - 1] + Math.hypot(line[j][0] - line[j - 1][0], line[j][1] - line[j - 1][1]));
+    }
+    for (let j = 1; j + 1 < line.length; j++) {
+      for (const k of peaks) {
+        heights[j] = Math.max(heights[j], heights[k] - grade * Math.abs(along[j] - along[k]));
+      }
+    }
+    bridge.line = line;
+    bridge.deck = heights;
+  }
+  return count;
 }

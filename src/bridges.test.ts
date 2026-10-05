@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { deckAt, setBridgeDecks, type BridgeLine } from "./bridges.ts";
+import { deckAt, raiseDecksOverWays, setBridgeDecks, type BridgeLine } from "./bridges.ts";
 import type { Point } from "./geometry.ts";
 
 // a river 10 m below the banks between e = 10 and e = 30
@@ -89,4 +89,16 @@ test("a junction on a bridge (a ramp leaving it) hangs between the bridge's ends
   setBridgeDecks(lines, ground);
   const round = (deck: number[] | undefined) => deck?.map((h) => Math.round(h * 100) / 100);
   assert.deepEqual([round(west.deck), round(east.deck), round(ramp.deck)], [[100, 100], [100, 100], [100, 100]]);
+});
+
+test("raiseDecksOverWays lifts a deck over a way under it to leave its room, and leaves a high one as it is", () => {
+  // a footbridge 30 m long from the ground at 100 on both ends, over a tram at 98 and a path on the ground
+  const bridge = { osm: "w1", kind: "footway", width: 3, layer: 1, bridge: true, tunnel: false, line: [[0, 0], [30, 0]] as Point[], deck: [100, 100] };
+  const tram = { osm: "w2", kind: "tram", layer: 0, bridge: false, tunnel: false, line: [[10, -20], [10, 20]] as Point[] };
+  const high = { ...bridge, osm: "w3", line: [[0, 10], [30, 10]] as Point[], deck: [107, 107] };
+  assert.equal(raiseDecksOverWays([bridge, high], [bridge, high, tram], () => 98), 1);
+  // a point over the tram, 4.7 m and the deck's 1 m over it
+  assert.deepEqual(bridge.line, [[0, 0], [10, 0], [30, 0]]);
+  assert.deepEqual(bridge.deck, [100, 98 + 4.7 + 1, 100]);
+  assert.deepEqual(high.deck, [107, 107]);
 });

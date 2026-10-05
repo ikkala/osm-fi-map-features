@@ -5,7 +5,7 @@ import { applyAges } from "./ages.ts";
 import { applyRegister, BUILDING_REGISTER_ATTRIBUTION, fetchBuildingRegister } from "./buildingRegister.ts";
 import { openBarriers } from "./barriers.ts";
 import { MAX_PLINTH_M, setBuildingBases } from "./bases.ts";
-import { setBridgeDecks } from "./bridges.ts";
+import { raiseDecksOverWays, setBridgeDecks } from "./bridges.ts";
 import { setOutlineDecks, standOnDecks } from "./decks.ts";
 import { businessQuery, parseBusinesses, placeBusinesses } from "./businesses.ts";
 import { coverCutTunnels, fitLidsToDecks } from "./cuts.ts";
@@ -206,6 +206,8 @@ export class MapBuilder {
       setBridgeDecks(features.roads, heightAt);
       setBridgeDecks(features.rails, heightAt);
       logger.log(`${ramps(features.roads) + ramps(features.rails)} bridge approaches raised out of the hollows under bridges`);
+      const ways = [...features.roads, ...features.rails];
+      logger.log(`${raiseDecksOverWays(ways, ways, heightAt)} bridge decks lifted over the ways under them`);
       const outlined = setOutlineDecks(bridgeOutlines, [...features.roads, ...features.rails]);
       features.bridgeDecks = outlined.decks;
       logger.log(`${bridgeOutlines.length} bridge outlines, ${new Set(outlined.decks.map((d) => d.osm)).size} with decks for the ${outlined.ways} ways on them`);
