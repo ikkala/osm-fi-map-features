@@ -1202,6 +1202,31 @@ export function openPassages(buildings: Building[], passages: Passage[], rooms =
   }
 }
 
+/** A railway into a hall (a depot) opens its walls this wide (m), and the hall is at least this tall */
+const RAIL_DOOR_WIDTH_M = 4.5;
+const RAIL_HALL_HEIGHT_M = 6;
+
+/**
+ * Opens the walls of the buildings a railway runs into (depots, halls) where the track crosses them, and makes a
+ * lower one RAIL_HALL_HEIGHT_M tall: OSM seldom maps their doors, and a hall of one storey is taken as 3 m. Returns
+ * how many buildings were opened.
+ */
+export function openRailHalls(buildings: Building[], rails: Rail[]): number {
+  const before = new Map(buildings.map((b) => [b, b.passages?.length ?? 0]));
+  const passages = rails
+    .filter((r) => !r.tunnel && !r.bridge && r.line.length >= 2)
+    .map((r) => ({ line: r.line, width: RAIL_DOOR_WIDTH_M, height: RAIL_HALL_HEIGHT_M - 1 }));
+  openPassages(buildings, passages, false);
+  let count = 0;
+  for (const [b, passages] of before) {
+    if ((b.passages?.length ?? 0) > passages) {
+      b.height = Math.max(b.height, RAIL_HALL_HEIGHT_M);
+      count++;
+    }
+  }
+  return count;
+}
+
 /**
  * Opens the walls of stair halls (see bases.ts) where a covered way comes in at one of their doors, from the
  * ground there, at most a door's width (DOORWAY_WIDTH_M) and without a room. heightAt gives the ground at map

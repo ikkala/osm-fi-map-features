@@ -1,7 +1,7 @@
 // OSM parsing and tiling together, on a small hand-made Overpass response.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { areaKind, compassDegrees, meters, openDoorways, openPassages, overpassQuery, parseOsm, type Building, type OverpassResponse, type Road, type Tree } from "./osm.ts";
+import { areaKind, compassDegrees, meters, openDoorways, openPassages, openRailHalls, overpassQuery, parseOsm, type Building, type OverpassResponse, type Rail, type Road, type Tree } from "./osm.ts";
 import type { Point } from "./geometry.ts";
 import { LocalProjection } from "./projection.ts";
 import { cutIntoTiles, tilesCovering } from "./tiles.ts";
@@ -643,4 +643,15 @@ test("a bridge's outline (man_made=bridge) is kept apart for its deck, not drawn
   assert.deepEqual(bridgeOutlines.map((b) => [b.osm, b.name, b.polygon.outer.length]), [["w1", "Silta", 4], ["r2", undefined, 4]]);
   assert.deepEqual([features.areas, features.buildings, features.bridgeDecks], [[], [], []]);
   assert.match(overpassQuery({ south: 0, west: 0, north: 1, east: 1 }), /way\[man_made=bridge\];[\s\S]*relation\[man_made=bridge\]\[type=multipolygon\];/);
+});
+
+test("openRailHalls opens the walls of a hall where a railway runs in, and makes a low one tall enough for trains", () => {
+  const outer: Point[] = [[0, 0], [20, 0], [20, 40], [0, 40]];
+  const depot: Building = { osm: "w1", kind: "industrial", part: false, hasParts: false, height: 3, minHeight: 0, polygon: { outer, holes: [] } };
+  const shed: Building = { ...depot, osm: "w2", polygon: { outer: outer.map(([e, n]): Point => [e + 100, n]), holes: [] } };
+  const track: Rail = { osm: "w3", kind: "tram", layer: 0, bridge: false, tunnel: false, line: [[10, -20], [10, 30]] };
+  assert.equal(openRailHalls([depot, shed], [track]), 1);
+  assert.equal(depot.passages?.length, 1);
+  assert.equal(depot.height, 6);
+  assert.equal(shed.height, 3);
 });
