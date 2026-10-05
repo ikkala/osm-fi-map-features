@@ -65,3 +65,13 @@ test("a tunnel beside one in a cut is in the same cut, under the same lid", () =
   assert.deepEqual(pavement.floor, [95, 95]);
   assert.equal(apart.lid, undefined);
 });
+
+test("a tunnel in a cut has a floor at the cut's bottom, not on the cut's side the elevation model has under it", () => {
+  // the cut's bottom at 95 within 2 m of n = 0, its sides rising to 102 at 6 m
+  const sloped = (e: number, n: number) => (e < 0 ? 102 : Math.min(102, 95 + Math.max(0, Math.abs(n) - 2) * 1.75));
+  // the tram mapped 3.5 m off the middle, where the side is at 97.6; its ends where it leads on, on the ground
+  const tram = rail("w1", [[10, 3.5], [30, 3.5], [45, 3.5], [60, 3.5]], { kind: "light_rail", layer: -1, tunnel: true });
+  const features: MapFeatures = { roads: [], rails: [tram], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], bridgeDecks: [] };
+  coverCutTunnels(features, sloped);
+  assert.deepEqual(tram.floor, [sloped(10, 3.5), 95, 95, sloped(60, 3.5)]);
+});

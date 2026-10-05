@@ -1,6 +1,6 @@
 // Tunnels in cuts. The bare-ground elevation model shows a shallow decked tunnel as an open cut, so it gets
-// a lid at the cut's rim, the ways over it become bridges, and buildings over it open. Deep tunnels are
-// left to tunnels.ts.
+// a lid at the cut's rim and a floor at its bottom, the ways over it become bridges, and buildings over it
+// open. Deep tunnels are left to tunnels.ts.
 import { crossing, openPassages, type MapFeatures, type Rail, type Road } from "./osm.ts";
 import { deckAt } from "./bridges.ts";
 import type { Point } from "./geometry.ts";
@@ -24,6 +24,8 @@ const RIM_RISE_M = 0.2;
 const CLEARANCE_M = 3.5;
 /** A tunnel this close to the lid of a tunnel in a cut (m, edge to edge) is beside it, in the same cut */
 const BESIDE_M = 2;
+/** A cut's bottom under a way is looked for this far beyond the way's edges (m) */
+const FLOOR_REACH_M = 4;
 /** A way meeting a tunnel this close to the tunnel's end (m) leads on from it */
 const AT_PORTAL_M = 1;
 
@@ -41,6 +43,7 @@ export function coverCutTunnels(features: MapFeatures, heightAt: (e: number, n: 
       const lid = cutLid(way.line, heightAt);
       if (lid) {
         way.lid = lid;
+        way.floor = cutFloor(way.line, width, heightAt);
         tunnels.push({ way, width: width + 2 * LID_EDGE_M });
       }
     }
@@ -119,6 +122,29 @@ export function cutLid(line: Point[], heightAt: (e: number, n: number) => number
   });
 }
 
+/**
+ * A tunnel's floor in a cut at each point of its line: the ground at its ends, where it leads on, and between
+ * them the cut's bottom near it. The elevation model rounds the cut's sides off, and a way is often mapped on
+ * them, so the ground under it rises and falls along it.
+ */
+export function cutFloor(line: Point[], width: number, heightAt: (e: number, n: number) => number | undefined): number[] {
+  const reach = width / 2 + FLOOR_REACH_M;
+  return line.map((p, i) => {
+    const ground = heightAt(...p) ?? 0;
+    if (i === 0 || i === line.length - 1) {
+      return ground;
+    }
+    const [a, c] = [line[i - 1], line[i + 1]];
+    const length = Math.hypot(c[0] - a[0], c[1] - a[1]);
+    const [nx, ny] = length > 0 ? [-(c[1] - a[1]) / length, (c[0] - a[0]) / length] : [0, 1];
+    let bottom = ground;
+    for (let d = -reach; d <= reach; d += SIDE_STEP_M / 2) {
+      bottom = Math.min(bottom, heightAt(p[0] + nx * d, p[1] + ny * d) ?? bottom);
+    }
+    return bottom;
+  });
+}
+
 /** The lid and floor of a tunnel mostly beside cut tunnels, from the nearest one's; undefined when not beside */
 function besideCut(
   line: Point[],
@@ -157,12 +183,11 @@ function besideCut(
   const floor: number[] = [];
   for (const p of line) {
     const near = nearest(p);
-    const ground = near && heightAt(...near.at);
-    if (!near?.way.lid || ground === undefined) {
+    if (!near?.way.lid || !near.way.floor) {
       return undefined;
     }
     lid.push(deckAt(near.way.line, near.way.lid, p));
-    floor.push(ground);
+    floor.push(deckAt(near.way.line, near.way.floor, p));
   }
   return { lid, floor };
 }
