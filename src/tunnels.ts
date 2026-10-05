@@ -44,6 +44,9 @@ const MIN_RAISED_M = 3;
 const RAIL_WIDTH_M = 3;
 /** A way crossing a tunnel this near its free end (m) passes its portal, not over it */
 const OVER_PORTAL_M = 1;
+/** A floor bends over the line between its neighbours at most this much (m) at a point, smoothed this many rounds at most */
+const MAX_BEND_M = 0.1;
+const SMOOTH_ROUNDS = 500;
 /** Junction floors are averaged this many rounds (they settle in far fewer) */
 const ROUNDS = 1000;
 
@@ -274,6 +277,8 @@ export function setTunnelFloors(
     }
   }
 
+  smoothFloors(nodes);
+
   let floors = 0;
   for (const way of tunnels) {
     const floor = way.line.map((p) => nodes.get(key(p))?.floor ?? Infinity);
@@ -413,6 +418,33 @@ function rampOut<T extends Way>(
   }
   ways.push(...added);
   return count;
+}
+
+/**
+ * Smooths the floors along the tunnels where they follow the ground's humps, lowering them only (deeper is
+ * always deep enough): a point more than MAX_BEND_M over the line between its neighbours comes down to it.
+ * Portals, stairs' feet and junctions stay where they are.
+ */
+function smoothFloors(nodes: Map<string, Node>): void {
+  for (let round = 0; round < SMOOTH_ROUNDS; round++) {
+    let moved = 0;
+    for (const node of nodes.values()) {
+      const [a, b] = node.next.map((n) => nodes.get(n.key));
+      if (node.next.length !== 2 || node.portal !== undefined || node.stairs || !a || !b || ![node.floor, a.floor, b.floor].every(Number.isFinite)) {
+        continue;
+      }
+      const [la, lb] = [node.next[0].length, node.next[1].length];
+      // a and b weigh in the line between them by nearness
+      const bend = node.floor - (a.floor * lb + b.floor * la) / (la + lb);
+      if (bend > MAX_BEND_M) {
+        node.floor -= bend - MAX_BEND_M;
+        moved = Math.max(moved, bend - MAX_BEND_M);
+      }
+    }
+    if (moved < 0.0001) {
+      break;
+    }
+  }
 }
 
 /**

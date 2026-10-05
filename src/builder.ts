@@ -16,7 +16,7 @@ import { mergeTrees, moveTreesOffWays, plantForests } from "./forests.ts";
 import { pointKey, simplifyLine, type Point } from "./geometry.ts";
 import { placeLamps } from "./lamps.ts";
 import { fetchRoofColours, ORTHO_ATTRIBUTION } from "./ortho.ts";
-import { bounds, fetchOverpass, inheritFromOutlines, LEVEL_HEIGHT_M, openDoorways, overpassQuery, parseOsm, type Building, type GeoBox } from "./osm.ts";
+import { bounds, fetchOverpass, inheritFromOutlines, LEVEL_HEIGHT_M, openDoorways, openRailHalls, overpassQuery, parseOsm, type Building, type GeoBox } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { placeStreetNodes } from "./streets.ts";
 import { cutIntoTiles, latticeProjection, tileHeights, tileName, tilesCovering, type Tile, type TileKey } from "./tiles.ts";
@@ -233,6 +233,8 @@ export class MapBuilder {
     } catch (err) {
       logger.warn(`warning: no building register data: ${err instanceof Error ? err.message : String(err)}`);
     }
+    // after the register, which gives the halls their heights
+    logger.log(`${openRailHalls(features.buildings, features.rails)} halls opened where railways run in`);
     // after the register, which gives the outlines their facades and years
     logger.log(`${inheritFromOutlines(features.buildings)} building parts take a material, colour or year from their outline`);
     // roof colours from the orthophoto where OSM has none

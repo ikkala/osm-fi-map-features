@@ -212,3 +212,23 @@ test("under a way crossing over it the floor is deep enough under that way, fall
   assert.equal(ramps.length, 2);
   assert.equal(beyond.floor, undefined);
 });
+
+test("a tunnel's floor under a wavy hill does not rise with its waves, and is deep enough", () => {
+  // a hill of 130 with waves of 2 m every 20 m; portals at 100 at e = 0 and 200
+  const ground = (e: number) => (e <= 0 || e >= 200 ? 100 : 104 + 2 * Math.sin((e * Math.PI) / 20));
+  const tunnel = road("w1", [[0, 0], [200, 0]], { tunnel: true, layer: -2 });
+  const map = features([road("w2", [[-50, 0], [0, 0]]), tunnel, road("w3", [[200, 0], [250, 0]])]);
+  setTunnelFloors(map, ground);
+  const floor = defined(tunnel.floor);
+  // no point over the line between its neighbours (the ground's humps); the floor may still bend down
+  for (let i = 1; i + 1 < floor.length; i++) {
+    const bend = floor[i] - (floor[i - 1] + floor[i + 1]) / 2;
+    assert.ok(bend <= 0.1 + 1e-3, `bend ${bend.toFixed(2)} at ${tunnel.line[i][0]}`);
+  }
+  // deep enough everywhere: the room and roof under the ground around each point
+  for (const [i, [e]] of tunnel.line.entries()) {
+    if (e > 30 && e < 170) {
+      assert.ok(floor[i] <= Math.min(ground(e - 5), ground(e), ground(e + 5)) - ROAD_CLEARANCE_M - ROOF_M + 1e-9);
+    }
+  }
+});
