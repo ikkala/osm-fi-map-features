@@ -160,13 +160,16 @@ the tracks), and an open roof becomes a deck 1 m thick over it, without posts. A
 way's room, 1 m wider than the way on both sides, is under it. A shallow tunnel
 (`layer` -1 or above) that the model has as an open cut, the ground beside it at least 3 m higher on both sides
 along most of it (an underpass under a deck), gets the top of a lid over it at the rim of the cut (`lid`, at
-least 3.5 m and the lid's 1 m over the floor), and the ways over it become bridges. A tunnel beside it (within 2 m of
-the lid along most of it, such as a pavement beside a tramway) is in the same cut, under the same lid. Any other tunnel, under a
+least 3.5 m and the lid's 1 m over the floor), and the ways over it become bridges. Its `floor` is the ground at its
+ends, where it leads on, and between them the lowest ground across the cut within 4 m of the way's edges: the model
+rounds the cut's sides off, and a way mapped on them would rise and fall with them. A tunnel beside it (within 2 m of
+the lid along most of it, such as a pavement beside a tramway) is in the same cut, under the same lid and on its floor. Any other tunnel, under a
 hill or a lake, gets its floor (`floor`, with a point every 10 m): straight between its portals' ground (the
 lowest within 4 m outside, since at the portal the model has the top of its wall), a junction underground
 hanging between its branches' ends by distance, but at least room and a 1 m roof under the ground (3 m of
 room for people, 4.8 m for vehicles, 6 m for trains; reached 30 m in from a portal; under water areas 3 m more, since the model has the water's surface) and no
-steeper than 7 %.
+steeper than 7 %. Under a way over it (where the way's width and the tunnel's room overlap, but not at the tunnel's
+free ends) it is that deep from the start, and rises from there no steeper than 7 %, to the portals too.
 Where the ground at a portal (the top of its wall) is over the floor, a ramp is split off each way leading on, with
 a `floor` of its own: straight from the portal's floor to where a 7 % slope from it meets the ground, at most 40 m
 on. A way leads on from a tunnel's end only on the tunnel's storey (`level`, when both have one): one on another
