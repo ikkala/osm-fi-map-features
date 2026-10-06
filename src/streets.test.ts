@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { openBarriers } from "./barriers.ts";
+import { leaveOutOnDecks, openBarriers } from "./barriers.ts";
 import type { Point } from "./geometry.ts";
 import type { Barrier, MapFeatures, Road } from "./osm.ts";
 import { placeStreetNodes } from "./streets.ts";
@@ -66,4 +66,19 @@ test("fences open where ways cross them and at their gates, but not for bridges 
     [[0, 8.8], [11.2, 68.5], [71.5, 100]],
   );
   assert.ok(map.barriers.every((b) => b.osm === "w4"));
+});
+
+test("leaveOutOnDecks leaves out a barrier's stretch on a bridge's deck or a tunnel's lid, over the ground", () => {
+  // a railing along a bridge 4 m over the ground between e = 20 and 40, and on along the ground beyond
+  const bridge = road("w1", "primary", [[20, 0], [40, 0]], { bridge: true, deck: [104, 104] });
+  const lidded = road("w2", "cycleway", [[60, -20], [60, 20]], { width: 2.5, tunnel: true, lid: [104, 104] });
+  const railing = fence("w3", [[0, 4.5], [80, 4.5]]);
+  const map: MapFeatures = { roads: [bridge, lidded], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [railing], bridgeDecks: [] };
+  assert.equal(leaveOutOnDecks(map, () => 100), 2);
+  // the deck reaches 4 m and its edge 0.5 m out, the lid 1.25 m and its edges 2 m: 1.5 m more on both, round its
+  // ends too (sampled every meter)
+  assert.deepEqual(
+    map.barriers.map((b) => b.line.map(([e]) => Math.round(e))),
+    [[0, 17], [44, 56], [65, 80]],
+  );
 });

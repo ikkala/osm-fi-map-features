@@ -1,12 +1,20 @@
 // Fences, walls and hedges are cut open where ways cross them at grade and at their gates: in OSM a fence
 // often runs on over a path with no opening of its own.
 import { distanceToSegment, type Point } from "./geometry.ts";
+import { deckAt } from "./bridges.ts";
+import { LID_EDGE_M } from "./cuts.ts";
 import { bounds, crossing, type Barrier, type Gate, type MapFeatures } from "./osm.ts";
 
 /** An opening is this much (m) wider than the way through it */
 const OPENING_MARGIN_M = 0.4;
 /** A gate this close (m) to a barrier's line is in it */
 const IN_BARRIER_M = 1;
+/** A barrier is on a deck or lid this far (m) out of its edge, which is at least this much over the ground (m) */
+const ON_DECK_M = 1.5;
+const OVER_GROUND_M = 1;
+const DECK_EDGE_M = 0.5;
+/** A barrier is looked at this often (m) */
+const SAMPLE_M = 1;
 /** Pieces of a barrier shorter than this (m) are left out */
 const MIN_PIECE_M = 0.3;
 
@@ -57,6 +65,65 @@ export function openBarriers(features: MapFeatures): number {
 const RAIL_WIDTH_M = 3;
 
 /** Meters along the line to each of its points */
+/**
+ * Leaves out the stretches of barriers on bridges' decks and tunnels' lids (a railing along a bridge): a barrier
+ * stands on the ground, which is under the deck there. Returns how many stretches were left out.
+ */
+export function leaveOutOnDecks(features: MapFeatures, heightAt: (e: number, n: number) => number | undefined): number {
+  const decks = [...features.roads, ...features.rails]
+    .flatMap((w) => {
+      const half = ("width" in w ? w.width : RAIL_WIDTH_M) / 2;
+      if (w.bridge && w.deck) {
+        return [{ line: w.line, heights: w.deck, reach: half + DECK_EDGE_M + ON_DECK_M }];
+      }
+      return w.lid ? [{ line: w.line, heights: w.lid, reach: half + LID_EDGE_M + ON_DECK_M }] : [];
+    })
+    .filter((d) => d.line.length >= 2)
+    .map((d) => ({ ...d, box: bounds(d.line) }));
+  let count = 0;
+  const pieces: Barrier[] = [];
+  for (const barrier of features.barriers) {
+    const box = bounds(barrier.line);
+    const near = decks.filter((d) => d.box.maxX + d.reach >= box.minX && d.box.minX - d.reach <= box.maxX && d.box.maxY + d.reach >= box.minY && d.box.minY - d.reach <= box.maxY);
+    if (near.length === 0) {
+      pieces.push(barrier);
+      continue;
+    }
+    const lengths = cumulative(barrier.line);
+    const total = lengths[lengths.length - 1];
+    const cuts: [number, number][] = [];
+    for (let d = 0; d <= total; d += SAMPLE_M) {
+      const [p] = between(barrier.line, lengths, d, d);
+      const ground = heightAt(...p);
+      const on = near.some(({ line, heights, reach }) => {
+        let close = false;
+        for (let i = 0; i + 1 < line.length && !close; i++) {
+          close = distanceToSegment(p, line[i], line[i + 1]) <= reach;
+        }
+        return close && ground !== undefined && deckAt(line, heights, p) - ground >= OVER_GROUND_M;
+      });
+      if (on) {
+        const last = cuts[cuts.length - 1];
+        if (last && d - SAMPLE_M <= last[1]) {
+          last[1] = Math.min(total, d + SAMPLE_M / 2);
+        } else {
+          cuts.push([Math.max(0, d - SAMPLE_M / 2), Math.min(total, d + SAMPLE_M / 2)]);
+        }
+      }
+    }
+    if (cuts.length === 0) {
+      pieces.push(barrier);
+      continue;
+    }
+    count += cuts.length;
+    for (const line of cutOut(barrier.line, lengths, cuts)) {
+      pieces.push({ ...barrier, line });
+    }
+  }
+  features.barriers = pieces;
+  return count;
+}
+
 function cumulative(line: Point[]): number[] {
   const lengths = [0];
   for (let i = 1; i < line.length; i++) {

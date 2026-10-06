@@ -3,7 +3,7 @@
 import type { SourceCache } from "./cache.ts";
 import { applyAges } from "./ages.ts";
 import { applyRegister, BUILDING_REGISTER_ATTRIBUTION, fetchBuildingRegister } from "./buildingRegister.ts";
-import { openBarriers } from "./barriers.ts";
+import { leaveOutOnDecks, openBarriers } from "./barriers.ts";
 import { MAX_PLINTH_M, setBuildingBases } from "./bases.ts";
 import { raiseDecksOverWays, setBridgeDecks } from "./bridges.ts";
 import { setOutlineDecks, standOnDecks } from "./decks.ts";
@@ -346,9 +346,12 @@ export class MapBuilder {
     // after the decks too; the gates before the barriers, which open for them
     const { dropped } = placeStreetNodes(streetNodes, features);
     const openings = openBarriers(features);
+    // a railing along a bridge stands on its deck, not on the ground under it
+    const offDecks = heightAt ? leaveOutOnDecks(features, heightAt) : 0;
     logger.log(
       `${features.crossings.length} crossings, ${features.signals.length} traffic signals and ${features.gates.length} gates on their ways ` +
-        `(${dropped} on none left out); ${openings} openings cut into fences and walls, in ${features.barriers.length} pieces`,
+        `(${dropped} on none left out); ${openings} openings cut into fences and walls, ${offDecks} stretches on bridges and lids left out, ` +
+        `in ${features.barriers.length} pieces`,
     );
     const tilesRect = { minX: Math.min(...xs) * size, minY: Math.min(...ys) * size, maxX: (Math.max(...xs) + 1) * size, maxY: (Math.max(...ys) + 1) * size };
     const planted = plantForests(features, tilesRect);

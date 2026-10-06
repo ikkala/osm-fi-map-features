@@ -261,7 +261,8 @@ Fences, walls, retaining walls and hedges (`barrier=*` ways, about 1 000 around 
 1.2 m for fences and hedges, 1.5 m for walls (3 m for noise barriers) and 1 m for retaining walls, and their
 `fence_type`, `material` or `wall` as a material. A path through a fence often has no gate or opening in OSM, so
 each barrier is cut open where a way (not a bridge or a tunnel) crosses it, 0.4 m wider than the way, and at its
-gates (`src/barriers.ts`).
+gates (`src/barriers.ts`). A barrier's stretches on a bridge's deck or a tunnel's lid, at least 1 m over the ground,
+are left out (a railing along a bridge): a barrier stands on the ground, which is under the deck there.
 
 Businesses (`Building.businesses`) are the OSM elements with `shop`, `office`, `craft` or `healthcare`, or with an
 `amenity`, `tourism` or `leisure` value that is a business (restaurants, cafes, pharmacies, banks, cinemas, hotels,
