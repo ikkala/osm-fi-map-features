@@ -14,6 +14,10 @@ export interface MeasuredDefaults {
   chimneyHeight: { perWidth: number; max: number };
   /** Wall material of an untagged chimney */
   chimneyMaterial: string;
+  /** Buildings built before this year mostly have pitched roofs, later ones flat roofs */
+  pitchedRoofsBefore: number;
+  /** A roof whose top is at most this far over the eaves (m) is flat: its parapets, machine rooms and the like */
+  flatRoofRiseM: number;
 }
 
 export const FINNISH_DEFAULTS_MEASURED_IN_TAMPERE: MeasuredDefaults = {
@@ -46,4 +50,7 @@ export const FINNISH_DEFAULTS_MEASURED_IN_TAMPERE: MeasuredDefaults = {
   // the chimneys with a height in OSM, and the old factory chimneys, which are brick
   chimneyHeight: { perWidth: 12, max: 100 },
   chimneyMaterial: "brick",
+  // the city's 3D building parts: how far their tops rise over the storeys, by the decade they were built in
+  pitchedRoofsBefore: 1960,
+  flatRoofRiseM: 3,
 };

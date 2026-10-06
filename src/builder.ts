@@ -22,6 +22,7 @@ import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { placeStreetNodes } from "./streets.ts";
 import { cutIntoTiles, latticeProjection, tileHeights, tileName, tilesCovering, type Tile, type TileKey } from "./tiles.ts";
 import { setPlatformTops } from "./platforms.ts";
+import { applyRoofTops, fetchRoofTops, ROOF_TOP_SOURCES, type RoofTopSource } from "./roofTops.ts";
 import { setTrackBeds } from "./trackbeds.ts";
 import { lowerUnderBridges } from "./underbridges.ts";
 import { raisePassages } from "./raisedPassages.ts";
@@ -61,6 +62,8 @@ export interface MapOptions {
   mmlApiKey?: string;
   /** The tree registers to take street and park trees from, of those that cover the area; TREE_REGISTERS by default */
   treeRegisters?: TreeRegisterSource[];
+  /** The 3D building parts to take measured roof tops from, of those that cover the area; ROOF_TOP_SOURCES by default */
+  roofTops?: RoofTopSource[];
   /** Progress and warnings; console by default */
   logger?: Logger;
 }
@@ -332,6 +335,25 @@ export class MapBuilder {
       // buildings raised to a door up a slope are stair halls: open them where covered ways come in
       const openings = openDoorways(raised, covered, heightAt);
       logger.log(`${raised.length} buildings raised over a door up a slope, ${openings} openings where covered ways come in at their doors`);
+      // measured tops are above sea level: the buildings must stand at their base first
+      const notRaised = features.buildings.filter((b) => !raised.includes(b));
+      for (const source of (this.#options.roofTops ?? ROOF_TOP_SOURCES).filter((s) => overlaps(s.covers, fetchBox))) {
+        try {
+          const { parts, cached: partsCached } = await fetchRoofTops(source, fetchBox, { cache, refresh });
+          const ring = (points: GeoPoint[]) => points.map((p) => toMeters(p.latitude, p.longitude));
+          const match = applyRoofTops(notRaised, parts.map((p) => ({ polygon: { outer: ring(p.outer), holes: p.holes.map(ring) }, top: p.top })));
+          logger.log(
+            `${source.title}: ${parts.length} parts (${partsCached ? "cached" : "fetched"}), ${match.heights} buildings' heights measured ` +
+              `(${match.roofs} given a hipped roof), ` +
+              `${match.uncovered} too little covered, ${match.rejected} with tops fitting neither their storeys nor a roof`,
+          );
+          if (match.heights > 0) {
+            otherAttributions.push(source.attribution);
+          }
+        } catch (err) {
+          logger.warn(`warning: no data from the ${source.title}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
     }
     // TODO: buildings with entrances on several levels, or steps at the door, stand at the wrong one.
 

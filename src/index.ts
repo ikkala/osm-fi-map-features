@@ -47,5 +47,6 @@ export type {
   WindowStyle,
 } from "./osm.ts";
 export { isValidGeoPoint, LocalProjection, type GeoPoint } from "./projection.ts";
+export { ROOF_TOP_SOURCES, TAMPERE_ROOF_TOPS, type RoofTopSource } from "./roofTops.ts";
 export { TAMPERE_TREE_REGISTER, TREE_REGISTERS, type TreeRegisterSource } from "./treeRegister.ts";
 export { tileName, tileRect, type Heights, type Tile, type TileKey } from "./tiles.ts";

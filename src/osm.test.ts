@@ -379,6 +379,19 @@ test("pitched roofs: shape, ridge direction and height from OSM or guessed", () 
   for (const osm of ["w36", "w37", "w38", "w39"]) {
     assert.deepEqual(roof(osm), [undefined, undefined, undefined], osm);
   }
+  // which of the shape and the height are guesses, for better data to replace
+  const guesses = (osm: string) => [get(osm).roofShapeEstimated, get(osm).roofHeightEstimated];
+  assert.deepEqual(
+    ["w30", "w33", "w34", "w35", "w37", "w38"].map(guesses),
+    [
+      [true, true],
+      [undefined, true],
+      [undefined, true],
+      [undefined, undefined],
+      [true, undefined],
+      [undefined, undefined],
+    ],
+  );
 });
 
 test("a way through a building opens its walls and is drawn on the ground", () => {

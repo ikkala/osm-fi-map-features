@@ -11,7 +11,8 @@ lamps, crossings, traffic signals, gates, fences and walls, playground equipment
 - storeys, facades, frames, uses and completion years from the Finnish building register, which the Finnish
   Environment Institute (Syke) publishes for the whole country in
   [Ryhti](https://ryhti.syke.fi/palvelut/palvelut-tiedon-hyodyntajille/)
-- street and park trees from the tree registers of the cities that publish theirs (for now Tampere).
+- street and park trees from the tree registers of the cities that publish theirs (for now Tampere)
+- the measured heights of roofs from the 3D building parts of the cities that publish theirs (for now Tampere).
 
 It is published so that how a map is made from OpenStreetMap with it is available to everyone, as the ODbL asks
 of a map that is made public (see [Licences](#licences)).
@@ -39,6 +40,8 @@ const builder = new MapBuilder({
   mmlApiKey: process.env.MML_API_KEY,
   // optional: the tree registers to use, of those whose area the map reaches into (TREE_REGISTERS by default)
   // treeRegisters: [TAMPERE_TREE_REGISTER],
+  // and the 3D building parts to take roof heights from (ROOF_TOP_SOURCES by default)
+  // roofTops: [TAMPERE_ROOF_TOPS],
 });
 const info = await builder.info(); // tiles, OSM timestamp, attributions
 for (const key of info.tiles) {
@@ -59,7 +62,7 @@ and the map is only combined from them when it is built. `fileCache(dir)` keeps 
 `memoryCache()` keeps them in memory; anything else (e.g. object storage) is a `SourceCache` of your own.
 `refresh: true` fetches everything again. The keys name the source and a hash of the request:
 `overpass-*.json`, `mml-elevation-*.asc`, `ryhti-buildings-*.json` (a page each), `tampere-trees-*.json` (a tree
-register's `name`), and
+register's `name`), `tampere-roof-tops-*.json` (a layer of 3D building parts by its `name`), and
 `mml-roof-colours-<e>_<n>.json` (the colours worked out from the orthophoto by outline, a file per square of the
 photo, so maps of different places keep theirs; the images are not kept).
 
@@ -145,6 +148,35 @@ churches, and `building=yes` / `residential` of at most 150 m² and two storeys,
 outline is nearly a rectangle. The ridge runs along the outline's long side unless `roof:orientation=across`; a
 skillion roof slopes down to `roof:direction`. The roof's height is `roof:height` or `roof:levels`, else a 27°
 slope (10° for skillion, at most 6 m): on top of the storeys, or within a tagged `height`, taking at most half of it.
+
+Where a city publishes its buildings in 3D, the measured tops of their roofs replace these guesses (`src/roofTops.ts`).
+`ROOF_TOP_SOURCES` lists the open layers known, each with the area it covers, and a map takes those it reaches into
+(`roofTops` chooses others): for now only the City of Tampere's 3D building parts
+(`julkinen:mml_rakennusten_osat_3d_polygon_kaytossa` at `geodata.tampere.fi`, about 35 000 from Lielahti to Hervanta), each
+part an outline with the height above sea level of its roof's highest point (`kattokorkeus`, to half a meter): the
+ridge of a pitched roof, the top of a flat one's parapets and machine rooms. Once the buildings stand at their base,
+an ordinary building (not a part, an outline with parts, or a special, open or raised one) that the parts cover for at
+least half of its outline, sampled every meter, takes its height from the tops over it: their median, of the tops that
+fit its storeys (at least 2.7 m a storey), which must cover a tenth of it, so that a tower drawn in one outline with
+its podium keeps its tower and a low wing does not take the top of a tall building over it. This replaces OSM's
+`height` too, which in Tampere is mostly a rule of thumb from the storeys (4 storeys 16 m on 158 buildings, 5
+storeys 20 m on 208, 6 storeys 25 m on 244, ...). With storeys, the top also tells the roof between the eaves (the
+storeys, as tall as of their age) and itself:
+
+- a guessed pitched roof's height rises up to the top, at most half of the height and no steeper than 50°, but it
+  is not made lower than guessed: the storeys tell the eaves too roughly for that (an attic counted as a storey, a
+  plot sloping under the base, a shed's low walls);
+- a building without `roof:shape` in OSM whose top is more than 3 m over its eaves gets a hipped roof up to it
+  (along the outline's long side, no steeper than 50°) if it was built before 1960 and its outline is nearly a
+  rectangle (as for a guessed roof): until then most roofs were pitched, and on later, flat roofs such a top is a
+  machine room (see [Measured in Tampere](#measured-in-tampere));
+- other tops more than 3 m over the eaves, and tops more than 3 m over the steepest roof the building could have,
+  are left out: a roof that cannot be told or drawn, or another building's top.
+
+From Lielahti to Hervanta about 18 000 buildings get a measured height (half of them from 1.4 m lower to 1.2 m
+higher than before) and 126 of them a hipped roof, such as the main building of Juhannuskylän koulu (1907,
+`height=16` in OSM), 16 m tall with a flat roof before and now 14.4 m of walls under an 11.3 m hipped roof, and the
+wooden villas of the 1920s in Pyynikki, 6.4 m tall before and now under roofs 5–7 m tall.
 
 Ways through buildings (`tunnel=building_passage`) are drawn on the ground like other ways, and open the walls
 they cross: as wide as the way (wider where it crosses at a slant, and on over nearly straight corners) and as
@@ -393,6 +425,11 @@ city, until there is data of another city's own to measure them from:
 - `stairSpacingM`: 18 m between the staircases of a block of flats, from the staircases mapped in OSM
 - `officeLevels`: 4 storeys, from which a building of the register's offices-and-factories class is offices, from the
   city's own building register
+- `pitchedRoofsBefore` and `flatRoofRiseM`: buildings built before 1960 mostly have pitched roofs, and a top at most
+  3 m over the eaves is a flat roof's, from the city's 3D building parts (see above): of the buildings without
+  `roof:shape` whose storeys are known, those of the 1920s to the 1950s rise a median 2.1–3.0 m over their storeys
+  and about half of them more than 3 m, those of the 1960s to the 2010s 0.6–1.8 m and 12–22 % of them more than 3 m
+  (machine rooms on flat roofs)
 - `chimneyHeight` and `chimneyMaterial`: an untagged chimney 12 times as tall as its base is wide (at most 100 m)
   and brick, from the city's chimneys
 
@@ -408,7 +445,7 @@ The data it builds is not:
   produced from it such as a rendered map, public, you must credit OpenStreetMap and offer the database, or the way it
   was made, under the ODbL. This package is that way for maps built with it; say which commit you used.
 - Elevation model and orthophoto © Maanmittauslaitos, the building register © Finnish Environment Institute Syke
-  (Ryhti), and a tree register © its city (Tampere), all under
+  (Ryhti), and a tree register and 3D building parts © their city (Tampere), all under
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): credit them.
 - Flows pulled towards counts (`pullFlows`) are OSM roads combined with the counts: a Derivative Database under the
   ODbL however briefly they exist, whether they are stored or worked out when they are used, and `flows.ts` is the

@@ -128,8 +128,12 @@ export interface Building {
   special?: boolean;
   /** A pitched roof (see RoofShape); no shape is a flat roof */
   roofShape?: RoofShape;
+  /** OSM has no roof:shape: the shape is a guess, or flat by default */
+  roofShapeEstimated?: boolean;
   /** Meters from the eaves to the top of the roof (included in height) */
   roofHeight?: number;
+  /** A pitched roof's height is a guess (no roof:height or roof:levels) */
+  roofHeightEstimated?: boolean;
   /**
    * Degrees counter-clockwise from east: the ridge's direction, or for a skillion roof the direction
    * it slopes down to
@@ -555,7 +559,7 @@ const GABLED_BUILDINGS = new Set([
 /** building=yes or residential gets a gabled roof too when it is at most this big (m²) and two storeys */
 const SMALL_GABLED_AREA_M2 = 150;
 /** A guessed roof needs an outline that fills this much of the rectangle around it */
-const GUESS_MIN_FILL = 0.85;
+export const GUESS_MIN_FILL = 0.85;
 /** Slope of a pitched roof whose height is not tagged */
 const ROOF_PITCH = (27 * Math.PI) / 180;
 const SKILLION_PITCH = (10 * Math.PI) / 180;
@@ -1138,6 +1142,7 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
     // a tagged height includes the roof: a guessed roof takes at most half of it
     roofHeight = Math.min(roofHeight ?? Math.min(roof.guessedHeight, (height - minHeight) / 2), height - minHeight);
   }
+  const roofHeightEstimated = roof !== undefined && taggedRoofHeight === undefined && !roofLevels;
   const colour = tags["building:colour"] ?? tags.colour;
   return {
     osm,
@@ -1151,7 +1156,9 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
     minHeight,
     ...(wallLevels !== undefined && wallLevels >= 1 && { levels: Math.round(wallLevels) }),
     ...(roof && { roofShape: roof.shape, roofAngle: roof.angle }),
+    ...(tags["roof:shape"] === undefined && { roofShapeEstimated: true }),
     ...(roofHeight !== undefined && { roofHeight }),
+    ...(roofHeightEstimated && { roofHeightEstimated }),
     ...(colour && { colour }),
     ...(tags["roof:colour"] && { roofColour: tags["roof:colour"] }),
     ...(tags["roof:material"] && { roofMaterial: tags["roof:material"] }),
@@ -1229,8 +1236,13 @@ function pitchedRoof(
     const halfSpan = shape === "pyramidal" ? Math.min(across, extent(polygon.outer, angle)) / 2 : across / 2;
     rise = halfSpan * Math.tan(ROOF_PITCH);
   }
+  return { shape, angle: roofDegrees(angle), guessedHeight: Math.min(rise, MAX_GUESSED_ROOF_M) };
+}
+
+/** A roof's angle in radians as Building.roofAngle: degrees, 0 .. 360, to a tenth */
+export function roofDegrees(angle: number): number {
   const degrees = (((angle * 180) / Math.PI) % 360 + 360) % 360;
-  return { shape, angle: Math.round(degrees * 10) / 10, guessedHeight: Math.min(rise, MAX_GUESSED_ROOF_M) };
+  return Math.round(degrees * 10) / 10;
 }
 
 /** Parses roof:direction, degrees clockwise from north ("135") or a compass point ("SE"). */
