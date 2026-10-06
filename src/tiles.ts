@@ -19,6 +19,7 @@ import {
   type TrafficSignal,
   type Tree,
 } from "./osm.ts";
+import type { Waterway } from "./waterways.ts";
 
 export interface TileKey {
   x: number;
@@ -37,6 +38,8 @@ export interface Heights {
 
 export interface Tile extends TileKey, MapFeatures {
   heights?: Heights;
+  /** The waterways in the tile's water, where the elevation model was there to level it */
+  waterways?: Waterway[];
 }
 
 /** Areas are simplified to this many meters before cutting. */

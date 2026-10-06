@@ -256,6 +256,8 @@ export interface Area {
   top?: number;
   /** surface=* (artificial_turf, sand, asphalt, paving_stones, ...), when OSM tells */
   surface?: string;
+  /** Water that flows: a river, canal or stream mapped as an area, not a lake or pond */
+  flowing?: boolean;
   polygon: Polygon;
 }
 
@@ -930,13 +932,20 @@ function addPolygonFeature(features: MapFeatures, bridgeOutlines: BridgeOutline[
   }
   const kind = areaKind(tags);
   if (kind) {
-    addArea(features, osm, kind, polygon, { cover: areaCover(tags), leafType: woodsLeafType(tags), surface: tags.surface });
+    addArea(features, osm, kind, polygon, { cover: areaCover(tags), leafType: woodsLeafType(tags), surface: tags.surface, flowing: kind === "water" && flowingWater(tags) });
   }
 }
 
-function addArea(features: MapFeatures, osm: string, kind: AreaKind, polygon: Polygon, extra: Pick<Area, "cover" | "leafType" | "surface"> = {}): void {
-  const { cover, leafType, surface } = extra;
-  features.areas.push({ osm, kind, ...(cover && { cover }), ...(leafType && { leafType }), ...(surface && { surface }), polygon });
+function addArea(features: MapFeatures, osm: string, kind: AreaKind, polygon: Polygon, extra: Pick<Area, "cover" | "leafType" | "surface" | "flowing"> = {}): void {
+  const { cover, leafType, surface, flowing } = extra;
+  features.areas.push({ osm, kind, ...(cover && { cover }), ...(leafType && { leafType }), ...(surface && { surface }), ...(flowing && { flowing }), polygon });
+}
+
+const FLOWING_WATERS = new Set(["river", "canal", "stream", "rapids", "ditch", "drain", "fish_pass", "lock"]);
+
+/** A river, canal or stream mapped as an area (water=*, or waterway=* on the area) */
+function flowingWater(tags: Tags): boolean {
+  return tags.waterway === "riverbank" || FLOWING_WATERS.has(tags.water ?? "") || FLOWING_WATERS.has(tags.waterway ?? "");
 }
 
 /** What grows in an area: trees in woods, shrubs in scrub */

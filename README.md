@@ -45,7 +45,7 @@ const builder = new MapBuilder({
 });
 const info = await builder.info(); // tiles, OSM timestamp, attributions
 for (const key of info.tiles) {
-  const tile = await builder.tile(key); // roads, rails, buildings, areas, trees, lamps, crossings, signals, gates, barriers, playEquipment, bridgeDecks, heights
+  const tile = await builder.tile(key); // roads, rails, buildings, areas, trees, lamps, crossings, signals, gates, barriers, playEquipment, bridgeDecks, waterways, heights
 }
 ```
 
@@ -378,6 +378,32 @@ Roads for vehicles have `motorVehicle`, the most specific of `motorcar=*`, `moto
 `access=*` (who may drive on it: no, private, destination, ...), `bus`, from `bus=*` or else `psv=*` (whether buses may:
 designated on a bus lane or a bus station's way closed to others), and service roads their `service=*` (parking_aisle,
 driveway, ...).
+
+### Water
+
+Water areas are `natural=water`, `waterway=riverbank` and `landuse=reservoir` or `basin`; those of a river, canal or
+stream (`water=river`, `canal`, `stream`, `rapids`, ..., or `waterway=*` on the area) are `flowing`. The elevation
+model has the water's surface, but where an area takes in its banks the surface rises up them, and it wavers by a
+few decimetres here and there. So the tiles' heights in water are the water's level instead (with an elevation
+model):
+
+- A still water, a lake or pond, is level at the median of the elevation model inside it, unless the middle half
+  of those heights spreads over 0.5 m: then it is on a slope and keeps the model's heights.
+- A flowing water falls along the waterways in it (OSM `waterway=river`, `canal` and `stream` lines, which are drawn
+  the way they flow, fetched with a query of their own): every 2 m along a waterway in the water the model's
+  height (a still water's level in one) is taken, and these are made never to rise downstream, a run that would
+  rise pooled at its median, so a dam's crest or a bank does not lift the water. A waterway flowing on from
+  another starts no higher than that one ends, also through a culvert. Each point of the water is as high as the
+  nearest point of its waterways, so it is level across and steps down where the river does: Tammerkoski falls
+  from Näsijärvi's 95.4 m to 88.2, 81.3, 77.4 and Pyhäjärvi's 77.1 m at its dams. A flowing water with no waterway
+  in it is set level, or left on its slope, as a still one.
+
+The tiles' `waterways` are the waterways' stretches in the water, cut at the tiles' edges: each with its `kind`,
+`name`, the way it flows (`line`), the water's surface (`levels`, m) and how wide the water is across it (`widths`, m,
+measured to where the water ends on each side, up to 150 m), simplified to within 0.5 m across, 5 cm of level and
+2 m of width, and its `network`: the lowest id of the waterways joined to it at a point, rivers and canals together
+and streams apart, so a river keeps its network through culverts and power plants and a stream joining it does not
+take it.
 
 ### Flows
 

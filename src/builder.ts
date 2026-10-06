@@ -29,6 +29,7 @@ import { raisePassages } from "./raisedPassages.ts";
 import { setTunnelFloors, uncoverAtGrade } from "./tunnels.ts";
 import { fetchTreeRegister, overlaps, TREE_REGISTERS, type RegisterTree, type TreeRegisterSource } from "./treeRegister.ts";
 import { assignWindows } from "./windows.ts";
+import { cutWaterways, parseWaterways, setWaterLevels, waterwayQuery, type WaterLevels } from "./waterways.ts";
 
 export const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
 export const DEFAULT_OVERPASS_URL = "https://overpass-api.de/api/interpreter";
@@ -85,6 +86,8 @@ interface Built {
   heightAt: ((e: number, n: number) => number | undefined) | undefined;
   /** The elevation model and where a point (m) is in its coordinates, for the tiles' heights */
   ground: { grid: ElevationGrid; toTm: (e: number, n: number) => [number, number] } | undefined;
+  /** The water's surface where it is levelled, over the elevation model's */
+  water: WaterLevels | undefined;
 }
 
 export class MapBuilder {
@@ -122,7 +125,8 @@ export class MapBuilder {
     }
     const { grid, toTm } = built.ground;
     const at = latticeProjection(tile, this.#options.tileSizeM, TM_LATTICE_M, toTm);
-    const { heights, missing } = tileHeights(tile, this.#options.tileSizeM, HEIGHT_STEP_M, (e, n) => sampleElevation(grid, ...at(e, n)));
+    const water = built.water;
+    const { heights, missing } = tileHeights(tile, this.#options.tileSizeM, HEIGHT_STEP_M, (e, n) => water?.levelAt([e, n]) ?? sampleElevation(grid, ...at(e, n)));
     if (missing > 0) {
       this.#logger.warn(`warning: tile ${tileName(tile)}: ${missing} height points outside the elevation model got the tile's average`);
     }
@@ -410,8 +414,27 @@ export class MapBuilder {
     const onDecks = standOnDecks(features.bridgeDecks, features.trees, features.lamps);
     logger.log(`${onDecks.trees} trees and ${onDecks.lamps} more street lamps on bridge decks`);
 
+    // the water's surface level where the elevation model has it uneven, and the waterways through it
+    let water: WaterLevels | undefined;
+    if (heightAt) {
+      try {
+        const { response: waterResponse, cached: waterCached } = await fetchOverpass(waterwayQuery(fetchBox), { url: overpassUrl, cache, refresh });
+        const lines = parseWaterways(waterResponse.elements, origin);
+        water = setWaterLevels(features.areas, lines, heightAt);
+        logger.log(
+          `${lines.length} OSM waterways (${waterCached ? "cached" : "fetched"}), ${water.waterways.length} stretches of them in the water; ` +
+            `${water.still} still waters level, ${water.flowing} flowing ones falling along their waterways, ${water.uneven} left uneven`,
+        );
+      } catch (err) {
+        logger.warn(`warning: no waterways: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     const tiles = new Map(cutIntoTiles(features, keys, size).map((tile) => [tileName(tile), tile]));
+    if (water) {
+      cutWaterways(tiles, water.waterways, size);
+    }
     const attributions = [OSM_ATTRIBUTION, ...(heightAt ? [ELEVATION_ATTRIBUTION] : []), ...otherAttributions];
-    return { info: { origin, tileSize: size, tiles: keys, osmTimestamp, attributions }, tiles, heightAt, ground };
+    return { info: { origin, tileSize: size, tiles: keys, osmTimestamp, attributions }, tiles, heightAt, ground, water };
   }
 }
