@@ -90,3 +90,16 @@ test("a junction on a bridge (a ramp leaving it) hangs between the bridge's ends
   const round = (deck: number[] | undefined) => deck?.map((h) => Math.round(h * 100) / 100);
   assert.deepEqual([round(west.deck), round(east.deck), round(ramp.deck)], [[100, 100], [100, 100], [100, 100]]);
 });
+
+test("a bridge's end meeting only ways indoors (going into a building) takes no height from the ground: the deck runs level from its other end", () => {
+  // a footbridge from a hillside at 120 to a tower on the ground at 100 below, which the ways indoors go into
+  const ground = (e: number) => (e <= 0 ? 120 : 100);
+  const hillside: BridgeLine = { bridge: false, line: [[-20, 0], [0, 0]] };
+  const bridge: BridgeLine = { bridge: true, line: [[0, 0], [70, 0]] };
+  setBridgeDecks([hillside, bridge], ground, (p) => p[0] === 70);
+  assert.deepEqual(bridge.deck, [120, 120]);
+  // without them it runs down to the ground at the tower
+  const again: BridgeLine = { bridge: true, line: [[0, 0], [70, 0]] };
+  setBridgeDecks([{ bridge: false, line: [[-20, 0], [0, 0]] }, again], ground);
+  assert.deepEqual(again.deck, [120, 100]);
+});

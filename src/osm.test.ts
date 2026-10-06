@@ -157,6 +157,20 @@ test("parseOsm leaves out ways indoors, but not the ones on from a tunnel's end,
   assert.deepEqual(openings, [[[8, 19], [8, 21]]]);
 });
 
+test("parseOsm tells the ends of the ways indoors it leaves out, where a bridge may go into a building", () => {
+  const { features, indoors } = parseOsm(
+    [
+      { type: "way", id: 80, tags: { highway: "footway", bridge: "yes", layer: "1" }, geometry: [at(0, 0), at(70, 0)] },
+      { type: "way", id: 81, tags: { highway: "footway", indoor: "yes" }, geometry: [at(70, 0), at(75, 5)] },
+    ],
+    origin,
+  );
+  assert.deepEqual(features.roads.map((r) => r.osm), ["w80"]);
+  const [start, end] = features.roads[0].line;
+  assert.ok(indoors(end));
+  assert.ok(!indoors(start));
+});
+
 test("parseOsm takes corridors for ways indoors, tagged so or not", () => {
   const { features } = parseOsm(
     [

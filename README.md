@@ -187,7 +187,9 @@ stay joined to it.
 
 A bridge's ways (the road, its sidewalks, a cycleway) each get a `deck` (`src/bridges.ts`): ways meeting end to end
 are one span, straight from the ground at one end to the other, also over the model's hump under it (the ground
-under a bridge is the gap spanned from the ground around; the terrain is to be kept under the deck). The model smooths the cut under a bridge into a
+under a bridge is the gap spanned from the ground around; the terrain is to be kept under the deck). An end that no
+way leads on from but ways indoors do (`indoor=yes`, left out) goes into a building at some floor, such as a lift
+tower's top: it takes no height from the ground, and the deck runs level from the span's other end. The model smooths the cut under a bridge into a
 wider hollow, so an end's ground is taken up the ways leading on as far as it rises steeply (0.2 m every 2 m), past
 at most 6 m of the hollow's level bottom and at most 24 m on, and those ways get a deck up to there. A deck stays straight: where a way
 under a bridge (at a lower layer, not in a tunnel) has less room under the deck than 2.7 m for people, 4.2 m for

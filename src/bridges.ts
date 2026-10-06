@@ -23,9 +23,15 @@ const JUNCTION_ROUNDS = 1000;
 /**
  * Sets `deck` on every bridge line: straight along each span between its ends, also over the model's hump under
  * it (the ground under a bridge is the gap spanned from the ground around).
- * Approaches are split off the lines leading on and get decks too. heightAt takes meters east / north.
+ * Approaches are split off the lines leading on and get decks too. heightAt takes meters east / north. An end that
+ * no line leads on from but ways indoors do (indoors) goes into a building, at whatever floor: it takes no height
+ * from the ground, so the deck runs level from the span's other end.
  */
-export function setBridgeDecks<T extends BridgeLine>(lines: T[], heightAt: (e: number, n: number) => number | undefined): void {
+export function setBridgeDecks<T extends BridgeLine>(
+  lines: T[],
+  heightAt: (e: number, n: number) => number | undefined,
+  indoors: (p: Point) => boolean = () => false,
+): void {
   const bridges = lines.filter((l) => l.bridge && l.line.length >= 2);
   const key = (p: Point) => `${p[0]},${p[1]}`;
   // the lines leading on from bridges, by their ends
@@ -107,7 +113,8 @@ export function setBridgeDecks<T extends BridgeLine>(lines: T[], heightAt: (e: n
         continue;
       }
       const approaches = (onward.get(key(end)) ?? []).filter((l) => l.deck === undefined).map((l) => approach(l, key(l.line[0]) === key(end), heightAt));
-      const heights = [heightAt(...end), ...approaches.map((a) => a.top)].filter((h) => h !== undefined);
+      const inBuilding = indoors(end) && (onward.get(key(end)) ?? []).length === 0;
+      const heights = [inBuilding ? undefined : heightAt(...end), ...approaches.map((a) => a.top)].filter((h) => h !== undefined);
       ends.set(key(end), { height: heights.length > 0 ? Math.max(...heights) : undefined, approaches });
     }
   }

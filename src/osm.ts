@@ -661,6 +661,8 @@ export interface ParseResult {
   levels: Map<Road | Rail, number[]>;
   /** Covered ways (covered=yes) that are no passages through buildings: they may come in at a door (see openDoorways) */
   covered: Road[];
+  /** Whether a point is an end of a way indoors left out: a bridge ending there goes into a building (see setBridgeDecks) */
+  indoors: (p: Point) => boolean;
 }
 
 /** Turns Overpass elements into features in meters east / north of origin. */
@@ -811,6 +813,8 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
     }
   }
 
+  const indoorEnds = new Set(indoors.filter((r) => !kept.has(r)).flatMap((r) => [pointKey(r.line[0]), pointKey(r.line[r.line.length - 1])]));
+
   markBuildingsWithParts(features.buildings);
   const through = new Set<Road>();
   for (const { road, passage } of maybePassages) {
@@ -824,7 +828,15 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   groundFloatingBuildings(features);
   openPassages(features.buildings, passages);
   raiseRoofsOverRoads(features);
-  return { features, streetNodes, bridgeOutlines, warnings, levels, covered: covered.filter((r) => !through.has(r)) };
+  return {
+    features,
+    streetNodes,
+    bridgeOutlines,
+    warnings,
+    levels,
+    covered: covered.filter((r) => !through.has(r)),
+    indoors: (p) => indoorEnds.has(pointKey(p)),
+  };
 }
 
 function addPolygonFeature(features: MapFeatures, bridgeOutlines: BridgeOutline[], osm: string, tags: Tags, polygon: Polygon): void {
