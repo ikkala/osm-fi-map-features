@@ -64,11 +64,11 @@ test("the ground falling away from a bridge's end leaves the ways leading on as 
   assert.equal(road.deck, undefined);
 });
 
-test("a deck never goes below the ground", () => {
+test("a deck runs straight over the model's hump under it (the terrain is cut under the deck)", () => {
   const hill = (e: number) => (e === 5 ? 120 : 100);
   const bridge: BridgeLine = { bridge: true, line: [[0, 0], [5, 0], [10, 0]] };
   setBridgeDecks([bridge], hill);
-  assert.deepEqual(bridge.deck, [100, 120, 100]);
+  assert.deepEqual(bridge.deck, [100, 100, 100]);
 });
 
 test("deckAt interpolates along the nearest segment", () => {

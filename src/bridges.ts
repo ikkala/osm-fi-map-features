@@ -21,7 +21,8 @@ const APPROACH_LEVEL_M = 6;
 const JUNCTION_ROUNDS = 1000;
 
 /**
- * Sets `deck` on every bridge line: linear along each span between its ends, never below the ground.
+ * Sets `deck` on every bridge line: straight along each span between its ends, also over the model's hump under
+ * it (the ground under a bridge is the gap spanned from the ground around).
  * Approaches are split off the lines leading on and get decks too. heightAt takes meters east / north.
  */
 export function setBridgeDecks<T extends BridgeLine>(lines: T[], heightAt: (e: number, n: number) => number | undefined): void {
@@ -148,7 +149,7 @@ export function setBridgeDecks<T extends BridgeLine>(lines: T[], heightAt: (e: n
       const straight = a === undefined || b === undefined ? ground : a + (b - a) * (total > 0 ? distances[i] / total : 0);
       const deck = decks.get(owner);
       if (deck) {
-        deck[index] = Math.max(straight ?? 0, ground ?? -Infinity);
+        deck[index] = straight ?? 0;
       }
     });
     for (const [bridge, deck] of decks) {

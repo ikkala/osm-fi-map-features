@@ -114,3 +114,13 @@ test("an outline with a hole gets no triangles over the hole", () => {
   }
   assert.equal(Math.round(triangles(decks).reduce((sum, t) => sum + area(t), 0)), 100 * 20 - 20 * 6);
 });
+
+test("an outline's deck is straight from its ends' highest decks, not bent where the ways' decks cross", () => {
+  // a road level at 100 and a cycleway rising from 98 to 102 across the same outline
+  const square: Point[] = [[0, -10], [100, -10], [100, 10], [0, 10]];
+  const level: DeckLine = { bridge: true, line: [[0, 0], [100, 0]], deck: [100, 100] };
+  const rising: DeckLine = { bridge: true, line: [[0, 5], [100, 5]], deck: [98, 102] };
+  setOutlineDecks([{ osm: "w9", polygon: { outer: square, holes: [] } }], [level, rising]);
+  // in the middle, away from the free ends: halfway between 100 and 102 (sampled inside the outline, a meter in)
+  assert.ok(Math.abs(deckAt(level.line, level.deck ?? [], [50, 0]) - 101) < 0.05);
+});

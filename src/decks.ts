@@ -124,7 +124,7 @@ export function setOutlineDecks(outlines: BridgeOutline[], lines: DeckLine[]): {
   return { decks, ways: on.size };
 }
 
-/** The deck's height by meters along the bridge: the highest way deck per step, interpolated between */
+/** The deck's height by meters along the bridge: straight from the highest way deck at its one end to that at the other */
 function deckProfile(members: DeckLine[], polygon: Polygon, along: (p: Point) => number): (t: number) => number {
   const points: { t: number; h: number }[] = [];
   for (const m of members) {
@@ -146,30 +146,12 @@ function deckProfile(members: DeckLine[], polygon: Polygon, along: (p: Point) =>
       }
     }
   }
+  // the highest deck within half a step of each end, and a straight line between them
   const t0 = Math.min(...points.map((p) => p.t));
-  const count = Math.max(1, Math.round((Math.max(...points.map((p) => p.t)) - t0) / PROFILE_STEP_M) + 1);
-  const highest = new Array<number | undefined>(count).fill(undefined);
-  for (const { t, h } of points) {
-    const i = Math.min(count - 1, Math.max(0, Math.round((t - t0) / PROFILE_STEP_M)));
-    highest[i] = Math.max(highest[i] ?? -Infinity, h);
-  }
-  const known = highest.flatMap((h, i) => (h === undefined ? [] : [{ i, h }]));
-  const values = highest.map((h, i) => {
-    if (h !== undefined) {
-      return h;
-    }
-    const before = known.filter((k) => k.i < i).at(-1);
-    const after = known.find((k) => k.i > i);
-    if (before && after) {
-      return before.h + ((after.h - before.h) * (i - before.i)) / (after.i - before.i);
-    }
-    return (before ?? after)?.h ?? 0;
-  });
-  return (t) => {
-    const x = Math.min(count - 1, Math.max(0, (t - t0) / PROFILE_STEP_M));
-    const i = Math.min(count - 2, Math.floor(x));
-    return i < 0 ? values[0] : values[i] + (values[i + 1] - values[i]) * (x - i);
-  };
+  const t1 = Math.max(...points.map((p) => p.t));
+  const first = Math.max(...points.filter((p) => p.t <= t0 + PROFILE_STEP_M / 2).map((p) => p.h));
+  const last = Math.max(...points.filter((p) => p.t >= t1 - PROFILE_STEP_M / 2).map((p) => p.h));
+  return (t) => (t1 - t0 < 1e-9 ? first : first + (last - first) * Math.min(1, Math.max(0, (t - t0) / (t1 - t0))));
 }
 
 /** The share of a line's length inside a polygon */

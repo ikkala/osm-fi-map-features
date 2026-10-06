@@ -186,7 +186,8 @@ room and the roof need). Lines are simplified to 0.3 m, but not where other ways
 stay joined to it.
 
 A bridge's ways (the road, its sidewalks, a cycleway) each get a `deck` (`src/bridges.ts`): ways meeting end to end
-are one span, straight from the ground at one end to the other. The model smooths the cut under a bridge into a
+are one span, straight from the ground at one end to the other, also over the model's hump under it (the ground
+under a bridge is the gap spanned from the ground around; the terrain is to be kept under the deck). The model smooths the cut under a bridge into a
 wider hollow, so an end's ground is taken up the ways leading on as far as it rises steeply (0.2 m every 2 m), past
 at most 6 m of the hollow's level bottom and at most 24 m on, and those ways get a deck up to there. A deck stays straight: where a way
 under a bridge (at a lower layer, not in a tunnel) has less room under the deck than 2.7 m for people, 4.2 m for
@@ -195,9 +196,8 @@ split off with a `floor`), ramping down no steeper than 8 % (people), 6 % (vehic
 would go deeper than 3 m, or ends in the cut, is left as it is. The bridges over cuts are logged: their ends may
 be too low in the model, as a footbridge's ramps and steps are not in it. Many bridges are also drawn as an outline
 (`man_made=bridge`, a way or a multipolygon): the whole deck, with what is between the ways, such as planted strips
-(`src/decks.ts`). The bridge ways at least half inside an outline get one deck: along the bridge the highest of
-their decks every 4 m (a way ending in the middle of another took its end's height from the ground under the
-bridge), except within 15 m of their free ends (not at another way on the outline), where they keep their own to
+(`src/decks.ts`). The bridge ways at least half inside an outline get one deck: along the bridge straight from
+the highest of their decks at its one end to that at the other, except within 15 m of their free ends (not at another way on the outline), where they keep their own to
 meet the ways leading on. They get a point every 5 m for that. The outline is then cut across the bridge into
 pieces 4 m long, as triangles with the height of the nearest way's deck at each corner (`bridgeDecks`), so the
 deck can be drawn between the ways too. The outline's triangles are cut rather than the outline itself, and each
