@@ -202,3 +202,11 @@ test("a way on the ground ending on a ramp meets it in turn", () => {
   assert.ok(Math.abs(stairs.deck[0] - 99.6) < 0.01);
   assert.equal(stairs.deck[stairs.deck.length - 1], 98);
 });
+
+test("a way on a sloping outline reaching a little past it goes on at the same slope", () => {
+  const road: DeckLine = { bridge: true, line: [[0, 0], [100, 0]], deck: [100, 110] };
+  const footway: DeckLine = { bridge: true, line: [[0, 5], [104, 5]], deck: [100, 110.4] };
+  setOutlineDecks([outline], [road, footway]);
+  const at = (x: number) => deckAt(footway.line, footway.deck ?? [], [x, 5]);
+  assert.ok(Math.abs((at(104) - at(100)) / 4 - (at(100) - at(50)) / 50) < 0.001);
+});

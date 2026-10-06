@@ -354,7 +354,7 @@ function part(line: Point[], along: number[], from: number, to: number, step: nu
   return step > 0 ? densify(result, step) : result;
 }
 
-/** The deck's height by meters along the bridge: straight from the highest way deck at its one end to that at the other */
+/** The deck's height by meters along the bridge: straight through the highest way deck at its one end and that at the other */
 function deckProfile(members: DeckLine[], polygon: Polygon, along: (p: Point) => number): (t: number) => number {
   const points: { t: number; h: number }[] = [];
   for (const m of members) {
@@ -381,7 +381,8 @@ function deckProfile(members: DeckLine[], polygon: Polygon, along: (p: Point) =>
   const t1 = Math.max(...points.map((p) => p.t));
   const first = Math.max(...points.filter((p) => p.t <= t0 + PROFILE_STEP_M / 2).map((p) => p.h));
   const last = Math.max(...points.filter((p) => p.t >= t1 - PROFILE_STEP_M / 2).map((p) => p.h));
-  return (t) => (t1 - t0 < 1e-9 ? first : first + (last - first) * Math.min(1, Math.max(0, (t - t0) / (t1 - t0))));
+  // on straight past them, for a way reaching a little past the outline
+  return (t) => (t1 - t0 < 1e-9 ? first : first + ((last - first) * (t - t0)) / (t1 - t0));
 }
 
 /** The share of a line's length inside a polygon */
