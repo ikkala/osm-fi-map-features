@@ -130,6 +130,7 @@ export interface Building {
    * it slopes down to
    */
   roofAngle?: number;
+  /** Wall colour: building:colour or colour */
   colour?: string;
   roofColour?: string;
   /** Wall material: building:material or material, or the building register's facade */
@@ -141,6 +142,8 @@ export interface Building {
    * shelter_type (gazebo, ...) or "shelter" for other shelters, "roof" for building=roof (canopies)
    */
   shelter?: string;
+  /** A framework of bars, not a closed body (tower:construction=lattice or guyed_lattice) */
+  lattice?: boolean;
   name?: string;
   /** Where ways run through the building (tunnel=building_passage): its walls are open there */
   passages?: Opening[];
@@ -427,6 +430,8 @@ const STOP_SHELTER_HEIGHT_M = 2.7;
  * Structures (man_made=*) drawn as buildings even without building=*: tall or big enough to stand out
  */
 const STRUCTURES = new Set(["chimney", "ventilation_shaft", "storage_tank", "silo", "water_tower", "tower", "gasometer"]);
+/** tower:construction values for a framework of bars */
+const LATTICES = new Set(["lattice", "guyed_lattice"]);
 /**
  * Guessed height of an untagged structure (man_made=*, else building=*) or church: perWidth times its base's
  * longest side, at most max meters. Fitted to tagged heights in OSM, a chimney's measured in Tampere.
@@ -1065,6 +1070,7 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
     // a tagged height includes the roof: a guessed roof takes at most half of it
     roofHeight = Math.min(roofHeight ?? Math.min(roof.guessedHeight, (height - minHeight) / 2), height - minHeight);
   }
+  const colour = tags["building:colour"] ?? tags.colour;
   return {
     osm,
     kind,
@@ -1078,11 +1084,12 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
     ...(wallLevels !== undefined && wallLevels >= 1 && { levels: Math.round(wallLevels) }),
     ...(roof && { roofShape: roof.shape, roofAngle: roof.angle }),
     ...(roofHeight !== undefined && { roofHeight }),
-    ...(tags["building:colour"] && { colour: tags["building:colour"] }),
+    ...(colour && { colour }),
     ...(tags["roof:colour"] && { roofColour: tags["roof:colour"] }),
     ...wallMaterial(tags, chimney),
     ...(year !== undefined && { year }),
     ...(shelter && { shelter }),
+    ...(LATTICES.has(tags["tower:construction"] ?? "") && { lattice: true }),
     ...(isSpecial(tags) && { special: true }),
     ...optionalName(tags),
     polygon,
@@ -1739,6 +1746,7 @@ function fillUnderFloatingParts(features: MapFeatures): Building[] {
         ...(outline.roofColour && { roofColour: outline.roofColour }),
         ...(outline.material && { material: outline.material }),
         ...(outline.special && { special: true }),
+        ...(outline.lattice && { lattice: true }),
         polygon: part.polygon,
       });
     }

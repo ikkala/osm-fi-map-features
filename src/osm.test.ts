@@ -511,6 +511,40 @@ test("wall material comes from building:material or material, and an untagged ch
   );
 });
 
+test("wall colour comes from building:colour or colour", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 35, tags: { building: "yes", "building:colour": "white", colour: "red" }, geometry: square(0, 0, 10) },
+      { type: "way", id: 36, tags: { building: "yes", man_made: "tower", colour: "red" }, geometry: square(20, 0, 5) },
+      { type: "way", id: 37, tags: { building: "yes" }, geometry: square(30, 0, 10) },
+    ],
+    origin,
+  );
+  const colour = (osm: string) => defined(features.buildings.find((b) => b.osm === osm)).colour;
+  assert.deepEqual(["w35", "w36", "w37"].map(colour), ["white", "red", undefined]);
+});
+
+test("a lattice tower is a framework of bars, also as the filler under a raised part", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 38, tags: { building: "yes", man_made: "tower", "tower:construction": "lattice", height: "55" }, geometry: square(0, 0, 5) },
+      { type: "way", id: 39, tags: { man_made: "tower", "tower:construction": "guyed_lattice", height: "40" }, geometry: square(20, 0, 3) },
+      { type: "way", id: 43, tags: { building: "yes", man_made: "tower", "tower:construction": "freestanding", height: "30" }, geometry: square(40, 0, 5) },
+      // an outline with a room on top: the outline's lattice under the room
+      { type: "way", id: 44, tags: { building: "yes", "tower:construction": "lattice", height: "30" }, geometry: square(60, 0, 6) },
+      { type: "way", id: 45, tags: { "building:part": "yes", min_height: "24", height: "30" }, geometry: square(60, 0, 6) },
+    ],
+    origin,
+  );
+  const lattice = (osm: string, part = false) => defined(features.buildings.find((b) => b.osm === osm && b.part === part)).lattice;
+  assert.deepEqual([lattice("w38"), lattice("w39"), lattice("w43"), lattice("w45", true)], [true, true, undefined, undefined]);
+  const fillers = features.buildings.filter((b) => b.osm === "w44" && b.part);
+  assert.deepEqual(
+    fillers.map((b) => [b.height, b.lattice]),
+    [[24, true]],
+  );
+});
+
 test("a chimney mapped as man_made=chimney alone is a building, as tall as tagged or 12 times its width", () => {
   const { features } = parseOsm(
     [

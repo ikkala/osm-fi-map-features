@@ -90,7 +90,10 @@ silos, tanks, gasometers and ventilation shafts (`man_made=*`) are buildings eve
 churches, whose storeys say little about their height, are guessed by type from the base's longest side instead
 (a chimney 12 times as tall, a water tower 1.3 times, a church 0.45 times, ..., see `HEIGHTS_BY_TYPE`), and the
 register's storeys do not replace that. A chimney with no material in OSM or the register is taken for brick,
-as Tampere's old factory chimneys are (see [Measured in Tampere](#measured-in-tampere)).
+as Tampere's old factory chimneys are (see [Measured in Tampere](#measured-in-tampere)). The walls' colour is
+`building:colour`, else `colour`, which towers and other `man_made=*` structures are tagged with. A tower of
+`tower:construction=lattice` or `guyed_lattice` is a framework of bars (`lattice`), not a closed body, such as
+Pispalan haulitorni, and so is the filler under a part on top of one.
 
 The register used to come from the City of Tampere's own
 [building register](https://data.tampere.fi/data/dataset/tampereen-rakennukset), which is the same national register.
