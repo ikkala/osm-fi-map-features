@@ -22,12 +22,12 @@ function ways(): { road: DeckLine; footway: DeckLine; ramp: DeckLine; beside: De
 
 const round = (h: number) => Math.round(h * 100) / 100;
 
-test("the ways on a bridge's outline get one deck, keeping their own at their free ends", () => {
+test("the ways on a bridge's outline get one straight deck, also at their free ends", () => {
   const { road, footway, ramp, beside } = ways();
   const { decks, ways: on } = setOutlineDecks([outline], [road, footway, ramp, beside]);
   assert.equal(on, 3);
   const at = (w: DeckLine, p: Point) => round(deckAt(w.line, w.deck ?? [], p));
-  assert.deepEqual([at(footway, [0, 5]), at(footway, [5, 5]), at(footway, [50, 5]), at(footway, [100, 5])], [98, 98.67, 100, 98]);
+  assert.deepEqual([at(footway, [0, 5]), at(footway, [5, 5]), at(footway, [50, 5]), at(footway, [100, 5])], [100, 100, 100, 100]);
   assert.deepEqual([at(ramp, [30, 0]), at(ramp, [50, -5])], [100, 100]);
   assert.deepEqual([at(road, [0, 0]), at(road, [50, 0])], [100, 100]);
   assert.deepEqual(beside.deck, [80, 80]);
@@ -123,4 +123,82 @@ test("an outline's deck is straight from its ends' highest decks, not bent where
   setOutlineDecks([{ osm: "w9", polygon: { outer: square, holes: [] } }], [level, rising]);
   // in the middle, away from the free ends: halfway between 100 and 102 (sampled inside the outline, a meter in)
   assert.ok(Math.abs(deckAt(level.line, level.deck ?? [], [50, 0]) - 101) < 0.05);
+});
+
+test("the ways leading on from an outline's ways meet its deck: an approach's deck is tilted, a way on the ground gets a ramp", () => {
+  const { road, footway } = ways();
+  // the footway's ends were at 98, the ground there; the deck is at 100
+  const west: DeckLine = { bridge: false, line: [[-40, 5], [0, 5]] };
+  const east: DeckLine = { bridge: false, line: [[100, 5], [110, 5]], deck: [98, 98] };
+  const lines = [road, footway, west, east];
+  setOutlineDecks([outline], lines, () => 98, () => 0.08);
+  // 2 m up at 8 %: a ramp 25 m long split off the way on the ground
+  assert.equal(lines.length, 5);
+  assert.deepEqual(west.line, [[-40, 5], [-25, 5]]);
+  assert.equal(west.deck, undefined);
+  const ramp = lines[4];
+  assert.equal(ramp.line[0][0], -25);
+  assert.equal(ramp.line[ramp.line.length - 1][0], 0);
+  assert.deepEqual([ramp.deck?.[0], ramp.deck?.[ramp.line.length - 1]], [98, 100]);
+  // the approach goes from the deck down to where it ended
+  assert.deepEqual(east.deck, [100, 98]);
+});
+
+test("a way on the ground higher than the deck it meets goes down to it in a cut", () => {
+  const { road, footway } = ways();
+  const west: DeckLine = { bridge: false, line: [[-40, 5], [0, 5]] };
+  const lines = [road, footway, west];
+  setOutlineDecks([outline], lines, (e) => (e <= 0 ? 101 : 98), () => 0.08);
+  const ramp = lines[3];
+  assert.equal(ramp.deck, undefined);
+  assert.equal(ramp.line[0][0], -12.5);
+  assert.deepEqual([ramp.floor?.[0], ramp.floor?.[ramp.line.length - 1]], [101, 100]);
+});
+
+test("a way on an outline reaching on past it goes from the deck at the outline's edge to its own end", () => {
+  const { road } = ways();
+  // reaching 29 m past the outline's east edge, down to 94 at its end
+  const long: DeckLine = { bridge: true, line: [[0, -5], [130, -5]], deck: [100, 94] };
+  setOutlineDecks([outline], [road, long]);
+  const at = (p: Point) => round(deckAt(long.line, long.deck ?? [], p));
+  assert.equal(at([50, -5]), 100);
+  assert.equal(at([130, -5]), 94);
+  // straight from the last point inside to the end
+  assert.ok(Math.abs(at([115, -5]) - (100 + (94 - 100) * (115 - 100) / 30)) < 0.05);
+});
+
+test("a way on the ground in a hollow at the deck's end ramps up to it, even where the ground beyond is higher", () => {
+  const { road, footway } = ways();
+  const west: DeckLine = { bridge: false, line: [[-40, 5], [0, 5]] };
+  const lines = [road, footway, west];
+  // 98 at the bridge's end, rising to 101 beyond
+  setOutlineDecks([outline], lines, (e) => (e >= -10 ? 98 : 101), () => 0.08);
+  const ramp = lines[3];
+  assert.equal(ramp.floor, undefined);
+  assert.deepEqual([ramp.deck?.[0], ramp.deck?.[ramp.line.length - 1]], [101, 100]);
+});
+
+test("a ramp that would cross another way on the ground is not made", () => {
+  const { road, footway } = ways();
+  const west: DeckLine = { bridge: false, line: [[-40, 5], [0, 5]] };
+  // a railway across where the ramp would be
+  const rails: DeckLine = { bridge: false, line: [[-10, -20], [-10, 20]] };
+  const lines = [road, footway, west, rails];
+  setOutlineDecks([outline], lines, () => 98, () => 0.08);
+  assert.equal(lines.length, 4);
+  assert.equal(west.deck, undefined);
+  assert.deepEqual(west.line, [[-40, 5], [0, 5]]);
+});
+
+test("a way on the ground ending on a ramp meets it in turn", () => {
+  const { road, footway } = ways();
+  const west: DeckLine = { bridge: false, line: [[-40, 5], [-5, 5], [0, 5]] };
+  // stairs down from the ramp 5 m from the bridge's end
+  const stairs: DeckLine = { bridge: false, line: [[-5, 5], [-5, 9]] };
+  const lines = [road, footway, west, stairs];
+  setOutlineDecks([outline], lines, () => 98, () => 0.08);
+  // the ramp is at 100 - 2 * 5 / 25 = 99.6 there; the stairs go down from it to the ground at their other end
+  assert.ok(stairs.deck);
+  assert.ok(Math.abs(stairs.deck[0] - 99.6) < 0.01);
+  assert.equal(stairs.deck[stairs.deck.length - 1], 98);
 });

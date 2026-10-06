@@ -1,9 +1,10 @@
-// Bridge outlines (man_made=bridge) as decks: the bridge ways on an outline follow one shared profile
-// (the highest of their decks), except near their free ends, and the outline is triangulated in short
-// pieces with the deck's heights so the area between the ways, and trees and lamps on it, have a deck.
+// Bridge outlines (man_made=bridge) as decks: the bridge ways on an outline follow one straight profile
+// (from the highest of their decks at one end to that at the other), the ways leading on meet it, and the
+// outline is triangulated in short pieces with the deck's heights so the area between the ways, and trees and
+// lamps on it, have a deck.
 import { deckAt, pointAlong } from "./bridges.ts";
 import { dedupe, distanceToSegment, nearestOnLine, orientedBox, pointInPolygon, pointInRing, ringArea, triangulate, type Point, type Polygon, type Ring } from "./geometry.ts";
-import { bounds, type BridgeDeck, type BridgeOutline } from "./osm.ts";
+import { bounds, crossing, type BridgeDeck, type BridgeOutline } from "./osm.ts";
 
 /** A road or railway: a bridge's (bridge, deck) or not */
 export interface DeckLine {
@@ -20,10 +21,15 @@ const ON_OUTLINE_SHARE = 0.5;
 const SAMPLE_M = 1;
 /** The deck profile's step along the bridge (m) */
 const PROFILE_STEP_M = 4;
-/** A way keeps its own deck at its free ends, and has the bridge's this far (m) from them */
-const FADE_M = 15;
-/** A way's end this near (m) another way on the outline is not free */
+/** A way's end this near (m) a way on an outline meets it */
 const TOUCH_M = 0.5;
+/** A way on an outline reaching on past it at most this far (m) has the deck to its end */
+const END_REACH_M = 5;
+/** A way leading on meets a deck less than this (m) off as it is */
+const MEET_M = 0.05;
+/** A way on the ground leading on ramps to a deck no steeper than this unless given its own, with a point this often (m) */
+const RAMP_GRADE = 0.06;
+const RAMP_STEP_M = 2;
 /** The ways on an outline get a point at least this often (m), so their decks follow the bridge's */
 const LINE_STEP_M = 5;
 /** The pieces of an outline are this long (m) along the bridge */
@@ -33,10 +39,22 @@ const STRAIGHT_M = 0.001;
 /** Triangles steeper than this (rise over run) are left out: slivers that would stand on edge */
 const MAX_DECK_SLOPE = 1;
 
-/** Unifies the decks of the bridge ways on each outline; returns the outlines' deck pieces and how many ways were on them */
-export function setOutlineDecks(outlines: BridgeOutline[], lines: DeckLine[]): { decks: BridgeDeck[]; ways: number } {
+/**
+ * Unifies the decks of the bridge ways on each outline into one straight deck, and has the ways leading on from
+ * them meet it: a way with a deck (an approach) is tilted to it, and a way on the ground gets a ramp split off it
+ * (a deck up to it, or a floor in a cut down to it) no steeper than gradeOf, pushed onto lines. heightAt takes
+ * meters east / north; without it the ways on the ground are left as they are. Returns the outlines' deck pieces
+ * and how many ways were on them.
+ */
+export function setOutlineDecks<T extends DeckLine>(
+  outlines: BridgeOutline[],
+  lines: T[],
+  heightAt?: (e: number, n: number) => number | undefined,
+  gradeOf: (line: T) => number = () => RAMP_GRADE,
+): { decks: BridgeDeck[]; ways: number } {
   const decks: BridgeDeck[] = [];
-  const on = new Set<DeckLine>();
+  const on = new Set<T>();
+  const outlined: { outline: BridgeOutline; members: T[] }[] = [];
   for (const outline of outlines) {
     const box = bounds(outline.polygon.outer);
     const members = lines.filter((l) => {
@@ -47,36 +65,20 @@ export function setOutlineDecks(outlines: BridgeOutline[], lines: DeckLine[]): {
       const b = bounds(l.line);
       return b.maxX >= box.minX && b.minX <= box.maxX && b.maxY >= box.minY && b.minY <= box.maxY && insideShare(l.line, outline.polygon) >= ON_OUTLINE_SHARE;
     });
-    if (members.length === 0) {
-      continue;
+    if (members.length > 0) {
+      outlined.push({ outline, members });
+      for (const m of members) {
+        on.add(m);
+      }
     }
+  }
+  // the ends of the ways leading on, and the deck heights they are to meet
+  const meets = new Map<T, { start?: number; end?: number }>();
+  for (const { outline, members } of outlined) {
     const { angle } = orientedBox(outline.polygon.outer);
     const u: Point = [Math.cos(angle), Math.sin(angle)];
     const along = (p: Point) => p[0] * u[0] + p[1] * u[1];
     const profile = deckProfile(members, outline.polygon, along);
-
-    // the free ends: the ways' ends that meet no other way on the outline, and where they leave it
-    const free: Point[] = [];
-    for (const m of members) {
-      for (const end of [m.line[0], m.line[m.line.length - 1]]) {
-        if (!members.some((other) => other !== m && nearestOnLine(other.line, end).distance <= TOUCH_M)) {
-          free.push(end);
-        }
-      }
-      let previous: Point | undefined;
-      for (const p of samples(m.line)) {
-        if (previous && pointInPolygon(p, outline.polygon) !== pointInPolygon(previous, outline.polygon)) {
-          free.push([(p[0] + previous[0]) / 2, (p[1] + previous[1]) / 2]);
-        }
-        previous = p;
-      }
-    }
-    const own = (p: Point) => {
-      if (!pointInPolygon(p, outline.polygon)) {
-        return 1;
-      }
-      return Math.max(0, ...free.map((e) => 1 - Math.hypot(p[0] - e[0], p[1] - e[1]) / FADE_M));
-    };
     for (const m of members) {
       const deck = m.deck;
       if (!deck) {
@@ -84,13 +86,34 @@ export function setOutlineDecks(outlines: BridgeOutline[], lines: DeckLine[]): {
       }
       // a tunnel's lid or floor goes point by point with the line, so such a way keeps its points
       const line = m.lid || m.floor ? m.line : densify(m.line, LINE_STEP_M);
-      const heights = line.map((p) => deckAt(m.line, deck, p));
+      const own = line.map((p) => deckAt(m.line, deck, p));
       m.line = line;
-      m.deck = line.map((p, i) => {
-        const bridge = profile(along(p));
-        return bridge + (heights[i] - bridge) * own(p);
-      });
-      on.add(m);
+      m.deck = straightened(
+        line,
+        own,
+        line.map((p) => pointInPolygon(p, outline.polygon)),
+        (p) => profile(along(p)),
+      );
+    }
+    const box = bounds(outline.polygon.outer);
+    for (const l of lines) {
+      if (on.has(l) || l.lid || l.floor || l.line.length < 2) {
+        continue;
+      }
+      const b = bounds(l.line);
+      if (b.maxX < box.minX - TOUCH_M || b.minX > box.maxX + TOUCH_M || b.maxY < box.minY - TOUCH_M || b.minY > box.maxY + TOUCH_M) {
+        continue;
+      }
+      const ends: ["start" | "end", Point][] = [
+        ["start", l.line[0]],
+        ["end", l.line[l.line.length - 1]],
+      ];
+      for (const [which, p] of ends) {
+        const m = members.find((m) => m.deck && nearestOnLine(m.line, p).distance <= TOUCH_M);
+        if (m?.deck) {
+          meets.set(l, { ...meets.get(l), [which]: deckAt(m.line, m.deck, p) });
+        }
+      }
     }
 
     // the pieces, with the deck of the nearest way at their corners
@@ -121,7 +144,214 @@ export function setOutlineDecks(outlines: BridgeOutline[], lines: DeckLine[]): {
       }
     }
   }
+  // the ways leading on meet the decks, and the ways on the ground ending on their ramps meet those in turn
+  const done = new Set<T>(on);
+  const queue = [...meets];
+  const ground = (o: T) => !o.bridge && !o.deck && !o.floor && !o.lid && o.line.length >= 2;
+  for (let next = queue.shift(); next; next = queue.shift()) {
+    const [l, { start, end }] = next;
+    if (done.has(l)) {
+      continue;
+    }
+    done.add(l);
+    const crosses = (ramp: Point[]) => lines.some((o) => o !== l && ground(o) && crossesAway(ramp, o.line));
+    for (const ramp of meet(lines, l, start, end, heightAt, gradeOf(l), crosses)) {
+      const box = bounds(ramp.line);
+      for (const o of lines) {
+        if (done.has(o) || !ground(o)) {
+          continue;
+        }
+        const b = bounds(o.line);
+        if (b.maxX < box.minX - TOUCH_M || b.minX > box.maxX + TOUCH_M || b.maxY < box.minY - TOUCH_M || b.minY > box.maxY + TOUCH_M) {
+          continue;
+        }
+        const [p, q] = [o.line[0], o.line[o.line.length - 1]];
+        const at = (x: Point) => (nearestOnLine(ramp.line, x).distance <= TOUCH_M ? deckAt(ramp.line, ramp.heights, x) : undefined);
+        const [s, e] = [at(p), at(q)];
+        if (s !== undefined || e !== undefined) {
+          queue.push([o, { ...(s !== undefined && { start: s }), ...(e !== undefined && { end: e }) }]);
+        }
+      }
+    }
+  }
   return { decks, ways: on.size };
+}
+
+/** Whether two lines cross away from where one ends on the other (a junction) */
+function crossesAway(a: Point[], b: Point[]): boolean {
+  const ab = bounds(a);
+  const bb = bounds(b);
+  if (bb.maxX < ab.minX || bb.minX > ab.maxX || bb.maxY < ab.minY || bb.minY > ab.maxY) {
+    return false;
+  }
+  const ends = [a[0], a[a.length - 1], b[0], b[b.length - 1]];
+  for (let i = 0; i + 1 < a.length; i++) {
+    for (let j = 0; j + 1 < b.length; j++) {
+      const hit = crossing(a[i], a[i + 1], b[j], b[j + 1], 0);
+      if (hit) {
+        const x: Point = [a[i][0] + (a[i + 1][0] - a[i][0]) * hit.at, a[i][1] + (a[i + 1][1] - a[i][1]) * hit.at];
+        if (!ends.some((p) => Math.hypot(p[0] - x[0], p[1] - x[1]) <= TOUCH_M)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/** Each point's distance along a line */
+function distances(line: Point[]): number[] {
+  const along = [0];
+  for (let i = 1; i < line.length; i++) {
+    along.push(along[i - 1] + Math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]));
+  }
+  return along;
+}
+
+/**
+ * A way's deck on an outline: the profile at its points inside it, and outside straight between the points inside
+ * around, or, where it reaches on past the outline more than END_REACH_M, from the last point inside to its own deck
+ * (own) at its end
+ */
+function straightened(line: Point[], own: number[], inside: boolean[], profile: (p: Point) => number): number[] {
+  const along = distances(line);
+  const deck = line.map(profile);
+  const first = inside.indexOf(true);
+  const last = inside.lastIndexOf(true);
+  if (first < 0) {
+    return deck;
+  }
+  const between = (i: number, a: number, ha: number, b: number, hb: number) => ha + ((hb - ha) * (along[i] - along[a])) / (along[b] - along[a] || 1);
+  for (let i = first + 1; i < last; i++) {
+    if (!inside[i]) {
+      const previous = inside.lastIndexOf(true, i);
+      const next = inside.indexOf(true, i);
+      deck[i] = between(i, previous, deck[previous], next, deck[next]);
+    }
+  }
+  const end = line.length - 1;
+  if (along[first] > END_REACH_M) {
+    for (let i = 0; i < first; i++) {
+      deck[i] = between(i, 0, own[0], first, deck[first]);
+    }
+  }
+  if (along[end] - along[last] > END_REACH_M) {
+    for (let i = last + 1; i <= end; i++) {
+      deck[i] = between(i, last, deck[last], end, own[end]);
+    }
+  }
+  return deck;
+}
+
+/**
+ * Has a way leading on meet a deck at its start and or end: one with a deck is tilted to it; one on the ground gets
+ * a ramp split off it at each end, from the deck to the ground no steeper than grade (steeper where the way is too
+ * short for both): a deck where the deck is over the ground at the way's end, else a floor in a cut. A ramp that
+ * would cross another way is not made. Returns the ramps made, with their heights.
+ */
+function meet<T extends DeckLine>(
+  lines: T[],
+  l: T,
+  start: number | undefined,
+  end: number | undefined,
+  heightAt: ((e: number, n: number) => number | undefined) | undefined,
+  grade: number,
+  crosses: (ramp: Point[]) => boolean,
+): { line: Point[]; heights: number[] }[] {
+  const along = distances(l.line);
+  const length = along[along.length - 1];
+  const deck = l.deck;
+  if (deck) {
+    const a = start === undefined ? 0 : start - deck[0];
+    const b = end === undefined ? 0 : end - deck[deck.length - 1];
+    if (Math.abs(a) > MEET_M || Math.abs(b) > MEET_M) {
+      l.deck = deck.map((h, i) => h + a + ((b - a) * along[i]) / (length || 1));
+    }
+    return [];
+  }
+  if (!heightAt || length <= 0) {
+    return [];
+  }
+  // how far each ramp reaches: from the deck to the ground at the way's end, at the grade
+  const reach = (target: number | undefined, p: Point) => {
+    const ground = heightAt(...p);
+    return target === undefined || ground === undefined || Math.abs(target - ground) <= MEET_M ? 0 : Math.abs(target - ground) / grade;
+  };
+  let a = reach(start, l.line[0]);
+  let b = reach(end, l.line[l.line.length - 1]);
+  if (a + b > length) {
+    [a, b] = [(length * a) / (a + b), (length * b) / (a + b)];
+  }
+  if (a > 0 && crosses(part(l.line, along, 0, a, 0))) {
+    a = 0;
+  }
+  if (b > 0 && crosses(part(l.line, along, length - b, length, 0))) {
+    b = 0;
+  }
+  if (a === 0 && b === 0) {
+    return [];
+  }
+  const pieces: { from: number; to: number; target?: number; atStart?: boolean }[] = [];
+  if (a > 0) {
+    pieces.push({ from: 0, to: a, target: start, atStart: true });
+  }
+  if (length - a - b > 1e-6) {
+    pieces.push({ from: a, to: length - b });
+  }
+  if (b > 0) {
+    pieces.push({ from: length - b, to: length, target: end, atStart: false });
+  }
+  const made = pieces.map(({ from, to, target, atStart }): { line: Point[]; deck?: number[]; floor?: number[] } => {
+    if (target === undefined) {
+      return { line: part(l.line, along, from, to, 0) };
+    }
+    const line = part(l.line, along, from, to, RAMP_STEP_M);
+    const ground = line.map((p) => heightAt(...p) ?? target);
+    // from the deck at the way's end to the ground at the ramp's other end
+    const [h0, h1] = atStart ? [target, ground[ground.length - 1]] : [ground[0], target];
+    const pieceAlong = distances(line);
+    const total = pieceAlong[pieceAlong.length - 1] || 1;
+    const straight = pieceAlong.map((d) => h0 + ((h1 - h0) * d) / total);
+    const raised = target > (atStart ? ground[0] : ground[ground.length - 1]);
+    return raised ? { line, deck: straight.map((h, i) => Math.max(h, ground[i])) } : { line, floor: straight.map((h, i) => Math.min(h, ground[i])) };
+  });
+  const ramps = made.flatMap((piece) => {
+    const heights = piece.deck ?? piece.floor;
+    return heights ? [{ line: piece.line, heights }] : [];
+  });
+  const [head, ...rest] = made;
+  for (const piece of rest) {
+    const copy = { ...l, line: piece.line, deck: piece.deck, floor: piece.floor };
+    if (!piece.deck) {
+      delete copy.deck;
+    }
+    if (!piece.floor) {
+      delete copy.floor;
+    }
+    lines.push(copy);
+  }
+  l.line = head.line;
+  if (head.deck) {
+    l.deck = head.deck;
+  }
+  if (head.floor) {
+    l.floor = head.floor;
+  }
+  return ramps;
+}
+
+/** The part of a line from `from` to `to` meters along it (along: its points' distances), with a point every step (0: its own) */
+function part(line: Point[], along: number[], from: number, to: number, step: number): Point[] {
+  const at = (d: number): Point => pointAlong(line, Math.min(d, along[along.length - 1])) ?? line[line.length - 1];
+  const points: Point[] = [at(from)];
+  for (let i = 0; i < line.length; i++) {
+    if (along[i] > from + 1e-9 && along[i] < to - 1e-9) {
+      points.push(line[i]);
+    }
+  }
+  points.push(at(to));
+  const result = dedupe(points);
+  return step > 0 ? densify(result, step) : result;
 }
 
 /** The deck's height by meters along the bridge: straight from the highest way deck at its one end to that at the other */

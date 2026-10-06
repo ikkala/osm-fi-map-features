@@ -16,7 +16,7 @@ import { mergeTrees, moveTreesOffWays, plantForests } from "./forests.ts";
 import { pointKey, simplifyLine, type Point } from "./geometry.ts";
 import { placeLamps } from "./lamps.ts";
 import { fetchRoofColours, ORTHO_ATTRIBUTION } from "./ortho.ts";
-import { bounds, fetchOverpass, inheritFromOutlines, LEVEL_HEIGHT_M, openDoorways, openRailHalls, overpassQuery, parseOsm, type Building, type GeoBox } from "./osm.ts";
+import { bounds, fetchOverpass, inheritFromOutlines, LEVEL_HEIGHT_M, NOT_FOR_VEHICLES, openDoorways, openRailHalls, overpassQuery, parseOsm, type Building, type GeoBox } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { placeStreetNodes } from "./streets.ts";
 import { cutIntoTiles, latticeProjection, tileHeights, tileName, tilesCovering, type Tile, type TileKey } from "./tiles.ts";
@@ -207,7 +207,16 @@ export class MapBuilder {
       setBridgeDecks(features.roads, heightAt);
       setBridgeDecks(features.rails, heightAt);
       logger.log(`${ramps(features.roads) + ramps(features.rails)} bridge approaches raised out of the hollows under bridges`);
-      const outlined = setOutlineDecks(bridgeOutlines, [...features.roads, ...features.rails]);
+      // the ways leading on from a bridge's outline ramp to its deck: 8 % for people, 6 % for vehicles, 3 % for trains
+      const decked = [...features.roads, ...features.rails];
+      const outlined = setOutlineDecks(bridgeOutlines, decked, heightAt, (w) => ("width" in w ? (NOT_FOR_VEHICLES.has(w.kind) ? 0.08 : 0.06) : 0.03));
+      for (const piece of decked.slice(features.roads.length + features.rails.length)) {
+        if ("width" in piece) {
+          features.roads.push(piece);
+        } else {
+          features.rails.push(piece);
+        }
+      }
       features.bridgeDecks = outlined.decks;
       logger.log(`${bridgeOutlines.length} bridge outlines, ${new Set(outlined.decks.map((d) => d.osm)).size} with decks for the ${outlined.ways} ways on them`);
       logger.log(`${fitLidsToDecks([...features.roads, ...features.rails])} lids lowered to the decks over them`);

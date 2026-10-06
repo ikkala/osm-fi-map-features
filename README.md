@@ -197,8 +197,11 @@ would go deeper than 3 m, or ends in the cut, is left as it is. The bridges over
 be too low in the model, as a footbridge's ramps and steps are not in it. Many bridges are also drawn as an outline
 (`man_made=bridge`, a way or a multipolygon): the whole deck, with what is between the ways, such as planted strips
 (`src/decks.ts`). The bridge ways at least half inside an outline get one deck: along the bridge straight from
-the highest of their decks at its one end to that at the other, except within 15 m of their free ends (not at another way on the outline), where they keep their own to
-meet the ways leading on. They get a point every 5 m for that. The outline is then cut across the bridge into
+the highest of their decks at its one end to that at the other, also at their free ends; a way reaching on more
+than 5 m past the outline goes straight from its edge to its own end. They get a point every 5 m for that. The
+ways leading on from them meet the deck: an approach's deck is tilted to it, and a way on the ground gets a ramp
+split off it, up to the deck (a deck) or down to it (a floor, in a cut), no steeper than 8 % for people, 6 % for
+vehicles and 3 % for trains. The outline is then cut across the bridge into
 pieces 4 m long, as triangles with the height of the nearest way's deck at each corner (`bridgeDecks`), so the
 deck can be drawn between the ways too. The outline's triangles are cut rather than the outline itself, and each
 piece's cuts joined again, since a cut ring would run back over a gap in the outline (Näsinsillat in Tampere is two
