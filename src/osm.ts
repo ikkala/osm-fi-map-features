@@ -355,6 +355,35 @@ export interface Barrier {
   line: Point[];
 }
 
+/** A piece of playground equipment (playground=*): a swing, a slide, a sandpit, a climbing frame, ... */
+export interface PlayEquipment {
+  osm: string;
+  /** playground=* value in lower case: swing, basketswing, slide, sandpit, climbingframe, springy, structure, ... */
+  kind: string;
+  /** Meters east and north of the origin: the node, the middle of the way's line or of its outline's box */
+  point: Point;
+  /**
+   * Degrees counter-clockwise from east: the way it runs (a swing's beam, a slide's run), from its way's line or
+   * outline, a row of its kind or the edge of the playground it is in (see playgrounds.ts); unset when nothing tells
+   */
+  along?: number;
+  /** A way's meters along `along` and across it */
+  length?: number;
+  width?: number;
+  /** A closed way's outline, counter-clockwise */
+  outline?: Ring;
+  /** Seats (capacity=*), when OSM tells */
+  capacity?: number;
+  /** A swing with a seat for babies (baby=yes), or without (baby=no), when OSM tells */
+  baby?: boolean;
+  /** material=* in lower case (wood, metal, rope, plastic, ...), when known */
+  material?: string;
+  /** Meters, when OSM tells */
+  height?: number;
+  /** playground:theme=* in lower case (ship, train, whale, ...), when known */
+  theme?: string;
+}
+
 export interface MapFeatures {
   roads: Road[];
   rails: Rail[];
@@ -366,6 +395,7 @@ export interface MapFeatures {
   signals: TrafficSignal[];
   gates: Gate[];
   barriers: Barrier[];
+  playEquipment: PlayEquipment[];
   bridgeDecks: BridgeDeck[];
 }
 
@@ -663,6 +693,8 @@ export interface ParseResult {
   streetNodes: StreetNode[];
   /** Bridges' outlines, still to get the heights of their ways' decks (decks.ts) */
   bridgeOutlines: BridgeOutline[];
+  /** Playgrounds' outlines (leisure=playground), which their equipment lines up with (playgrounds.ts) */
+  playgrounds: Polygon[];
   /** Problems worth reporting, such as multipolygons with rings that do not close */
   warnings: string[];
   /** The storeys (level=*) of the roads and rails that OSM tells them for, to tell where tunnels come out */
@@ -686,9 +718,10 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   const warnings: string[] = [];
   const projection = new LocalProjection(origin);
   const toPoint = (p: LatLon): Point => projection.toMeters({ latitude: p.lat, longitude: p.lon });
-  const features: MapFeatures = { roads: [], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], bridgeDecks: [] };
+  const features: MapFeatures = { roads: [], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], playEquipment: [], bridgeDecks: [] };
   const streetNodes: StreetNode[] = [];
   const bridgeOutlines: BridgeOutline[] = [];
+  const playgrounds: Polygon[] = [];
   const passages: Passage[] = [];
   // tunnels and covered ways that may be passages through buildings tagged otherwise
   const maybePassages: { road: Road; passage: Passage }[] = [];
@@ -773,7 +806,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
         features.barriers.push(barrier(osm, kind, tags, points));
       }
       if (closed && points.length >= 3) {
-        addPolygonFeature(features, bridgeOutlines, osm, tags, polygon());
+        addPolygonFeature(features, bridgeOutlines, playgrounds, osm, tags, polygon());
       }
     } else if (element.type === "relation" && tags.type === "multipolygon") {
       const osm = `r${element.id}`;
@@ -791,7 +824,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
       const holes = inner.rings.map((ring) => dedupe(ring.map(toPoint))).filter((ring) => ring.length >= 3);
       for (const ring of outers) {
         const polygon = normalize({ outer: ring, holes: holes.filter((hole) => pointInRing(hole[0], ring)) });
-        addPolygonFeature(features, bridgeOutlines, osm, tags, polygon);
+        addPolygonFeature(features, bridgeOutlines, playgrounds, osm, tags, polygon);
       }
     }
   }
@@ -849,6 +882,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
     features,
     streetNodes,
     bridgeOutlines,
+    playgrounds,
     warnings,
     levels,
     covered: covered.filter((r) => !through.has(r)),
@@ -856,7 +890,10 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   };
 }
 
-function addPolygonFeature(features: MapFeatures, bridgeOutlines: BridgeOutline[], osm: string, tags: Tags, polygon: Polygon): void {
+function addPolygonFeature(features: MapFeatures, bridgeOutlines: BridgeOutline[], playgrounds: Polygon[], osm: string, tags: Tags, polygon: Polygon): void {
+  if (tags.leisure === "playground") {
+    playgrounds.push(polygon);
+  }
   if (tags.man_made === "bridge") {
     bridgeOutlines.push({ osm, ...optionalName(tags), polygon });
     return;

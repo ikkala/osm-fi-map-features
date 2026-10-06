@@ -15,6 +15,7 @@ import { estimateCycling, estimateFootfall } from "./footfall.ts";
 import { mergeTrees, moveTreesOffWays, plantForests } from "./forests.ts";
 import { pointKey, simplifyLine, type Point } from "./geometry.ts";
 import { placeLamps } from "./lamps.ts";
+import { parsePlayEquipment, placePlayEquipment, playgroundQuery } from "./playgrounds.ts";
 import { fetchRoofColours, ORTHO_ATTRIBUTION } from "./ortho.ts";
 import { bounds, fetchOverpass, inheritFromOutlines, LEVEL_HEIGHT_M, NOT_FOR_VEHICLES, openDoorways, openRailHalls, overpassQuery, parseOsm, type Building, type GeoBox } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
@@ -159,7 +160,7 @@ export class MapBuilder {
     const osmTimestamp = response.osm3s?.timestamp_osm_base;
     logger.log(`${response.elements.length} OSM elements (${cached ? "cached, refresh to fetch again" : "fetched"}), data from ${osmTimestamp ?? "?"}`);
 
-    const { features, streetNodes, bridgeOutlines, warnings, levels, covered, indoors } = parseOsm(response.elements, origin);
+    const { features, streetNodes, bridgeOutlines, playgrounds, warnings, levels, covered, indoors } = parseOsm(response.elements, origin);
     for (const warning of warnings) {
       logger.warn(`warning: ${warning}`);
     }
@@ -304,6 +305,17 @@ export class MapBuilder {
       );
     } catch (err) {
       logger.warn(`warning: no businesses: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    try {
+      const { response: playResponse, cached: playCached } = await fetchOverpass(playgroundQuery(fetchBox), { url: overpassUrl, cache, refresh });
+      const placed = placePlayEquipment(parsePlayEquipment(playResponse.elements, origin), playgrounds);
+      features.playEquipment = placed.equipment;
+      logger.log(
+        `${placed.equipment.length} pieces of playground equipment (${playCached ? "cached" : "fetched"}) in ${playgrounds.length} playgrounds: ` +
+          `${placed.merged} mapped twice merged, ${placed.rows} swings lined up in rows, ${placed.edges} with their playground's nearest edge`,
+      );
+    } catch (err) {
+      logger.warn(`warning: no playground equipment: ${err instanceof Error ? err.message : String(err)}`);
     }
     if (heightAt) {
       const lids = [...features.roads, ...features.rails].flatMap((w) => (w.lid ? [{ line: w.line, lid: w.lid }] : []));

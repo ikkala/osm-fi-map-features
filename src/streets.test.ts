@@ -14,7 +14,7 @@ function fence(osm: string, line: Point[]): Barrier {
 }
 
 function features(roads: Road[], barriers: Barrier[] = []): MapFeatures {
-  return { roads, rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers, bridgeDecks: [] };
+  return { roads, rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers, playEquipment: [], bridgeDecks: [] };
 }
 
 test("a crossing and a traffic signal go on the street, not on the footway across it", () => {
@@ -73,7 +73,7 @@ test("leaveOutOnDecks leaves out a barrier's stretch on a bridge's deck or a tun
   const bridge = road("w1", "primary", [[20, 0], [40, 0]], { bridge: true, deck: [104, 104] });
   const lidded = road("w2", "cycleway", [[60, -20], [60, 20]], { width: 2.5, tunnel: true, lid: [104, 104] });
   const railing = fence("w3", [[0, 4.5], [80, 4.5]]);
-  const map: MapFeatures = { roads: [bridge, lidded], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [railing], bridgeDecks: [] };
+  const map: MapFeatures = { roads: [bridge, lidded], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [railing], playEquipment: [], bridgeDecks: [] };
   assert.equal(leaveOutOnDecks(map, () => 100), 2);
   // the deck reaches 4 m and its edge 0.5 m out, the lid 1.25 m and its edges 2 m: 1.5 m more on both, round its
   // ends too (sampled every meter)

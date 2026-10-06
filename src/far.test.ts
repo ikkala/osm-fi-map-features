@@ -20,6 +20,7 @@ function tile(features: Partial<Tile> = {}): Tile {
     signals: [],
     gates: [],
     barriers: [],
+    playEquipment: [],
     bridgeDecks: [],
     ...features,
   };

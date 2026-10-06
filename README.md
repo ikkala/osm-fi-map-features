@@ -2,7 +2,7 @@
 
 Map features for a 3D map of a Finnish city, in meters around an origin point and a square tile at a time:
 roads, rails, buildings (with 3D parts, roofs, windows, entrances and the businesses in them), trees, street
-lamps, crossings, traffic signals, gates, fences and walls, and ground areas from
+lamps, crossings, traffic signals, gates, fences and walls, playground equipment, and ground areas from
 [OpenStreetMap](https://www.openstreetmap.org/), combined with Finnish open data:
 
 - the ground heights of the [National Land Survey of Finland](https://www.maanmittauslaitos.fi/en)'s
@@ -42,14 +42,14 @@ const builder = new MapBuilder({
 });
 const info = await builder.info(); // tiles, OSM timestamp, attributions
 for (const key of info.tiles) {
-  const tile = await builder.tile(key); // roads, rails, buildings, areas, trees, lamps, crossings, signals, gates, barriers, bridgeDecks, heights
+  const tile = await builder.tile(key); // roads, rails, buildings, areas, trees, lamps, crossings, signals, gates, barriers, playEquipment, bridgeDecks, heights
 }
 ```
 
 Coordinates are meters east (first) and north (second) of the origin. Tile `x, y` covers east `x * size ..
 (x + 1) * size` and north `y * size .. (y + 1) * size`. Roads, rails and areas are cut at tile edges; a
-building belongs whole to the tile its centroid is in, a tree to the tile of its trunk and a lamp to the tile of
-its foot. The types are in
+building belongs whole to the tile its centroid is in, a tree to the tile of its trunk, a lamp to the tile of
+its foot and a piece of playground equipment to the tile of its middle. The types are in
 `src/osm.ts` (`MapFeatures`, `Building`, ...) and `src/tiles.ts` (`Tile`, `Heights`).
 
 ### Sources and the cache
@@ -278,6 +278,15 @@ Fences, walls, retaining walls and hedges (`barrier=*` ways, about 1 000 around 
 each barrier is cut open where a way (not a bridge or a tunnel) crosses it, 0.4 m wider than the way, and at its
 gates (`src/barriers.ts`). A barrier's stretches on a bridge's deck or a tunnel's lid, at least 1 m over the ground,
 are left out (a railing along a bridge): a barrier stands on the ground, which is under the deck there.
+
+Playground equipment (`playground=*` nodes and ways: swings, basket swings, slides, sandpits, climbing frames,
+spring riders, ...) comes from a query of its own (`src/playgrounds.ts`), with its `capacity`, `baby` (a swing's
+baby seat), `material`, `height` and `playground:theme`. OSM seldom tells which way a piece faces or how big it is:
+a way tells both (`along` and `length`; a closed way also `width` and its `outline`, as a sandpit's edge), a swing
+node lines up with the nearest swing within 6 m (frames in a row), and other nodes with the nearest edge (at least
+2 m long) of the playground (`leisure=playground`) they stand in; nodes of one kind within 1.5 m of each other are
+one piece mapped twice. Around Tampere there are about 1 200 pieces in 560 playgrounds, half of them swings and a
+third sandpits; 130 swings stand in a row, and 370 other pieces line up with their playground's edge.
 
 Businesses (`Building.businesses`) are the OSM elements with `shop`, `office`, `craft` or `healthcare`, or with an
 `amenity`, `tourism` or `leisure` value that is a business (restaurants, cafes, pharmacies, banks, cinemas, hotels,

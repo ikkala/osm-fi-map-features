@@ -278,7 +278,7 @@ test("trees go to the tile of their trunk and lamps to the tile of their foot, s
   const tree = (e: number, n: number): Tree => ({ point: [e, n], kind: "broadleaved", height: 8.04 });
   const trees = [tree(50, 60), tree(150, 10), { ...tree(20, 30), genus: "tilia" }, { ...tree(20, 80), trunk: 2.54 }];
   const lamps = [{ point: [150, 70] satisfies Point, height: 8 }, { point: [150, 20] satisfies Point, height: 5 }];
-  const features = { roads: [], rails: [], buildings: [], areas: [], trees, lamps, crossings: [], signals: [], gates: [], barriers: [], bridgeDecks: [] };
+  const features = { roads: [], rails: [], buildings: [], areas: [], trees, lamps, crossings: [], signals: [], gates: [], barriers: [], playEquipment: [], bridgeDecks: [] };
   const [west, east] = cutIntoTiles(features, [{ x: 0, y: 0 }, { x: 1, y: 0 }], 100);
   assert.deepEqual(west.trees.map((t) => t.point), [[20, 30], [50, 60], [20, 80]]);
   assert.deepEqual(east.trees.map((t) => t.point), [[150, 10]]);

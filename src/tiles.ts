@@ -12,6 +12,7 @@ import {
   type Crossing,
   type Gate,
   type MapFeatures,
+  type PlayEquipment,
   type Rail,
   type Road,
   type StreetLamp,
@@ -89,7 +90,7 @@ function clippedDeck(
 export function cutIntoTiles(features: MapFeatures, keys: TileKey[], size: number): Tile[] {
   const tiles = new Map<string, Tile>();
   for (const key of keys) {
-    tiles.set(tileName(key), { ...key, roads: [], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], bridgeDecks: [] });
+    tiles.set(tileName(key), { ...key, roads: [], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], playEquipment: [], bridgeDecks: [] });
   }
   const touched = (points: Point[]) => {
     const range = tileRange(bounds(points), size);
@@ -159,6 +160,9 @@ export function cutIntoTiles(features: MapFeatures, keys: TileKey[], size: numbe
   for (const gate of features.gates) {
     tileAt(gate.point)?.gates.push(gate satisfies Gate);
   }
+  for (const piece of features.playEquipment) {
+    tileAt(piece.point)?.playEquipment.push(piece satisfies PlayEquipment);
+  }
   for (const barrier of features.barriers) {
     for (const tile of touched(barrier.line)) {
       for (const line of clipPolyline(barrier.line, tileRect(tile, size))) {
@@ -186,6 +190,7 @@ export function cutIntoTiles(features: MapFeatures, keys: TileKey[], size: numbe
     tile.signals.sort(byPlace);
     tile.gates.sort(byPlace);
     tile.barriers.sort(byOsmId);
+    tile.playEquipment.sort(byOsmId);
     tile.bridgeDecks.sort(byOsmId);
   }
   return [...tiles.values()];

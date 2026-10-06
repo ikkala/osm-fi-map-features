@@ -34,6 +34,7 @@ export type {
   MapFeatures,
   Opening,
   PassageRoom,
+  PlayEquipment,
   Rail,
   Road,
   RoofShape,

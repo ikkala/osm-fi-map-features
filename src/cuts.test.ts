@@ -35,7 +35,7 @@ test("coverCutTunnels gives the tunnel a lid, makes the ways over it bridges and
   const deep = rail("w4", [[10, 2], [60, 2]], { layer: -2, tunnel: true });
   const outer: Point[] = [[40, -10], [50, -10], [50, 10], [40, 10]];
   const station: Building = { osm: "w5", kind: "train_station", part: false, hasParts: false, height: 10, minHeight: 0, polygon: { outer, holes: [] } };
-  const features: MapFeatures = { roads: [street], rails: [tram, railway, deep], buildings: [station], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], bridgeDecks: [] };
+  const features: MapFeatures = { roads: [street], rails: [tram, railway, deep], buildings: [station], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], playEquipment: [], bridgeDecks: [] };
   assert.deepEqual(coverCutTunnels(features, cut), { tunnels: 1, crossings: 1 });
   assert.deepEqual(tram.lid, [102, 102]);
   assert.equal(deep.lid, undefined);
@@ -56,7 +56,7 @@ test("a tunnel beside one in a cut is in the same cut, under the same lid", () =
   const tram = rail("w1", [[10, 0], [60, 0]], { kind: "light_rail", layer: -1, tunnel: true });
   const pavement = road("w2", [[10, -5], [60, -5]], { kind: "footway", width: 2.5, layer: -1, tunnel: true });
   const apart = road("w3", [[10, -40], [60, -40]], { kind: "footway", width: 2.5, layer: -1, tunnel: true });
-  const features: MapFeatures = { roads: [pavement, apart], rails: [tram], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], bridgeDecks: [] };
+  const features: MapFeatures = { roads: [pavement, apart], rails: [tram], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], playEquipment: [], bridgeDecks: [] };
   const wide = (e: number, n: number) => (e >= 0 && Math.abs(n) <= 4 ? 95 : e >= 0 && n < -4 && n > -7 ? 101 : 102);
   assert.equal(cutLid(pavement.line, wide), undefined);
   assert.equal(coverCutTunnels(features, wide).tunnels, 2);
@@ -71,7 +71,7 @@ test("a tunnel in a cut has a floor at the cut's bottom, not on the cut's side t
   const sloped = (e: number, n: number) => (e < 0 ? 102 : Math.min(102, 95 + Math.max(0, Math.abs(n) - 2) * 1.75));
   // the tram mapped 3.5 m off the middle, where the side is at 97.6; its ends where it leads on, on the ground
   const tram = rail("w1", [[10, 3.5], [30, 3.5], [45, 3.5], [60, 3.5]], { kind: "light_rail", layer: -1, tunnel: true });
-  const features: MapFeatures = { roads: [], rails: [tram], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], bridgeDecks: [] };
+  const features: MapFeatures = { roads: [], rails: [tram], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], playEquipment: [], bridgeDecks: [] };
   coverCutTunnels(features, sloped);
   assert.deepEqual(tram.floor, [sloped(10, 3.5), 95, 95, sloped(60, 3.5)]);
 });
