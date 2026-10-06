@@ -210,3 +210,24 @@ test("a way on a sloping outline reaching a little past it goes on at the same s
   const at = (x: number) => deckAt(footway.line, footway.deck ?? [], [x, 5]);
   assert.ok(Math.abs((at(104) - at(100)) / 4 - (at(100) - at(50)) / 50) < 0.001);
 });
+
+test("an outline's deck keeps a crest its ways' decks have, bending one way only", () => {
+  const crest: DeckLine = { bridge: true, line: [[0, 0], [50, 0], [100, 0]], deck: [100, 104, 100] };
+  // a footway beside it with a dip, which the deck does not follow
+  const dip: DeckLine = { bridge: true, line: [[0, 5], [50, 5], [100, 5]], deck: [100, 99, 100] };
+  setOutlineDecks([outline], [crest, dip]);
+  const at = (w: DeckLine, p: Point) => deckAt(w.line, w.deck ?? [], p);
+  assert.ok(Math.abs(at(crest, [50, 0]) - 104) < 0.1);
+  assert.ok(Math.abs(at(dip, [50, 5]) - 104) < 0.1);
+  assert.ok(Math.abs(at(dip, [25, 5]) - 102) < 0.1);
+});
+
+test("a way reaching a little past an outline where its ways end at different heights goes on at the deck's slope, not plunging", () => {
+  const road: DeckLine = { bridge: true, line: [[0, 0], [100, 0]], deck: [100, 100] };
+  // a track ending half a meter on, a meter lower, and one reaching 3 m past the outline
+  const low: DeckLine = { bridge: true, line: [[0, 8], [100.5, 8]], deck: [100, 99] };
+  const past: DeckLine = { bridge: true, line: [[0, -5], [104, -5]], deck: [100, 100] };
+  setOutlineDecks([outline], [road, low, past]);
+  const at = (p: Point) => deckAt(past.line, past.deck ?? [], p);
+  assert.ok(Math.abs(at([104, -5]) - 100) < 0.2, `at the end ${at([104, -5])}`);
+});

@@ -1,6 +1,7 @@
 // Bridge deck heights. The elevation model is bare ground, so a deck instead runs from the ground at
-// one end of a span (bridge ways joined end to end) to the other. The model smooths the cut under a
-// bridge into a wider hollow, so ends are taken where the approach stops rising steeply.
+// one end of a span (bridge ways joined end to end) to the other, through the heights steps up to it
+// tell, bending one way only. The model smooths the cut under a bridge into a wider hollow, so ends
+// are taken where the approach stops rising steeply.
 import type { Point } from "./geometry.ts";
 
 export interface BridgeLine {
@@ -8,6 +9,9 @@ export interface BridgeLine {
   line: Point[];
   /** Deck height (meters above sea level) at every point of line; set by setBridgeDecks */
   deck?: number[];
+  /** Steps: how many, and whether they climb along line or go down it */
+  stepCount?: number;
+  incline?: "up" | "down";
 }
 
 /** The approach is walked this often, and at most this far from the bridge's end (m) */
@@ -17,12 +21,21 @@ const APPROACH_REACH_M = 24;
 const APPROACH_RISE_M = 0.2;
 /** The hollow's bottom may reach on this far from the bridge's end before the ground starts rising (m) */
 const APPROACH_LEVEL_M = 6;
+/** A step's rise (m) */
+const RISER_M = 0.16;
+/** A deck's crest is rounded over a curve of this radius (m), with a point this often (m) */
+const CREST_RADIUS_M = 400;
+const CREST_STEP_M = 2;
 /** Maximum rounds of junction height averaging */
 const JUNCTION_ROUNDS = 1000;
 
 /**
  * Sets `deck` on every bridge line: straight along each span between its ends, also over the model's hump under
- * it (the ground under a bridge is the gap spanned from the ground around).
+ * it (the ground under a bridge is the gap spanned from the ground around). Steps with a count and a way they
+ * climb, from the ground to a point of the span, tell its height there (RISER_M a step): the deck then runs
+ * straight between the heights on the upper hull of them and its ends, rising and falling but never dipping, its
+ * crests rounded (CREST_RADIUS_M, the lines getting points over them).
+ * Returns how many points of spans steps told the height of.
  * Approaches are split off the lines leading on and get decks too. heightAt takes meters east / north. An end that
  * no line leads on from but ways indoors do (indoors) goes into a building, at whatever floor: it takes no height
  * from the ground, so the deck runs level from the span's other end.
@@ -31,7 +44,7 @@ export function setBridgeDecks<T extends BridgeLine>(
   lines: T[],
   heightAt: (e: number, n: number) => number | undefined,
   indoors: (p: Point) => boolean = () => false,
-): void {
+): number {
   const bridges = lines.filter((l) => l.bridge && l.line.length >= 2);
   const key = (p: Point) => `${p[0]},${p[1]}`;
   // the lines leading on from bridges, by their ends
@@ -144,22 +157,59 @@ export function setBridgeDecks<T extends BridgeLine>(
     }
   }
 
+  // the heights steps up to a point tell: from the ground at their other end, a riser a step
+  const stepped = new Map<string, number>();
+  for (const l of lines) {
+    if (l.bridge || !l.stepCount || !l.incline || l.line.length < 2) {
+      continue;
+    }
+    const [start, end] = [l.line[0], l.line[l.line.length - 1]];
+    const rise = (l.incline === "up" ? 1 : -1) * l.stepCount * RISER_M;
+    for (const [at, from, up] of [[end, start, rise], [start, end, -rise]] as const) {
+      const ground = heightAt(...from);
+      if (ground !== undefined) {
+        stepped.set(key(at), Math.max(stepped.get(key(at)) ?? -Infinity, ground + up));
+      }
+    }
+  }
+  let told = 0;
   for (const { span, points, distances } of spans) {
     const total = distances[distances.length - 1];
     const first = heightOf(key(points[0].p));
     const last = heightOf(key(points[points.length - 1].p));
-    const a = first ?? last;
-    const b = last ?? first;
-    const decks = new Map(span.map((s) => [s.bridge, new Array<number>(s.bridge.line.length).fill(0)]));
-    points.forEach(({ p, owner, index }, i) => {
-      const ground = heightAt(...p);
-      const straight = a === undefined || b === undefined ? ground : a + (b - a) * (total > 0 ? distances[i] / total : 0);
-      const deck = decks.get(owner);
-      if (deck) {
-        deck[index] = straight ?? 0;
-      }
+    // the known heights along the span: its ends, and where steps come up to it; an end without one is level
+    const known: { d: number; h: number }[] = points.flatMap(({ p }, i) => {
+      const h = stepped.get(key(p));
+      return h === undefined ? [] : [{ d: distances[i], h }];
     });
-    for (const [bridge, deck] of decks) {
+    told += known.length;
+    const a = first ?? known[0]?.h ?? last;
+    const b = last ?? known[known.length - 1]?.h ?? first;
+    const profile = a === undefined || b === undefined ? undefined : upperHull([{ d: 0, h: a }, ...known, { d: total, h: b }]);
+    const curves = profile ? crests(profile) : [];
+    // each line's points by their distance along the span, with points added where the deck curves
+    const byOwner = new Map<T, Map<number, number>>();
+    points.forEach(({ owner, index }, i) => byOwner.set(owner, (byOwner.get(owner) ?? new Map<number, number>()).set(index, distances[i])));
+    for (const { bridge } of span) {
+      const at = byOwner.get(bridge) ?? new Map<number, number>();
+      const height = (d: number, p: Point) => (profile ? rounded(profile, curves, d) : heightAt(...p)) ?? 0;
+      const line: Point[] = [];
+      const deck: number[] = [];
+      bridge.line.forEach((p, j) => {
+        const d = at.get(j) ?? 0;
+        if (j > 0) {
+          const [q, d0] = [bridge.line[j - 1], at.get(j - 1) ?? 0];
+          for (const x of over(curves, d0, d)) {
+            const t = (x - d0) / (d - d0);
+            const r: Point = [q[0] + (p[0] - q[0]) * t, q[1] + (p[1] - q[1]) * t];
+            line.push(r);
+            deck.push(height(x, r));
+          }
+        }
+        line.push(p);
+        deck.push(height(d, p));
+      });
+      bridge.line = line;
       bridge.deck = deck;
     }
   }
@@ -169,7 +219,90 @@ export function setBridgeDecks<T extends BridgeLine>(
         raiseApproach(lines, a, end.height, heightAt);
       }
     }
+  }  return told;
+}
+
+/** The upper hull of heights by distance: the lowest line above them all that bends one way only */
+export function upperHull(points: { d: number; h: number }[]): { d: number; h: number }[] {
+  const sorted = [...points].sort((p, q) => p.d - q.d || q.h - p.h);
+  const hull: { d: number; h: number }[] = [];
+  for (const p of sorted) {
+    if (hull.length > 0 && hull[hull.length - 1].d === p.d) {
+      continue;
+    }
+    // drop the last point while it lies on or under the line from the one before it to p
+    while (hull.length >= 2) {
+      const [o, q] = [hull[hull.length - 2], hull[hull.length - 1]];
+      if ((q.d - o.d) * (p.h - o.h) - (q.h - o.h) * (p.d - o.d) < 0) {
+        break;
+      }
+      hull.pop();
+    }
+    hull.push(p);
   }
+  return hull;
+}
+
+interface Crest {
+  /** Where the curve starts and its length along the span (m), the height and grade there, and the change of grade */
+  from: number;
+  length: number;
+  height: number;
+  grade: number;
+  change: number;
+}
+
+/** The curves rounding a profile's crests: CREST_RADIUS_M, no longer than the stretches on either side */
+function crests(profile: { d: number; h: number }[]): Crest[] {
+  const curves: Crest[] = [];
+  for (let i = 1; i + 1 < profile.length; i++) {
+    const [p, q, r] = [profile[i - 1], profile[i], profile[i + 1]];
+    const [before, after] = [(q.h - p.h) / (q.d - p.d), (r.h - q.h) / (r.d - q.d)];
+    const change = before - after;
+    const length = Math.min(CREST_RADIUS_M * change, q.d - p.d, r.d - q.d);
+    if (change > 0 && length > 0) {
+      curves.push({ from: q.d - length / 2, length, height: q.h - (before * length) / 2, grade: before, change });
+    }
+  }
+  return curves;
+}
+
+/** The height d along a profile, on its crests' curves where they are */
+function rounded(profile: { d: number; h: number }[], curves: Crest[], d: number): number {
+  const curve = curves.find((c) => d >= c.from && d <= c.from + c.length);
+  if (!curve) {
+    return along(profile, d);
+  }
+  const x = d - curve.from;
+  return curve.height + curve.grade * x - (curve.change * x * x) / (2 * curve.length);
+}
+
+/** The distances strictly between d0 and d1, from d0 on, every CREST_STEP_M over the curves */
+function over(curves: Crest[], d0: number, d1: number): number[] {
+  const [low, high] = [Math.min(d0, d1), Math.max(d0, d1)];
+  const found: number[] = [];
+  for (const c of curves) {
+    for (let x = c.from; x <= c.from + c.length; x += CREST_STEP_M) {
+      if (x > low + 1e-6 && x < high - 1e-6) {
+        found.push(x);
+      }
+    }
+  }
+  return found.sort((x, y) => (d1 >= d0 ? x - y : y - x));
+}
+
+/** The height d along a profile of points by distance, straight between them and level past its ends */
+function along(profile: { d: number; h: number }[], d: number): number {
+  if (d <= profile[0].d) {
+    return profile[0].h;
+  }
+  for (let i = 1; i < profile.length; i++) {
+    if (d <= profile[i].d) {
+      const [p, q] = [profile[i - 1], profile[i]];
+      return p.h + ((q.h - p.h) * (d - p.d)) / (q.d - p.d || 1);
+    }
+  }
+  return profile[profile.length - 1].h;
 }
 
 interface Approach<T> {

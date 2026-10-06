@@ -2,7 +2,7 @@
 // (from the highest of their decks at one end to that at the other), the ways leading on meet it, and the
 // outline is triangulated in short pieces with the deck's heights so the area between the ways, and trees and
 // lamps on it, have a deck.
-import { deckAt, pointAlong } from "./bridges.ts";
+import { deckAt, pointAlong, upperHull } from "./bridges.ts";
 import { dedupe, distanceToSegment, nearestOnLine, orientedBox, pointInPolygon, pointInRing, ringArea, triangulate, type Point, type Polygon, type Ring } from "./geometry.ts";
 import { bounds, crossing, type BridgeDeck, type BridgeOutline } from "./osm.ts";
 
@@ -19,8 +19,6 @@ export interface DeckLine {
 const ON_OUTLINE_SHARE = 0.5;
 /** Lines are sampled this often (m) */
 const SAMPLE_M = 1;
-/** The deck profile's step along the bridge (m) */
-const PROFILE_STEP_M = 4;
 /** A way's end this near (m) a way on an outline meets it */
 const TOUCH_M = 0.5;
 /** A way on an outline reaching on past it at most this far (m) has the deck to its end */
@@ -30,6 +28,10 @@ const MEET_M = 0.05;
 /** A way on the ground leading on ramps to a deck no steeper than this unless given its own, with a point this often (m) */
 const RAMP_GRADE = 0.06;
 const RAMP_STEP_M = 2;
+/** The highest deck within this (m) of an end is the deck's height there, and past the ends it goes on at its slope
+ * over this much more (m) */
+const END_M = 2;
+const END_SLOPE_M = 10;
 /** The ways on an outline get a point at least this often (m), so their decks follow the bridge's */
 const LINE_STEP_M = 5;
 /** The pieces of an outline are this long (m) along the bridge */
@@ -354,7 +356,10 @@ function part(line: Point[], along: number[], from: number, to: number, step: nu
   return step > 0 ? densify(result, step) : result;
 }
 
-/** The deck's height by meters along the bridge: straight through the highest way deck at its one end and that at the other */
+/**
+ * The deck's height by meters along the bridge: the upper hull of its ways' decks, straight where they are and bending
+ * one way only where they rise to a crest, and on straight past its ends
+ */
 function deckProfile(members: DeckLine[], polygon: Polygon, along: (p: Point) => number): (t: number) => number {
   const points: { t: number; h: number }[] = [];
   for (const m of members) {
@@ -376,13 +381,28 @@ function deckProfile(members: DeckLine[], polygon: Polygon, along: (p: Point) =>
       }
     }
   }
-  // the highest deck within half a step of each end, and a straight line between them
+  // at each end the highest deck within END_M of it, so a way ending a little short and lower does not bend it
   const t0 = Math.min(...points.map((p) => p.t));
   const t1 = Math.max(...points.map((p) => p.t));
-  const first = Math.max(...points.filter((p) => p.t <= t0 + PROFILE_STEP_M / 2).map((p) => p.h));
-  const last = Math.max(...points.filter((p) => p.t >= t1 - PROFILE_STEP_M / 2).map((p) => p.h));
-  // on straight past them, for a way reaching a little past the outline
-  return (t) => (t1 - t0 < 1e-9 ? first : first + ((last - first) * (t - t0)) / (t1 - t0));
+  const first = Math.max(...points.filter((p) => p.t <= t0 + END_M).map((p) => p.h));
+  const last = Math.max(...points.filter((p) => p.t >= t1 - END_M).map((p) => p.h));
+  const inner = points.filter((p) => p.t > t0 + END_M && p.t < t1 - END_M).map(({ t, h }) => ({ d: t, h }));
+  const hull = upperHull([{ d: t0, h: first }, ...inner, { d: t1, h: last }]);
+  const on = (t: number) => {
+    let i = 1;
+    while (i < hull.length - 1 && t > hull[i].d) {
+      i++;
+    }
+    const [p, q] = [hull[i - 1], hull[i]];
+    return p.h + ((q.h - p.h) * (t - p.d)) / (q.d - p.d || 1);
+  };
+  if (t1 - t0 < 1e-9) {
+    return () => first;
+  }
+  // past the ends, on at the slope over END_SLOPE_M (or the whole deck) inside them
+  const reach = Math.min(END_SLOPE_M, t1 - t0);
+  const [before, after] = [(on(t0 + reach) - first) / reach, (last - on(t1 - reach)) / reach];
+  return (t) => (t < t0 ? first + before * (t - t0) : t > t1 ? last + after * (t - t1) : on(t));
 }
 
 /** The share of a line's length inside a polygon */

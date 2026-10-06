@@ -69,6 +69,9 @@ export interface Road {
   service?: string;
   /** Roads for vehicles: whether buses may drive on it, from bus=* or psv=*, when OSM tells (e.g. designated on a bus lane closed to others) */
   bus?: string;
+  /** Steps: how many (step_count=*), and whether they climb along line or go down it (incline=*), when OSM tells */
+  stepCount?: number;
+  incline?: "up" | "down";
 }
 
 export type Sidewalks = "both" | "left" | "right" | "none" | "separate";
@@ -670,6 +673,14 @@ export interface ParseResult {
   indoors: (p: Point) => boolean;
 }
 
+/** Steps' count (step_count=*, a whole number) and which way they climb (incline=up / down, or a slope's sign) */
+function stepping(tags: Record<string, string>): { stepCount?: number; incline?: "up" | "down" } {
+  const count = /^[0-9]+$/.test(tags.step_count ?? "") ? Number(tags.step_count) : undefined;
+  const slope = Number.parseFloat(tags.incline ?? "");
+  const incline = tags.incline === "up" || slope > 0 ? "up" : tags.incline === "down" || slope < 0 ? "down" : undefined;
+  return { ...(count !== undefined && count > 0 && { stepCount: count }), ...(incline && { incline }) };
+}
+
 /** Turns Overpass elements into features in meters east / north of origin. */
 export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult {
   const warnings: string[] = [];
@@ -724,6 +735,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
           ...oneway(road),
           ...(walkway ? (road.footway ? { footway: road.footway } : {}) : { ...sidewalks(road), ...motorAccess(road) }),
           ...access(road),
+          ...(road.highway === "steps" ? stepping(road) : {}),
           line: points,
         };
         const storeys = storeysOf(road);

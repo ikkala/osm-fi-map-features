@@ -171,6 +171,27 @@ test("parseOsm tells the ends of the ways indoors it leaves out, where a bridge 
   assert.ok(!indoors(start));
 });
 
+test("parseOsm reads steps' count and which way they climb", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 90, tags: { highway: "steps", step_count: "41", incline: "down" }, geometry: [at(0, 0), at(20, 0)] },
+      { type: "way", id: 91, tags: { highway: "steps", step_count: "12", incline: "15%" }, geometry: [at(0, 10), at(5, 10)] },
+      { type: "way", id: 92, tags: { highway: "steps", step_count: "many", incline: "-20%" }, geometry: [at(0, 20), at(5, 20)] },
+      { type: "way", id: 93, tags: { highway: "footway", step_count: "3", incline: "up" }, geometry: [at(0, 30), at(5, 30)] },
+    ],
+    origin,
+  );
+  assert.deepEqual(
+    features.roads.map((r) => [r.osm, r.stepCount, r.incline]),
+    [
+      ["w90", 41, "down"],
+      ["w91", 12, "up"],
+      ["w92", undefined, "down"],
+      ["w93", undefined, undefined],
+    ],
+  );
+});
+
 test("parseOsm takes corridors for ways indoors, tagged so or not", () => {
   const { features } = parseOsm(
     [

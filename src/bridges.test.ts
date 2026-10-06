@@ -103,3 +103,46 @@ test("a bridge's end meeting only ways indoors (going into a building) takes no 
   setBridgeDecks([{ bridge: false, line: [[-20, 0], [0, 0]] }, again], ground);
   assert.deepEqual(again.deck, [120, 100]);
 });
+
+test("steps from a bridge down to the ground give the deck its height there, the deck rising to it and down again", () => {
+  const ground = () => 100;
+  const bridge: BridgeLine = { bridge: true, line: [[0, 0], [30, 0], [60, 0], [100, 0]] };
+  // 32 steps down from the bridge at e 60 to the ground 20 m off: 32 * 0.16 = 5.12 m
+  const steps: BridgeLine = { bridge: false, line: [[60, 0], [60, 20]], stepCount: 32, incline: "down" };
+  setBridgeDecks([bridge, steps], ground);
+  const at = (e: number) => Math.round(deckAt(bridge.line, bridge.deck ?? [], [e, 0]) * 100) / 100;
+  // straight up to the crest's curve (e 40 .. 80 here), which rounds it a little under the steps' height
+  assert.deepEqual([at(0), at(30), at(100)], [100, 102.56, 100]);
+  assert.ok(at(60) > 105.12 - 1.1 && at(60) < 105.12);
+});
+
+test("steps drawn up to a bridge count the same, and a height under the line through the others does not bend the deck down", () => {
+  const ground = (e: number) => (e >= 100 ? 110 : 100);
+  const bridge: BridgeLine = { bridge: true, line: [[0, 0], [50, 0], [100, 0]] };
+  // up 12 steps from the ground at 100 m to the bridge's middle: 101.92, under the straight line's 105
+  const steps: BridgeLine = { bridge: false, line: [[50, 20], [50, 0]], stepCount: 12, incline: "up" };
+  setBridgeDecks([bridge, steps], ground);
+  assert.deepEqual(bridge.deck, [100, 105, 110]);
+});
+
+test("steps without a count or a way they climb give no height", () => {
+  const bridge: BridgeLine = { bridge: true, line: [[0, 0], [50, 0], [100, 0]] };
+  const counted: BridgeLine = { bridge: false, line: [[50, 0], [50, 20]], incline: "down" };
+  const unsure: BridgeLine = { bridge: false, line: [[50, 0], [50, -20]], stepCount: 30 };
+  setBridgeDecks([bridge, counted, unsure], () => 100);
+  assert.deepEqual(bridge.deck, [100, 100, 100]);
+});
+
+test("a deck's crest is rounded, so it bends no more than 0.2 m over 10 m either way, and stays near the steps' height", () => {
+  const bridge: BridgeLine = { bridge: true, line: [[0, 0], [50, 0], [100, 0]] };
+  // 10 steps down from the bridge's middle: 101.6 m, a change of grade of 6.4 % there
+  const steps: BridgeLine = { bridge: false, line: [[50, 0], [50, 20]], stepCount: 10, incline: "down" };
+  setBridgeDecks([bridge, steps], () => 100);
+  const deck = bridge.deck ?? [];
+  const at = (e: number) => deckAt(bridge.line, deck, [e, 0]);
+  for (let e = 10; e <= 90; e += 1) {
+    assert.ok(Math.abs(at(e) - (at(e - 10) + at(e + 10)) / 2) <= 0.2 + 1e-6, `bends at ${e}`);
+  }
+  assert.ok(at(50) > 101.6 - 0.3 && at(50) <= 101.6);
+  assert.deepEqual([deck[0], deck[deck.length - 1]], [100, 100]);
+});

@@ -204,9 +204,8 @@ export class MapBuilder {
       logger.log(`${tunnels.floors} tunnel ways under hills and lakes get floors, ${tunnels.ramps} ways out of their portals ramps`);
       // before cutting into tiles, so a bridge's deck goes from end to end
       const ramps = (lines: { bridge: boolean; deck?: number[] }[]) => lines.filter((l) => l.deck && !l.bridge).length;
-      setBridgeDecks(features.roads, heightAt, indoors);
-      setBridgeDecks(features.rails, heightAt, indoors);
-      logger.log(`${ramps(features.roads) + ramps(features.rails)} bridge approaches raised out of the hollows under bridges`);
+      const stepped = setBridgeDecks(features.roads, heightAt, indoors) + setBridgeDecks(features.rails, heightAt, indoors);
+      logger.log(`${ramps(features.roads) + ramps(features.rails)} bridge approaches raised out of the hollows under bridges, ${stepped} decks' heights told by steps`);
       // the ways leading on from a bridge's outline ramp to its deck: 8 % for people, 6 % for vehicles, 3 % for trains
       const decked = [...features.roads, ...features.rails];
       const outlined = setOutlineDecks(bridgeOutlines, decked, heightAt, (w) => ("width" in w ? (NOT_FOR_VEHICLES.has(w.kind) ? 0.08 : 0.06) : 0.03));
