@@ -92,14 +92,14 @@ test("a junction on a bridge (a ramp leaving it) hangs between the bridge's ends
 });
 
 test("raiseDecksOverWays lifts a deck over a way under it to leave its room, and leaves a high one as it is", () => {
-  // a footbridge 30 m long from the ground at 100 on both ends, over a tram at 98 and a path on the ground
+  // a footbridge 30 m long from the ground at 100 on both ends, over a tram at 96
   const bridge = { osm: "w1", kind: "footway", width: 3, layer: 1, bridge: true, tunnel: false, line: [[0, 0], [30, 0]] as Point[], deck: [100, 100] };
   const tram = { osm: "w2", kind: "tram", layer: 0, bridge: false, tunnel: false, line: [[10, -20], [10, 20]] as Point[] };
   const high = { ...bridge, osm: "w3", line: [[0, 10], [30, 10]] as Point[], deck: [107, 107] };
-  assert.equal(raiseDecksOverWays([bridge, high], [bridge, high, tram], () => 98), 1);
+  assert.equal(raiseDecksOverWays([bridge, high], [bridge, high, tram], () => 96), 1);
   // 4.7 m and the deck's 1 m over the tram, over its 3 m and a meter either side
   assert.deepEqual(bridge.line.map(([e]) => Math.round(e * 10) / 10), [0, 7.5, 10, 12.5, 30]);
-  assert.deepEqual(bridge.deck.map((h) => Math.round(h * 10) / 10), [100, 103.7, 103.7, 103.7, 100]);
+  assert.deepEqual(bridge.deck.map((h) => Math.round(h * 10) / 10), [100, 101.7, 101.7, 101.7, 100]);
   assert.deepEqual(high.deck, [107, 107]);
 });
 
@@ -108,10 +108,24 @@ test("raiseDecksOverWays lifts a bridge of several lines as one, its ends stayin
   const a = { osm: "w1", kind: "rail", layer: 1, bridge: true, tunnel: false, line: [[0, 0], [20, 0]] as Point[], deck: [100, 100] };
   const b = { ...a, osm: "w2", line: [[20, 0], [40, 0]] as Point[], deck: [100, 100] };
   const road = { osm: "w3", kind: "primary", width: 8, layer: 0, bridge: false, tunnel: false, line: [[10, -20], [10, 20]] as Point[] };
-  raiseDecksOverWays([a, b], [a, b, road], () => 98);
-  const top = 98 + 4.2 + 1;
+  raiseDecksOverWays([a, b], [a, b, road], () => 96);
+  const top = 96 + 4.2 + 1;
   // the shared point at 20 m rises toward the plateau (5 m to 15 m) no steeper than 3 %, in both lines
   assert.equal(Math.round(a.deck[a.deck.length - 1] * 100) / 100, Math.round((top - 0.03 * 5) * 100) / 100);
   assert.equal(a.deck[a.deck.length - 1], b.deck[0]);
   assert.deepEqual([a.deck[0], b.deck[1]], [100, 100]);
+});
+
+test("raiseDecksOverWays takes a bridge without a layer for over the ways at the ground", () => {
+  const bridge = { osm: "w1", kind: "tertiary", width: 7, layer: 0, bridge: true, tunnel: false, line: [[0, 0], [30, 0]] as Point[], deck: [100, 100] };
+  const path = { osm: "w2", kind: "footway", width: 2.5, layer: 0, bridge: false, tunnel: false, line: [[15, -20], [15, 20]] as Point[] };
+  assert.equal(raiseDecksOverWays([bridge], [bridge, path], () => 98), 1);
+});
+
+test("raiseDecksOverWays leaves a deck that would have to rise more than 3 m", () => {
+  const bridge = { osm: "w1", kind: "tertiary", width: 7, layer: 1, bridge: true, tunnel: false, line: [[0, 0], [30, 0]] as Point[], deck: [100, 100] };
+  const path = { osm: "w2", kind: "tram", layer: 0, bridge: false, tunnel: false, line: [[15, -20], [15, 20]] as Point[] };
+  // the model's ground under the bridge at 99.5 under a tram: 4.7 m and the deck's 1 m over it would be 5.2 m higher
+  assert.equal(raiseDecksOverWays([bridge], [bridge, path], () => 99.5), 0);
+  assert.deepEqual(bridge.deck, [100, 100]);
 });

@@ -190,7 +190,8 @@ are one span, straight from the ground at one end to the other. The model smooth
 wider hollow, so an end's ground is taken up the ways leading on as far as it rises steeply (0.2 m every 2 m), past
 at most 6 m of the hollow's level bottom and at most 24 m on, and those ways get a deck up to there. The model leaves
 out a bridge's own ramps and steps, so where a way crosses under a bridge (at a lower layer, not in a tunnel) with less
-room over it than 2.7 m for people, 4.2 m for vehicles, 4.7 m for trams and 5.5 m for trains, and the deck's 1 m, the
+room over it than 2.7 m for people, 4.2 m for vehicles, 4.7 m for trams and 5.5 m for trains, and the deck's 1 m (at
+most 3 m short: more, and the model's ground under the bridge is likely its span's, not the way's), the
 deck is that high over the way's width and a meter either side, and the bridge's other points (its lines joined end
 to end) rise toward it no steeper than 8 % (people), 6 % (vehicles) or 3 % (trains); the bridge's ends stay. Many bridges are also drawn as an outline
 (`man_made=bridge`, a way or a multipolygon): the whole deck, with what is between the ways, such as planted strips

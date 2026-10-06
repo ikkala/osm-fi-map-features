@@ -21,6 +21,9 @@ const APPROACH_LEVEL_M = 6;
 /** Room a bridge leaves over a way under it (m), and its deck's thickness */
 const ROOM_OVER_M = { people: 2.7, vehicles: 4.2, trams: 4.7, trains: 5.5 };
 const DECK_THICKNESS_M = 1;
+/** A deck needing to rise more than this (m) is left as it is: the model's ground under a bridge spans the gap from
+ * the ground around it, and may be far over the way there */
+const MAX_LIFT_M = 3;
 /** The bridge's other points rise toward the deck over such a way no steeper than this, for people, vehicles and trains */
 const RISE_GRADE = { people: 0.08, vehicles: 0.06, trains: 0.03 };
 /** The deck is that high over the way's width and this far (m) either side */
@@ -279,8 +282,8 @@ export function deckAt(line: Point[], deck: number[], p: Point): number {
 /**
  * Lifts bridge decks to leave room over the ways under them: the elevation model leaves out a bridge's ramps and
  * steps, so a deck from the ground at its ends is often too low over a road or railway it crosses. Where a way
- * crosses under a bridge line (at a lower layer, not in a tunnel) with less than ROOM_OVER_M and the deck's
- * thickness over its ground (or floor), the deck is that high over the way's width and a meter either side (the
+ * crosses under a bridge line (at a lower layer, a bridge at least at layer 1; not in a tunnel) with less than ROOM_OVER_M and the deck's
+ * thickness over its ground (or floor), and at most MAX_LIFT_M more than the deck there, the deck is that high over the way's width and a meter either side (the
  * line gets points there), and the other points of the bridge (its lines joined end to end) rise toward it no
  * steeper than RISE_GRADE; the bridge's ends stay. Returns how many crossings lifted a deck.
  */
@@ -296,7 +299,8 @@ export function raiseDecksOverWays(bridges: (Road | Rail)[], ways: (Road | Rail)
       const [a, c] = [bridge.line[i], bridge.line[i + 1]];
       const length = Math.hypot(c[0] - a[0], c[1] - a[1]);
       for (const way of under) {
-        if (way.layer >= bridge.layer || length === 0) {
+        // a bridge is over the ground's layer, tagged or not
+        if (way.layer >= Math.max(bridge.layer, 1) || length === 0) {
           continue;
         }
         const room = "width" in way ? (NOT_FOR_VEHICLES.has(way.kind) ? ROOM_OVER_M.people : ROOM_OVER_M.vehicles) : TRAMS.has(way.kind) ? ROOM_OVER_M.trams : ROOM_OVER_M.trains;
@@ -309,7 +313,8 @@ export function raiseDecksOverWays(bridges: (Road | Rail)[], ways: (Road | Rail)
           const p: Point = [a[0] + (c[0] - a[0]) * hit.at, a[1] + (c[1] - a[1]) * hit.at];
           const ground = way.floor ? deckAt(way.line, way.floor, p) : heightAt(...p);
           const needed = ground === undefined ? undefined : ground + room + DECK_THICKNESS_M;
-          if (needed !== undefined && needed > deck[i] + (deck[i + 1] - deck[i]) * hit.at) {
+          const here = deck[i] + (deck[i + 1] - deck[i]) * hit.at;
+          if (needed !== undefined && needed > here && needed - here <= MAX_LIFT_M) {
             const half = hit.half / length;
             const list = plateaus.get(bridge) ?? [];
             for (const at of [hit.at - half, hit.at, hit.at + half]) {
