@@ -1,19 +1,33 @@
 // Trees for the map: register and OSM trees merged, and woods and scrub areas planted sparsely and
-// deterministically (each plant's place and look come from its grid cell alone).
+// deterministically (each plant's place comes from its grid cell alone, and what it is from the cell and the
+// area's leaf type).
 import { bounds, type Area, type MapFeatures, type Rail, type Road, type Tree } from "./osm.ts";
 import { distanceToRing, distanceToSegment, pointInPolygon, polygonTest, RectGrid, type Point, type Rect } from "./geometry.ts";
 
 /** An OSM tree this close (m) to a register tree is the same tree */
 const SAME_TREE_M = 4;
 
+interface Plant {
+  kind: Tree["kind"];
+  genus?: string;
+  minHeight: number;
+  maxHeight: number;
+}
+
+/** A plant of a cell whose random number r (0 .. 1) is below its share and above the previous one's */
+type Mix = (Plant & { share: number })[];
+
 interface Planting {
   /** Meters between the cells of the planting grid; one plant per cell at most */
   spacing: number;
   /** Share of cells left empty, for glades and a less even look */
   empty: number;
-  /** A plant of a cell whose random number r (0 .. 1) is below the next share and above the previous */
-  mix: { share: number; kind: Tree["kind"]; genus?: string; minHeight: number; maxHeight: number }[];
+  mix: Mix;
 }
+
+const SPRUCE: Plant = { kind: "conifer", genus: "picea", minHeight: 12, maxHeight: 24 };
+const PINE: Plant = { kind: "conifer", genus: "pinus", minHeight: 14, maxHeight: 26 };
+const BIRCH: Plant = { kind: "broadleaved", genus: "betula", minHeight: 10, maxHeight: 20 };
 
 const PLANTINGS: Record<NonNullable<Area["cover"]>, Planting> = {
   // Finnish woods: mostly spruce and pine, some birch
@@ -21,9 +35,9 @@ const PLANTINGS: Record<NonNullable<Area["cover"]>, Planting> = {
     spacing: 9,
     empty: 0.15,
     mix: [
-      { share: 0.35, kind: "conifer", genus: "picea", minHeight: 12, maxHeight: 24 },
-      { share: 0.7, kind: "conifer", genus: "pinus", minHeight: 14, maxHeight: 26 },
-      { share: 1, kind: "broadleaved", genus: "betula", minHeight: 10, maxHeight: 20 },
+      { share: 0.35, ...SPRUCE },
+      { share: 0.7, ...PINE },
+      { share: 1, ...BIRCH },
     ],
   },
   shrubs: {
@@ -34,6 +48,19 @@ const PLANTINGS: Record<NonNullable<Area["cover"]>, Planting> = {
       { share: 1, kind: "broadleaved", genus: "betula", minHeight: 3, maxHeight: 8 },
     ],
   },
+};
+
+/** The mix of woods of one leaf type, in place of the mixed woods' */
+const WOODS_MIXES: Record<NonNullable<Area["leafType"]>, Mix> = {
+  needleleaved: [
+    { share: 0.5, ...SPRUCE },
+    { share: 1, ...PINE },
+  ],
+  // mostly birch, the rest aspen, alder, rowan and the like
+  broadleaved: [
+    { share: 0.75, ...BIRCH },
+    { share: 1, kind: "broadleaved", minHeight: 8, maxHeight: 18 },
+  ],
 };
 
 /** Plants keep this far (m) from other plants, and from the edges of roads and rails */
@@ -204,6 +231,7 @@ export function plantForests(features: MapFeatures, within: Rect): number {
   for (const area of covered) {
     const planting = PLANTINGS[area.cover ?? "trees"];
     const { spacing } = planting;
+    const mix = area.leafType ? WOODS_MIXES[area.leafType] : planting.mix;
     const inArea = polygonTest(area.polygon);
     // woods reach far outside the map
     const box = bounds(area.polygon.outer);
@@ -226,7 +254,7 @@ export function plantForests(features: MapFeatures, within: Rect): number {
           continue;
         }
         const r = cellRandom(i, j, 4);
-        const plant = planting.mix.find((m) => r < m.share) ?? planting.mix[planting.mix.length - 1];
+        const plant = mix.find((m) => r < m.share) ?? mix[mix.length - 1];
         const height = plant.minHeight + (plant.maxHeight - plant.minHeight) * cellRandom(i, j, 5);
         features.trees.push({ point, kind: plant.kind, height, ...(plant.genus && { genus: plant.genus }) });
         plants.add(point);

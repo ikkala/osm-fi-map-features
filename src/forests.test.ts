@@ -52,6 +52,22 @@ test("plantForests fills woods sparsely, the same way every time, only inside th
   assert.ok(half.trees.length < west.length + 12);
 });
 
+test("plantForests plants conifers alone in needleleaved woods and broadleaved trees alone in broadleaved ones, at mixed woods' places", () => {
+  const planted = (leafType?: Area["leafType"]) => {
+    const map = features({ areas: [{ ...wood(0, 0, 90), ...(leafType && { leafType }) }] });
+    plantForests(map, EVERYWHERE);
+    return map.trees;
+  };
+  const mixed = planted();
+  const needleleaved = planted("needleleaved");
+  const broadleaved = planted("broadleaved");
+  assert.ok(needleleaved.every((t) => t.kind === "conifer"));
+  assert.ok(broadleaved.every((t) => t.kind === "broadleaved"));
+  assert.ok(broadleaved.some((t) => t.genus === "betula") && broadleaved.some((t) => t.genus === undefined));
+  assert.deepEqual(needleleaved.map((t) => t.point), mixed.map((t) => t.point));
+  assert.deepEqual(broadleaved.map((t) => t.point), mixed.map((t) => t.point));
+});
+
 test("plantForests keeps off roads, buildings, water and existing trees", () => {
   const road = { osm: "w1", kind: "residential", width: 6, layer: 0, bridge: false, tunnel: false, line: [[0, 45], [90, 45]] satisfies Point[] };
   const building = {

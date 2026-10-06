@@ -114,9 +114,10 @@ test("parseOsm reads trees, shrubs and tree rows, and what grows in woods and sc
       { type: "node", id: 43, tags: { highway: "street_lamp" }, ...at(9, 9) },
       // 20 m long: trees at 0, 6.7, 13.3 and 20 m
       { type: "way", id: 44, tags: { natural: "tree_row" }, geometry: [at(0, 50), at(20, 50)] },
-      { type: "way", id: 45, tags: { natural: "wood" }, geometry: square(100, 0, 50) },
-      { type: "way", id: 46, tags: { natural: "scrub" }, geometry: square(200, 0, 50) },
+      { type: "way", id: 45, tags: { natural: "wood", leaf_type: "needleleaved" }, geometry: square(100, 0, 50) },
+      { type: "way", id: 46, tags: { natural: "scrub", leaf_type: "broadleaved" }, geometry: square(200, 0, 50) },
       { type: "way", id: 47, tags: { leisure: "park" }, geometry: square(300, 0, 50) },
+      { type: "way", id: 48, tags: { landuse: "forest", leaf_type: "mixed" }, geometry: square(400, 0, 50) },
     ],
     origin,
   );
@@ -126,7 +127,13 @@ test("parseOsm reads trees, shrubs and tree rows, and what grows in woods and sc
   assert.deepEqual([shrub.kind, shrub.height], ["shrub", 2]);
   assert.ok(Math.abs(conifer.point[0] - 1) < 0.01 && Math.abs(conifer.point[1] - 2) < 0.01);
   assert.deepEqual(row.map((t) => t.point[0].toFixed(1)), ["0.0", "6.7", "13.3", "20.0"]);
-  assert.deepEqual(features.areas.map((a) => [a.kind, a.cover]), [["forest", "trees"], ["forest", "shrubs"], ["grass", undefined]]);
+  // only woods have a leaf type, and mixed ones none
+  assert.deepEqual(features.areas.map((a) => [a.kind, a.cover, a.leafType]), [
+    ["forest", "trees", "needleleaved"],
+    ["forest", "shrubs", undefined],
+    ["grass", undefined, undefined],
+    ["forest", "trees", undefined],
+  ]);
 });
 
 test("parseOsm leaves out ways indoors, but not the ones on from a tunnel's end, and tells the ways' storeys", () => {

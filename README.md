@@ -238,9 +238,12 @@ the trunk (3 m + 0.35 × its diameter in cm, at most 25 m). OSM's `natural=tree`
 `natural=tree_row` ways (a tree every 8 m or less) are added where the register has no tree within 4 m. Woods
 (`natural=wood`, `landuse=forest`) and scrub (`natural=scrub`) are only areas in OSM, so the import plants them,
 far sparser than real woods since every tree costs something to draw: a tree in each 9 m cell of a grid (spruce, pine
-or birch, 10–26 m), leaving 15 % of the cells empty, and in scrub mostly shrubs in 5 m cells. A plant keeps 2.5 m
-from others and clear of buildings, roads, rails, water, parking and pitches. Where it stands and what it is come
-from its grid cell alone, so every build plants the same trees. Around the centre of Tampere that is some 20 000
+or birch, 10–26 m), leaving 15 % of the cells empty, and in scrub mostly shrubs in 5 m cells. Woods tagged
+`leaf_type=needleleaved` get only spruce and pine, and `leaf_type=broadleaved` ones birch and other broadleaved trees
+(8–20 m); mixed and untagged woods get all three. A plant keeps 2.5 m from others and clear of buildings, roads,
+rails, water, parking and pitches. Where it stands comes from its grid cell alone, and what it is from the cell and
+the woods' leaf type, so every build plants the same trees, and retagging woods changes their trees but moves none.
+Around the centre of Tampere that is some 20 000
 trees, at most about 530 in a 250 m tile.
 
 Street lamps are OSM's `highway=street_lamp` nodes (about 2 100 around the centre of Tampere). Their mount comes

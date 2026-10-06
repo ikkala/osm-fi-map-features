@@ -232,6 +232,8 @@ export interface Area {
   kind: AreaKind;
   /** What grows there: woods get trees and scrub shrubs (see forests.ts) */
   cover?: "trees" | "shrubs";
+  /** Woods of conifers or of broadleaved trees alone (leaf_type); unset in mixed woods and where not known */
+  leafType?: "needleleaved" | "broadleaved";
   /** A platform's top, meters above sea level (see platforms.ts) */
   top?: number;
   polygon: Polygon;
@@ -840,12 +842,12 @@ function addPolygonFeature(features: MapFeatures, bridgeOutlines: BridgeOutline[
   }
   const kind = areaKind(tags);
   if (kind) {
-    addArea(features, osm, kind, polygon, areaCover(tags));
+    addArea(features, osm, kind, polygon, areaCover(tags), woodsLeafType(tags));
   }
 }
 
-function addArea(features: MapFeatures, osm: string, kind: AreaKind, polygon: Polygon, cover?: Area["cover"]): void {
-  features.areas.push({ osm, kind, ...(cover && { cover }), polygon });
+function addArea(features: MapFeatures, osm: string, kind: AreaKind, polygon: Polygon, cover?: Area["cover"], leafType?: Area["leafType"]): void {
+  features.areas.push({ osm, kind, ...(cover && { cover }), ...(leafType && { leafType }), polygon });
 }
 
 /** What grows in an area: trees in woods, shrubs in scrub */
@@ -854,6 +856,12 @@ function areaCover(tags: Tags): Area["cover"] {
     return "trees";
   }
   return tags.natural === "scrub" ? "shrubs" : undefined;
+}
+
+/** Woods of conifers or of broadleaved trees alone; none for mixed or untagged woods, or other areas */
+function woodsLeafType(tags: Tags): Area["leafType"] {
+  const leafType = tags.leaf_type;
+  return areaCover(tags) === "trees" && (leafType === "needleleaved" || leafType === "broadleaved") ? leafType : undefined;
 }
 
 /** A natural=tree or natural=shrub node, or a tree of a natural=tree_row */
