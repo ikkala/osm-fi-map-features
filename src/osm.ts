@@ -229,6 +229,8 @@ export interface PassageRoom {
   closed: [boolean, boolean];
   /** The room's walls, each with the room on its right (solid side left), less where in another room */
   walls: [Point, Point][];
+  /** Where the way runs on a deck through the building: its height (m above sea level), which height counts from */
+  ground?: number;
 }
 
 export type AreaKind = "water" | "grass" | "forest" | "sand" | "rock" | "pitch" | "paved" | "platform";
@@ -703,6 +705,8 @@ export interface ParseResult {
   covered: Road[];
   /** Whether a point is an end of a way indoors left out: a bridge ending there goes into a building (see setBridgeDecks) */
   indoors: (p: Point) => boolean;
+  /** Whether a road runs through buildings: a building passage, or a tunnel or covered way found to (see setBridgeDecks) */
+  throughBuildings: (road: Road) => boolean;
 }
 
 /** Steps' count (step_count=*, a whole number) and which way they climb (incline=up / down, or a slope's sign) */
@@ -727,6 +731,8 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   const maybePassages: { road: Road; passage: Passage }[] = [];
   const covered: Road[] = [];
   const levels = new Map<Road | Rail, number[]>();
+  // the roads through buildings: building passages, and tunnels and covered ways found to be
+  const through = new Set<Road>();
   // ways indoors, kept where they come out of a tunnel's end (the stairs up out of an underpass)
   const indoors: Road[] = [];
 
@@ -782,6 +788,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
           const passage = { line: points, width, height: meters(road.maxheight) ?? (walkway ? WALKWAY_PASSAGE_HEIGHT_M : PASSAGE_HEIGHT_M) };
           if (road.tunnel === "building_passage") {
             passages.push(passage);
+            through.add(way);
           } else if ((way.tunnel || road.covered === "yes") && way.layer >= -1) {
             maybePassages.push({ road: way, passage });
             if (road.covered === "yes" && !way.tunnel) {
@@ -866,11 +873,12 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   const indoorEnds = new Set(indoors.filter((r) => !kept.has(r)).flatMap((r) => [pointKey(r.line[0]), pointKey(r.line[r.line.length - 1])]));
 
   markBuildingsWithParts(features.buildings);
-  const through = new Set<Road>();
+  const found = new Set<Road>();
   for (const { road, passage } of maybePassages) {
     if (runsThroughBuildings(passage.line, features.buildings)) {
       road.tunnel = false;
       passages.push(passage);
+      found.add(road);
       through.add(road);
     }
   }
@@ -885,8 +893,9 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
     playgrounds,
     warnings,
     levels,
-    covered: covered.filter((r) => !through.has(r)),
+    covered: covered.filter((r) => !found.has(r)),
     indoors: (p) => indoorEnds.has(pointKey(p)),
+    throughBuildings: (road) => through.has(road),
   };
 }
 

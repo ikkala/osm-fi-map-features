@@ -146,3 +146,18 @@ test("a deck's crest is rounded, so it bends no more than 0.2 m over 10 m either
   assert.ok(at(50) > 101.6 - 0.3 && at(50) <= 101.6);
   assert.deepEqual([deck[0], deck[deck.length - 1]], [100, 100]);
 });
+
+test("a way through a building between two bridges' ends carries the span on through it, level with them, not down to the ground", () => {
+  // a bridge from the ground at 89 m to a building's wall at e 0, through it at e 0 .. 12, and on from 12 to 90 m
+  const ground = (e: number) => (e <= -45 ? 89 : e >= 30 ? 90 : 84);
+  const east: BridgeLine = { bridge: true, line: [[-45, 0], [0, 0]] };
+  const through: BridgeLine = { bridge: false, line: [[0, 0], [12, 0]] };
+  const west: BridgeLine = { bridge: true, line: [[12, 0], [30, 0]] };
+  setBridgeDecks([east, through, west], ground, () => false, (l) => l === through);
+  const at = (l: BridgeLine, e: number) => Math.round(deckAt(l.line, l.deck ?? [], [e, 0]) * 100) / 100;
+  assert.deepEqual([at(east, -45), at(east, 0), at(through, 6), at(west, 30)], [89, 89.6, 89.68, 90]);
+  // a way through a building not between bridges stays on the ground
+  const alone: BridgeLine = { bridge: false, line: [[100, 0], [110, 0]] };
+  setBridgeDecks([alone], ground, () => false, () => true);
+  assert.equal(alone.deck, undefined);
+});

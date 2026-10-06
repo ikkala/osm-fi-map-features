@@ -171,6 +171,28 @@ test("parseOsm tells the ends of the ways indoors it leaves out, where a bridge 
   assert.ok(!indoors(start));
 });
 
+test("parseOsm tells the ways through buildings: covered ways and tunnels found to be passages, and building passages", () => {
+  const { features, throughBuildings } = parseOsm(
+    [
+      { type: "way", id: 100, tags: { highway: "cycleway", bridge: "yes", layer: "1" }, geometry: [at(-40, 0), at(0, 0)] },
+      { type: "way", id: 101, tags: { highway: "cycleway", tunnel: "yes", covered: "yes" }, geometry: [at(0, 0), at(12, 0)] },
+      { type: "way", id: 102, tags: { highway: "cycleway", bridge: "yes", layer: "1" }, geometry: [at(12, 0), at(30, 0)] },
+      { type: "way", id: 103, tags: { highway: "footway", tunnel: "building_passage" }, geometry: [at(6, -10), at(6, 10)] },
+      { type: "way", id: 104, tags: { building: "office", "building:levels": "5" }, geometry: [at(0, -5), at(12, -5), at(12, 5), at(0, 5), at(0, -5)] },
+    ],
+    origin,
+  );
+  assert.deepEqual(
+    features.roads.map((r) => [r.osm, throughBuildings(r)]),
+    [
+      ["w100", false],
+      ["w101", true],
+      ["w102", false],
+      ["w103", true],
+    ],
+  );
+});
+
 test("parseOsm reads steps' count and which way they climb", () => {
   const { features } = parseOsm(
     [

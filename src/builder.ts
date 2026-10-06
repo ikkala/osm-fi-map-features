@@ -24,6 +24,7 @@ import { cutIntoTiles, latticeProjection, tileHeights, tileName, tilesCovering, 
 import { setPlatformTops } from "./platforms.ts";
 import { setTrackBeds } from "./trackbeds.ts";
 import { lowerUnderBridges } from "./underbridges.ts";
+import { raisePassages } from "./raisedPassages.ts";
 import { setTunnelFloors, uncoverAtGrade } from "./tunnels.ts";
 import { fetchTreeRegister, overlaps, TREE_REGISTERS, type RegisterTree, type TreeRegisterSource } from "./treeRegister.ts";
 import { assignWindows } from "./windows.ts";
@@ -160,7 +161,7 @@ export class MapBuilder {
     const osmTimestamp = response.osm3s?.timestamp_osm_base;
     logger.log(`${response.elements.length} OSM elements (${cached ? "cached, refresh to fetch again" : "fetched"}), data from ${osmTimestamp ?? "?"}`);
 
-    const { features, streetNodes, bridgeOutlines, playgrounds, warnings, levels, covered, indoors } = parseOsm(response.elements, origin);
+    const { features, streetNodes, bridgeOutlines, playgrounds, warnings, levels, covered, indoors, throughBuildings } = parseOsm(response.elements, origin);
     for (const warning of warnings) {
       logger.warn(`warning: ${warning}`);
     }
@@ -205,7 +206,7 @@ export class MapBuilder {
       logger.log(`${tunnels.floors} tunnel ways under hills and lakes get floors, ${tunnels.ramps} ways out of their portals ramps`);
       // before cutting into tiles, so a bridge's deck goes from end to end
       const ramps = (lines: { bridge: boolean; deck?: number[] }[]) => lines.filter((l) => l.deck && !l.bridge).length;
-      const stepped = setBridgeDecks(features.roads, heightAt, indoors) + setBridgeDecks(features.rails, heightAt, indoors);
+      const stepped = setBridgeDecks(features.roads, heightAt, indoors, throughBuildings) + setBridgeDecks(features.rails, heightAt, indoors);
       logger.log(`${ramps(features.roads) + ramps(features.rails)} bridge approaches raised out of the hollows under bridges, ${stepped} decks' heights told by steps`);
       // the ways leading on from a bridge's outline ramp to its deck: 8 % for people, 6 % for vehicles, 3 % for trains
       const decked = [...features.roads, ...features.rails];
@@ -220,6 +221,10 @@ export class MapBuilder {
       features.bridgeDecks = outlined.decks;
       logger.log(`${bridgeOutlines.length} bridge outlines, ${new Set(outlined.decks.map((d) => d.osm)).size} with decks for the ${outlined.ways} ways on them`);
       logger.log(`${fitLidsToDecks([...features.roads, ...features.rails])} lids lowered to the decks over them`);
+      // ways carried through buildings on a span open their walls from the deck up
+      const carried = features.roads.filter((r) => r.deck && !r.bridge && throughBuildings(r));
+      raisePassages(features.buildings, carried);
+      logger.log(`${carried.length} ways through buildings carried on bridges' spans`);
       // the decks stay straight: a way under one with too little room goes down into a cut
       const bridges = [...features.roads, ...features.rails].filter((w) => w.bridge && w.deck);
       const over = new Set<string>();

@@ -38,19 +38,25 @@ const JUNCTION_ROUNDS = 1000;
  * Returns how many points of spans steps told the height of.
  * Approaches are split off the lines leading on and get decks too. heightAt takes meters east / north. An end that
  * no line leads on from but ways indoors do (indoors) goes into a building, at whatever floor: it takes no height
- * from the ground, so the deck runs level from the span's other end.
+ * from the ground, so the deck runs level from the span's other end. A line through a building (through) from one
+ * bridge's end to another's carries the span on through it, getting a deck as the bridges do.
  */
 export function setBridgeDecks<T extends BridgeLine>(
   lines: T[],
   heightAt: (e: number, n: number) => number | undefined,
   indoors: (p: Point) => boolean = () => false,
+  through: (line: T) => boolean = () => false,
 ): number {
-  const bridges = lines.filter((l) => l.bridge && l.line.length >= 2);
   const key = (p: Point) => `${p[0]},${p[1]}`;
+  const bridgeEnds = new Set(lines.filter((l) => l.bridge && l.line.length >= 2).flatMap((l) => [key(l.line[0]), key(l.line[l.line.length - 1])]));
+  const carried = new Set(
+    lines.filter((l) => !l.bridge && l.line.length >= 2 && through(l) && bridgeEnds.has(key(l.line[0])) && bridgeEnds.has(key(l.line[l.line.length - 1]))),
+  );
+  const bridges = lines.filter((l) => (l.bridge || carried.has(l)) && l.line.length >= 2);
   // the lines leading on from bridges, by their ends
   const onward = new Map<string, T[]>();
   for (const l of lines) {
-    if (!l.bridge && l.line.length >= 2) {
+    if (!l.bridge && !carried.has(l) && l.line.length >= 2) {
       for (const p of [l.line[0], l.line[l.line.length - 1]]) {
         onward.set(key(p), [...(onward.get(key(p)) ?? []), l]);
       }
