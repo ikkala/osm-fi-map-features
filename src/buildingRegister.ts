@@ -1,4 +1,4 @@
-// Storeys, facade materials, uses and completion years from SYKE's Ryhti building register (OGC API
+// Storeys, facade and frame materials, uses and completion years from SYKE's Ryhti building register (OGC API
 // Features, one point per building, CC BY 4.0), applied to the OSM outlines the points fall in.
 import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
@@ -27,6 +27,14 @@ const FACADES: Record<string, string> = {
   Puu: "wood",
 };
 
+/** kantavien_rakenteiden_rakennusaine: the load-bearing frame's material; "Muu" (other) says nothing */
+const FRAMES: Record<string, string> = {
+  Betoni: "concrete",
+  Tiili: "brick",
+  Teräs: "steel",
+  Puu: "wood",
+};
+
 /** paaasiallinen_kayttotarkoitus: the register's main use classes */
 const USES: Record<string, BuildingUse> = {
   Pientalo: "house",
@@ -46,6 +54,8 @@ export interface RegisterBuilding {
   floors?: number;
   /** brick | concrete | wood | metal | stone */
   facade?: string;
+  /** The load-bearing frame's material: brick | concrete | steel | wood */
+  frame?: string;
   use?: BuildingUse;
   /** The year of the completion date */
   year?: number;
@@ -71,6 +81,7 @@ export function parseBuildingRegister(response: unknown): RegisterBuilding[] {
     }
     const floors = optionalNumber(field(feature, "properties", "kerrosluku"));
     const facade = FACADES[optionalString(field(feature, "properties", "julkisivumateriaali")) ?? ""];
+    const frame = FRAMES[optionalString(field(feature, "properties", "kantavien_rakenteiden_rakennusaine")) ?? ""];
     const use = USES[optionalString(field(feature, "properties", "paaasiallinen_kayttotarkoitus")) ?? ""];
     const year = completionYear(optionalString(field(feature, "properties", "valmistumispaivamaara")));
     result.push({
@@ -78,6 +89,7 @@ export function parseBuildingRegister(response: unknown): RegisterBuilding[] {
       latitude,
       ...(floors !== undefined && floors > 0 && { floors }),
       ...(facade && { facade }),
+      ...(frame && { frame }),
       ...(use && { use }),
       ...(year !== undefined && { year }),
     });
@@ -144,13 +156,15 @@ export interface RegisterMatch {
   heights: number;
   /** Buildings that got a wall material from the register */
   materials: number;
+  /** Buildings that got a frame material from the register */
+  frames: number;
   /** Register buildings inside no OSM outline */
   unmatched: number;
 }
 
 /**
- * Gives OSM buildings the storeys, facades, uses and years of the register buildings inside them (most
- * storeys, most common facade and use, earliest year); a part in an outline gets nothing, its outline does.
+ * Gives OSM buildings the storeys, facades, frames, uses and years of the register buildings inside them (most
+ * storeys, most common facade, frame and use, earliest year); a part in an outline gets nothing, its outline does.
  * OSM values and heights guessed by type are kept;
  * toPoint maps a register building to map meters.
  */
@@ -173,7 +187,7 @@ export function applyRegister(buildings: Building[], register: RegisterBuilding[
       unmatched++;
     }
   }
-  const result: RegisterMatch = { matched: inside.size, heights: 0, materials: 0, unmatched };
+  const result: RegisterMatch = { matched: inside.size, heights: 0, materials: 0, frames: 0, unmatched };
   for (const [b, rs] of inside) {
     const floors = Math.max(0, ...rs.map((r) => r.floors ?? 0));
     if (b.heightEstimated && !b.heightByType && !b.part && floors > 0) {
@@ -198,6 +212,11 @@ export function applyRegister(buildings: Building[], register: RegisterBuilding[
       b.material = facade;
       delete b.materialEstimated;
       result.materials++;
+    }
+    const frame = mostCommon(rs.map((r) => r.frame).filter((f) => f !== undefined));
+    if (frame) {
+      b.frameMaterial = frame;
+      result.frames++;
     }
   }
   return result;

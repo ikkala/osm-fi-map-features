@@ -243,7 +243,7 @@ export class MapBuilder {
       const match = applyRegister(features.buildings, register, (r) => toMeters(r.latitude, r.longitude));
       logger.log(
         `building register: ${register.length} buildings (${registerCached ? "cached" : "fetched"}), ` +
-          `${match.heights} heights and ${match.materials} wall materials set, ${match.unmatched} inside no OSM building`,
+          `${match.heights} heights, ${match.materials} wall materials and ${match.frames} frame materials set, ${match.unmatched} inside no OSM building`,
       );
       if (match.matched > 0) {
         otherAttributions.push(BUILDING_REGISTER_ATTRIBUTION);
@@ -254,7 +254,7 @@ export class MapBuilder {
     // after the register, which gives the halls their heights
     logger.log(`${openRailHalls(features.buildings, features.rails)} halls opened where railways run in`);
     // after the register, which gives the outlines their facades and years
-    logger.log(`${inheritFromOutlines(features.buildings)} building parts take a material, colour or year from their outline`);
+    logger.log(`${inheritFromOutlines(features.buildings)} building parts take a material, colour, frame, roof material or year from their outline`);
     // roof colours from the orthophoto where OSM has none
     if (mmlApiKey) {
       const roofs = features.buildings.filter((b) => !b.hasParts && !b.roofColour);

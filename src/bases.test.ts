@@ -36,6 +36,13 @@ test("setBuildingBases raises a building whose roof would be under a door of its
   assert.deepEqual([house.height, guessed.height], [9, 3.5]);
 });
 
+test("setBuildingBases stands a carport at its highest ground as a building, not at its lowest corner as a shelter", () => {
+  const carport = square(20, 6, { kind: "carport", shelter: "carport", height: 3, heightEstimated: true });
+  const shelter = square(40, 6, { kind: "roof", shelter: "roof", height: 3 });
+  assert.equal(setBuildingBases([carport, shelter], heightAt), 1);
+  assert.deepEqual([carport.base, carport.height, shelter.base], [113, 3, undefined]);
+});
+
 test("setBuildingBases gives parts the base of their building", () => {
   const outline = square(0, 30, { hasParts: true });
   const low = square(0, 5, { part: true });

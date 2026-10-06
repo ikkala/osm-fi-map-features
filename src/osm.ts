@@ -72,6 +72,8 @@ export interface Road {
   /** Steps: how many (step_count=*), and whether they climb along line or go down it (incline=*), when OSM tells */
   stepCount?: number;
   incline?: "up" | "down";
+  /** surface=* (asphalt, paving_stones, fine_gravel, ...), when OSM tells */
+  surface?: string;
 }
 
 export type Sidewalks = "both" | "left" | "right" | "none" | "separate";
@@ -136,13 +138,17 @@ export interface Building {
   /** Wall colour: building:colour or colour */
   colour?: string;
   roofColour?: string;
+  /** roof:material (roof_tiles, metal, copper, glass, grass, ...), when OSM tells */
+  roofMaterial?: string;
   /** Wall material: building:material or material, or the building register's facade */
   material?: string;
   /** The material is a guess (brick for an untagged chimney), which a building register's facade replaces */
   materialEstimated?: boolean;
+  /** The load-bearing frame's material in the building register (wood | brick | concrete | steel) */
+  frameMaterial?: string;
   /**
    * An open structure, a roof on posts: "public_transport" for a bus or tram stop shelter, another
-   * shelter_type (gazebo, ...) or "shelter" for other shelters, "roof" for building=roof (canopies)
+   * shelter_type (gazebo, ...) or "shelter" for other shelters, "roof" for building=roof (canopies), "carport" for building=carport
    */
   shelter?: string;
   /** A framework of bars, not a closed body (tower:construction=lattice or guyed_lattice) */
@@ -244,6 +250,8 @@ export interface Area {
   leafType?: "needleleaved" | "broadleaved";
   /** A platform's top, meters above sea level (see platforms.ts) */
   top?: number;
+  /** surface=* (artificial_turf, sand, asphalt, paving_stones, ...), when OSM tells */
+  surface?: string;
   polygon: Polygon;
 }
 
@@ -761,7 +769,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
       const road = tags.highway === "construction" && tags.construction ? { ...tags, highway: tags.construction } : tags;
       if (road.highway && closed && road.area === "yes") {
         // a square or a plaza drawn as an area, not a line
-        addArea(features, osm, "paved", polygon());
+        addArea(features, osm, "paved", polygon(), { surface: road.surface });
       } else if (road.highway && ROAD_WIDTHS[road.highway] !== undefined) {
         const width = roadWidth(road);
         const walkway = NOT_FOR_VEHICLES.has(road.highway);
@@ -775,6 +783,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
           ...(walkway ? (road.footway ? { footway: road.footway } : {}) : { ...sidewalks(road), ...motorAccess(road) }),
           ...access(road),
           ...(road.highway === "steps" ? stepping(road) : {}),
+          ...(road.surface && { surface: road.surface }),
           line: points,
         };
         const storeys = storeysOf(road);
@@ -917,12 +926,13 @@ function addPolygonFeature(features: MapFeatures, bridgeOutlines: BridgeOutline[
   }
   const kind = areaKind(tags);
   if (kind) {
-    addArea(features, osm, kind, polygon, areaCover(tags), woodsLeafType(tags));
+    addArea(features, osm, kind, polygon, { cover: areaCover(tags), leafType: woodsLeafType(tags), surface: tags.surface });
   }
 }
 
-function addArea(features: MapFeatures, osm: string, kind: AreaKind, polygon: Polygon, cover?: Area["cover"], leafType?: Area["leafType"]): void {
-  features.areas.push({ osm, kind, ...(cover && { cover }), ...(leafType && { leafType }), polygon });
+function addArea(features: MapFeatures, osm: string, kind: AreaKind, polygon: Polygon, extra: Pick<Area, "cover" | "leafType" | "surface"> = {}): void {
+  const { cover, leafType, surface } = extra;
+  features.areas.push({ osm, kind, ...(cover && { cover }), ...(leafType && { leafType }), ...(surface && { surface }), polygon });
 }
 
 /** What grows in an area: trees in woods, shrubs in scrub */
@@ -1091,7 +1101,7 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
   const levelCount = number(tags["building:levels"]);
   const taggedHeight = meters(tags.height) ?? meters(tags["building:height"]);
   let height = taggedHeight;
-  const shelter = tags.amenity === "shelter" ? (tags.shelter_type ?? "shelter") : kind === "roof" ? "roof" : undefined;
+  const shelter = tags.amenity === "shelter" ? (tags.shelter_type ?? "shelter") : kind === "roof" || kind === "carport" ? kind : undefined;
   if (height === undefined && levelCount === undefined && shelter === "public_transport") {
     height = STOP_SHELTER_HEIGHT_M;
   }
@@ -1144,6 +1154,7 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
     ...(roofHeight !== undefined && { roofHeight }),
     ...(colour && { colour }),
     ...(tags["roof:colour"] && { roofColour: tags["roof:colour"] }),
+    ...(tags["roof:material"] && { roofMaterial: tags["roof:material"] }),
     ...wallMaterial(tags, chimney),
     ...(year !== undefined && { year }),
     ...(shelter && { shelter }),
@@ -1647,9 +1658,9 @@ function samePoint(a: Point, b: Point | undefined): boolean {
   return b !== undefined && Math.abs(a[0] - b[0]) < 0.01 && Math.abs(a[1] - b[1]) < 0.01;
 }
 
-/** Lifts open roofs without a tagged height that a road runs under to ROOF_OVER_ROAD_M. */
+/** Lifts open roofs without a tagged height that a road runs under to ROOF_OVER_ROAD_M; a carport is for cars. */
 function raiseRoofsOverRoads(features: MapFeatures): void {
-  const roofs = features.buildings.filter((b) => b.shelter !== undefined && b.heightEstimated && b.height < ROOF_OVER_ROAD_M);
+  const roofs = features.buildings.filter((b) => b.shelter !== undefined && b.shelter !== "carport" && b.heightEstimated && b.height < ROOF_OVER_ROAD_M);
   const roads = features.roads.filter((r) => !NOT_FOR_VEHICLES.has(r.kind) && !r.tunnel);
   for (const roof of roofs) {
     const box = bounds(roof.polygon.outer);
@@ -1695,8 +1706,8 @@ export function partOutlines(buildings: Building[]): Map<Building, Building> {
 }
 
 /**
- * Gives parts what their building outline has and they do not: the wall material and colour and the year
- * (mappers tag these on the outline). Returns how many parts got any.
+ * Gives parts what their building outline has and they do not: the wall material and colour, the register's
+ * frame material, the roof material and the year (mappers tag these on the outline). Returns how many parts got any.
  */
 export function inheritFromOutlines(buildings: Building[]): number {
   let count = 0;
@@ -1711,6 +1722,14 @@ export function inheritFromOutlines(buildings: Building[]): number {
     }
     if (part.colour === undefined && outline.colour !== undefined) {
       part.colour = outline.colour;
+      got = true;
+    }
+    if (part.frameMaterial === undefined && outline.frameMaterial !== undefined) {
+      part.frameMaterial = outline.frameMaterial;
+      got = true;
+    }
+    if (part.roofMaterial === undefined && outline.roofMaterial !== undefined) {
+      part.roofMaterial = outline.roofMaterial;
       got = true;
     }
     if (part.year === undefined && outline.year !== undefined) {
@@ -1803,6 +1822,7 @@ function fillUnderFloatingParts(features: MapFeatures): Building[] {
         ...(outline.colour && { colour: outline.colour }),
         ...(outline.roofColour && { roofColour: outline.roofColour }),
         ...(outline.material && { material: outline.material }),
+        ...(outline.frameMaterial && { frameMaterial: outline.frameMaterial }),
         ...(outline.special && { special: true }),
         ...(outline.lattice && { lattice: true }),
         polygon: part.polygon,

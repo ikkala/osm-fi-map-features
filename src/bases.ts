@@ -22,8 +22,8 @@ const ROOF_THICKNESS_M = 0.3;
  * doors (a stair hall up a slope) is made taller and pushed to raised. A building or part with a minHeight and
  * nothing under it counts that minHeight from its own highest ground. Open shelters get a base only on a lid or
  * a railway platform (an area with a top) under them; one of an estimated height is made tall enough for
- * ROOM_UNDER_ROOF_M over the ways under it, standing at its lowest corner on a slope. Returns how many
- * buildings got a base.
+ * ROOM_UNDER_ROOF_M over the ways under it, standing at its lowest corner on a slope. A carport stands as a
+ * building does, so there is room for a car under all of it on a slope. Returns how many buildings got a base.
  */
 export function setBuildingBases(
   buildings: Building[],
@@ -72,7 +72,7 @@ export function setBuildingBases(
   let count = 0;
   for (const b of buildings) {
     delete b.base;
-    if (b.shelter !== undefined) {
+    if (b.shelter !== undefined && b.shelter !== "carport") {
       // on a lid, so its posts do not reach down into the tunnel, or on a platform, its roof over the platform
       const under = Math.max(lidUnder(b, lids), platformUnder(b, platforms));
       if (Number.isFinite(under)) {

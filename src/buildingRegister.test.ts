@@ -17,16 +17,19 @@ test("estimatedLevels goes by type and floor area", () => {
   assert.equal(estimatedLevels("apartments", 600), 3);
 });
 
-test("parseBuildingRegister keeps standing buildings with their storeys, facade, use and year", () => {
+test("parseBuildingRegister keeps standing buildings with their storeys, facade, frame, use and year", () => {
   const point = (lon: number, lat: number) => ({ type: "Point", coordinates: [lon, lat] });
   const parsed = parseBuildingRegister({
     features: [
       {
         geometry: point(23.1, 61.1),
-        properties: { kerrosluku: 4, julkisivumateriaali: "Tiili", paaasiallinen_kayttotarkoitus: "Kerrostalo", valmistumispaivamaara: "1962-11-30Z" },
+        properties: { kerrosluku: 4, julkisivumateriaali: "Tiili", kantavien_rakenteiden_rakennusaine: "Betoni", paaasiallinen_kayttotarkoitus: "Kerrostalo", valmistumispaivamaara: "1962-11-30Z" },
       },
-      // 29 February 1904 stands for an unknown date, and "Muu" for no known material
-      { geometry: point(23.2, 61.2), properties: { kerrosluku: null, julkisivumateriaali: "Muu", valmistumispaivamaara: "1904-02-29Z" } },
+      // 29 February 1904 stands for an unknown date, and "Muu" for no known material; a frame without a facade
+      {
+        geometry: point(23.2, 61.2),
+        properties: { kerrosluku: null, julkisivumateriaali: "Muu", kantavien_rakenteiden_rakennusaine: "Puu", valmistumispaivamaara: "1904-02-29Z" },
+      },
       { geometry: point(23.3, 61.3), properties: { kerrosluku: 1, kaytossaolo: "Purettu muusta syystä" } },
       { geometry: point(23.35, 61.35), properties: { kerrosluku: 2, purkamispaivamaara: "2020-05-01Z" } },
       // glass is not trusted
@@ -37,8 +40,8 @@ test("parseBuildingRegister keeps standing buildings with their storeys, facade,
     ],
   });
   assert.deepEqual(parsed, [
-    { longitude: 23.1, latitude: 61.1, floors: 4, facade: "brick", use: "apartments", year: 1962 },
-    { longitude: 23.2, latitude: 61.2 },
+    { longitude: 23.1, latitude: 61.1, floors: 4, facade: "brick", frame: "concrete", use: "apartments", year: 1962 },
+    { longitude: 23.2, latitude: 61.2, frame: "wood" },
     { longitude: 23.4, latitude: 61.4, floors: 6, use: "work" },
   ]);
 });
@@ -50,7 +53,7 @@ test("applyRegister replaces estimated heights and sets materials from the point
   const at = (e: number, n: number, floors?: number, facade?: string, use?: BuildingUse, year?: number): RegisterBuilding => ({ longitude: e, latitude: n, floors, facade, use, year });
   const register = [at(2, 2, 2, "wood", "house", 1950), at(8, 8, 5, "brick", "apartments", 1912), at(9, 1, 1, "brick", "apartments"), at(25, 5, 4, "concrete", undefined, 1980), at(100, 100, 3)];
   const match = applyRegister([estimated, tagged, empty], register, (r) => [r.longitude, r.latitude]);
-  assert.deepEqual(match, { matched: 2, heights: 1, materials: 1, unmatched: 1 });
+  assert.deepEqual(match, { matched: 2, heights: 1, materials: 1, frames: 0, unmatched: 1 });
   // the most storeys and the most common facade win
   assert.equal(estimated.height, 15);
   assert.equal(estimated.heightEstimated, undefined);
@@ -67,6 +70,16 @@ test("applyRegister replaces estimated heights and sets materials from the point
   assert.equal(tagged.material, "glass");
   assert.equal(empty.height, 9);
   assert.equal(empty.heightEstimated, true);
+});
+
+test("applyRegister sets the most common frame material, also where no facade is known and OSM has a material", () => {
+  const house = square(0, 10);
+  const tagged = square(20, 10, { material: "plaster" });
+  const at = (e: number, frame?: string): RegisterBuilding => ({ longitude: e, latitude: 5, frame });
+  const match = applyRegister([house, tagged], [at(2, "wood"), at(4, "wood"), at(6, "brick"), at(25, "concrete")], (r) => [r.longitude, r.latitude]);
+  assert.equal(match.frames, 2);
+  assert.deepEqual([house.frameMaterial, house.material], ["wood", undefined]);
+  assert.deepEqual([tagged.frameMaterial, tagged.material], ["concrete", "plaster"]);
 });
 
 test("applyRegister keeps a height guessed by type", () => {

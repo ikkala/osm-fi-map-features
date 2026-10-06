@@ -1,7 +1,7 @@
 // OSM parsing and tiling together, on a small hand-made Overpass response.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { areaKind, compassDegrees, meters, openDoorways, openPassages, openRailHalls, overpassQuery, parseOsm, type Building, type OverpassResponse, type Rail, type Road, type Tree } from "./osm.ts";
+import { areaKind, compassDegrees, inheritFromOutlines, meters, openDoorways, openPassages, openRailHalls, overpassQuery, parseOsm, type Building, type OverpassResponse, type Rail, type Road, type Tree } from "./osm.ts";
 import type { Point } from "./geometry.ts";
 import { LocalProjection } from "./projection.ts";
 import { cutIntoTiles, tilesCovering } from "./tiles.ts";
@@ -515,7 +515,7 @@ test("compassDegrees reads degrees and compass points", () => {
   assert.equal(compassDegrees("uphill"), undefined);
 });
 
-test("an open roof over a road is lifted above vehicles; stop shelters get their own height", () => {
+test("an open roof over a road is lifted above vehicles, but not a carport; stop shelters get their own height", () => {
   const { features } = parseOsm(
     [
       { type: "way", id: 20, tags: { highway: "primary" }, geometry: [at(0, 5), at(30, 5)] },
@@ -525,11 +525,13 @@ test("an open roof over a road is lifted above vehicles; stop shelters get their
       { type: "way", id: 23, tags: { building: "roof" }, geometry: square(10, 20, 10) },
       { type: "way", id: 24, tags: { building: "roof", height: "3.5" }, geometry: square(10, 0, 10) },
       { type: "way", id: 25, tags: { building: "yes", amenity: "shelter", shelter_type: "public_transport" }, geometry: square(40, 0, 3) },
+      // a carport over the road is for cars
+      { type: "way", id: 26, tags: { building: "carport" }, geometry: square(20, 0, 10) },
     ],
     origin,
   );
   const height = (osm: string) => defined(features.buildings.find((b) => b.osm === osm)).height;
-  assert.deepEqual([height("w22"), height("w23"), height("w24"), height("w25")], [5, 3, 3.5, 2.7]);
+  assert.deepEqual([height("w22"), height("w23"), height("w24"), height("w25"), height("w26")], [5, 3, 3.5, 2.7, 3]);
   assert.equal(defined(features.buildings.find((b) => b.osm === "w25")).shelter, "public_transport");
 });
 
@@ -552,6 +554,39 @@ test("wall material comes from building:material or material, and an untagged ch
     ["w30", "w31", "w32", "w33", "w34"].map(material),
     [["concrete", undefined], ["steel", undefined], ["brick", true], ["brick", true], [undefined, undefined]],
   );
+});
+
+test("ways and areas carry their surface, buildings their roof material, and a carport is an open roof", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 70, tags: { highway: "footway", surface: "fine_gravel" }, geometry: [at(0, 0), at(30, 0)] },
+      { type: "way", id: 71, tags: { highway: "residential" }, geometry: [at(0, 10), at(30, 10)] },
+      { type: "way", id: 72, tags: { leisure: "pitch", sport: "tennis", surface: "clay" }, geometry: square(0, 20, 20) },
+      { type: "way", id: 73, tags: { highway: "pedestrian", area: "yes", surface: "paving_stones" }, geometry: square(30, 20, 20) },
+      { type: "way", id: 74, tags: { building: "church", "roof:material": "copper" }, geometry: square(60, 0, 20) },
+      { type: "way", id: 75, tags: { building: "carport" }, geometry: square(90, 0, 6) },
+    ],
+    origin,
+  );
+  const road = (osm: string) => defined(features.roads.find((r) => r.osm === osm));
+  const area = (osm: string) => defined(features.areas.find((a) => a.osm === osm));
+  const building = (osm: string) => defined(features.buildings.find((b) => b.osm === osm));
+  assert.deepEqual([road("w70").surface, road("w71").surface], ["fine_gravel", undefined]);
+  assert.deepEqual([area("w72").kind, area("w72").surface, area("w73").kind, area("w73").surface], ["pitch", "clay", "paved", "paving_stones"]);
+  assert.equal(building("w74").roofMaterial, "copper");
+  // no guessed gabled roof over an open one
+  assert.deepEqual([building("w75").shelter, building("w75").roofShape], ["carport", undefined]);
+});
+
+test("parts take the frame and roof material of their outline", () => {
+  const outline: Building = {
+    osm: "w1", kind: "church", part: false, hasParts: true, height: 20, minHeight: 0, frameMaterial: "brick", roofMaterial: "copper",
+    polygon: { outer: [[0, 0], [20, 0], [20, 20], [0, 20]], holes: [] },
+  };
+  const part: Building = { ...outline, osm: "w2", part: true, hasParts: false, frameMaterial: undefined, roofMaterial: undefined, polygon: { outer: [[5, 5], [10, 5], [10, 10], [5, 10]], holes: [] } };
+  const tagged: Building = { ...part, osm: "w3", roofMaterial: "glass", polygon: { outer: [[12, 12], [15, 12], [15, 15], [12, 15]], holes: [] } };
+  assert.equal(inheritFromOutlines([outline, part, tagged]), 2);
+  assert.deepEqual([part.frameMaterial, part.roofMaterial, tagged.frameMaterial, tagged.roofMaterial], ["brick", "copper", "brick", "glass"]);
 });
 
 test("wall colour comes from building:colour or colour", () => {

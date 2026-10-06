@@ -8,7 +8,7 @@ lamps, crossings, traffic signals, gates, fences and walls, playground equipment
 - the ground heights of the [National Land Survey of Finland](https://www.maanmittauslaitos.fi/en)'s
   (Maanmittauslaitos, MML) 2 m elevation model, for tile heights, bridge decks and where buildings stand, and
   roof colours from its orthophoto (needs a free API key from https://omatili.maanmittauslaitos.fi)
-- storeys, facades, uses and completion years from the Finnish building register, which the Finnish
+- storeys, facades, frames, uses and completion years from the Finnish building register, which the Finnish
   Environment Institute (Syke) publishes for the whole country in
   [Ryhti](https://ryhti.syke.fi/palvelut/palvelut-tiedon-hyodyntajille/)
 - street and park trees from the tree registers of the cities that publish theirs (for now Tampere).
@@ -84,7 +84,8 @@ Buildings without `height` or `building:levels` in OSM get their storeys from th
 (`kerrosluku`), as Ryhti publishes it in the OGC API Features collection `avoimet_rakennukset` at
 `paikkatiedot.ymparisto.fi` (a point per building, matched to the OSM outline it is in; demolished ones left out),
 which also gives most buildings their facade material (brick, concrete, wood, ...; `julkisivumateriaali`) unless OSM
-has `building:material` or `material`, and their main use (`use`, see windows below). The rest get a guess: one storey for sheds
+has `building:material` or `material`, the material of their load-bearing frame (`frameMaterial`: wood, brick, concrete
+or steel; `kantavien_rakenteiden_rakennusaine`), also where the facade is not known, and their main use (`use`, see windows below). The rest get a guess: one storey for sheds
 and anything under 40 m², two for houses and anything under 150 m², three otherwise. Chimneys, towers, water towers,
 silos, tanks, gasometers and ventilation shafts (`man_made=*`) are buildings even without `building`. These and
 churches, whose storeys say little about their height, are guessed by type from the base's longest side instead
@@ -93,7 +94,11 @@ register's storeys do not replace that. A chimney with no material in OSM or the
 as Tampere's old factory chimneys are (see [Measured in Tampere](#measured-in-tampere)). The walls' colour is
 `building:colour`, else `colour`, which towers and other `man_made=*` structures are tagged with. A tower of
 `tower:construction=lattice` or `guyed_lattice` is a framework of bars (`lattice`), not a closed body, such as
-Pispalan haulitorni, and so is the filler under a part on top of one.
+Pispalan haulitorni, and so is the filler under a part on top of one. A roof's material is `roof:material`
+(`roofMaterial`: roof_tiles, metal, copper, glass, grass, ...). A carport (`building=carport`) is an open roof on posts
+as a canopy is (`shelter`), but stands at its highest ground as a building does, so a car fits under all of it on a
+slope, and is not lifted over vehicles on a road under it. Parts without a frame or roof material take their outline's. Ways and ground areas
+carry their `surface` (asphalt, paving_stones, fine_gravel, artificial_turf, clay, ...) when OSM has one.
 
 The register used to come from the City of Tampere's own
 [building register](https://data.tampere.fi/data/dataset/tampereen-rakennukset), which is the same national register.
