@@ -2,7 +2,6 @@
 // one end of a span (bridge ways joined end to end) to the other. The model smooths the cut under a
 // bridge into a wider hollow, so ends are taken where the approach stops rising steeply.
 import type { Point } from "./geometry.ts";
-import { crossing, NOT_FOR_VEHICLES, type Rail, type Road } from "./osm.ts";
 
 export interface BridgeLine {
   bridge: boolean;
@@ -18,17 +17,6 @@ const APPROACH_REACH_M = 24;
 const APPROACH_RISE_M = 0.2;
 /** The hollow's bottom may reach on this far from the bridge's end before the ground starts rising (m) */
 const APPROACH_LEVEL_M = 6;
-/** Room a bridge leaves over a way under it (m), and its deck's thickness */
-const ROOM_OVER_M = { people: 2.7, vehicles: 4.2, trams: 4.7, trains: 5.5 };
-const DECK_THICKNESS_M = 1;
-/** A deck needing to rise more than this (m) is left as it is: the model's ground under a bridge spans the gap from
- * the ground around it, and may be far over the way there */
-const MAX_LIFT_M = 3;
-/** The bridge's other points rise toward the deck over such a way no steeper than this, for people, vehicles and trains */
-const RISE_GRADE = { people: 0.08, vehicles: 0.06, trains: 0.03 };
-/** The deck is that high over the way's width and this far (m) either side */
-const PLATEAU_SIDE_M = 1;
-const TRAMS = new Set(["tram", "light_rail"]);
 /** Maximum rounds of junction height averaging */
 const JUNCTION_ROUNDS = 1000;
 
@@ -277,152 +265,4 @@ export function deckAt(line: Point[], deck: number[], p: Point): number {
     }
   }
   return height;
-}
-
-/**
- * Lifts bridge decks to leave room over the ways under them: the elevation model leaves out a bridge's ramps and
- * steps, so a deck from the ground at its ends is often too low over a road or railway it crosses. Where a way
- * crosses under a bridge line (at a lower layer, a bridge at least at layer 1; not in a tunnel) with less than ROOM_OVER_M and the deck's
- * thickness over its ground (or floor), and at most MAX_LIFT_M more than the deck there, the deck is that high over the way's width and a meter either side (the
- * line gets points there), and the other points of the bridge (its lines joined end to end) rise toward it no
- * steeper than RISE_GRADE; the bridge's ends stay. Returns how many crossings lifted a deck.
- */
-export function raiseDecksOverWays(bridges: (Road | Rail)[], ways: (Road | Rail)[], heightAt: (e: number, n: number) => number | undefined): number {
-  const under = ways.filter((w) => !w.bridge && !w.tunnel && !w.deck && w.line.length >= 2);
-  const lines = bridges.filter((b) => b.bridge && b.deck && b.line.length >= 2);
-  // the plateaus over the ways under each line: the points to add, by segment, and their heights
-  const plateaus = new Map<Road | Rail, { i: number; at: number; height: number }[]>();
-  let count = 0;
-  for (const bridge of lines) {
-    const deck = bridge.deck ?? [];
-    for (let i = 0; i + 1 < bridge.line.length; i++) {
-      const [a, c] = [bridge.line[i], bridge.line[i + 1]];
-      const length = Math.hypot(c[0] - a[0], c[1] - a[1]);
-      for (const way of under) {
-        // a bridge is over the ground's layer, tagged or not
-        if (way.layer >= Math.max(bridge.layer, 1) || length === 0) {
-          continue;
-        }
-        const room = "width" in way ? (NOT_FOR_VEHICLES.has(way.kind) ? ROOM_OVER_M.people : ROOM_OVER_M.vehicles) : TRAMS.has(way.kind) ? ROOM_OVER_M.trams : ROOM_OVER_M.trains;
-        const wayWidth = ("width" in way ? way.width : 3) + 2 * PLATEAU_SIDE_M;
-        for (let k = 0; k + 1 < way.line.length; k++) {
-          const hit = crossing(a, c, way.line[k], way.line[k + 1], wayWidth);
-          if (!hit || hit.at <= 0 || hit.at >= 1) {
-            continue;
-          }
-          const p: Point = [a[0] + (c[0] - a[0]) * hit.at, a[1] + (c[1] - a[1]) * hit.at];
-          const ground = way.floor ? deckAt(way.line, way.floor, p) : heightAt(...p);
-          const needed = ground === undefined ? undefined : ground + room + DECK_THICKNESS_M;
-          const here = deck[i] + (deck[i + 1] - deck[i]) * hit.at;
-          if (needed !== undefined && needed > here && needed - here <= MAX_LIFT_M) {
-            const half = hit.half / length;
-            const list = plateaus.get(bridge) ?? [];
-            for (const at of [hit.at - half, hit.at, hit.at + half]) {
-              if (at > 0 && at < 1) {
-                list.push({ i, at, height: needed });
-              }
-            }
-            plateaus.set(bridge, list);
-            count++;
-          }
-        }
-      }
-    }
-  }
-  if (count === 0) {
-    return 0;
-  }
-  // the plateaus' points into their lines, the deck between linear
-  const peaks = new Map<Road | Rail, Set<number>>();
-  for (const [bridge, list] of plateaus) {
-    const deck = bridge.deck ?? [];
-    list.sort((x, y) => x.i - y.i || x.at - y.at);
-    const line: Point[] = [];
-    const heights: number[] = [];
-    const top = new Set<number>();
-    for (let i = 0; i < bridge.line.length; i++) {
-      line.push(bridge.line[i]);
-      heights.push(deck[i]);
-      const [a, c] = [bridge.line[i], bridge.line[i + 1]];
-      for (const { at, height } of list.filter((r) => r.i === i)) {
-        top.add(line.length);
-        line.push([a[0] + (c[0] - a[0]) * at, a[1] + (c[1] - a[1]) * at]);
-        heights.push(height);
-      }
-    }
-    bridge.line = line;
-    bridge.deck = heights;
-    peaks.set(bridge, top);
-  }
-  // the bridges: lines joined end to end where exactly two meet; their points in order and how far along
-  const key = (p: Point) => `${p[0]},${p[1]}`;
-  const byEnd = new Map<string, (Road | Rail)[]>();
-  for (const b of lines) {
-    for (const p of [b.line[0], b.line[b.line.length - 1]]) {
-      byEnd.set(key(p), [...(byEnd.get(key(p)) ?? []), b]);
-    }
-  }
-  const done = new Set<Road | Rail>();
-  for (const start of plateaus.keys()) {
-    if (done.has(start)) {
-      continue;
-    }
-    // walk to one end of the chain, then collect it from there
-    let first: Road | Rail = start;
-    let atStart = true;
-    const seen = new Set([start]);
-    for (;;) {
-      const free: Point = atStart ? first.line[0] : first.line[first.line.length - 1];
-      const next: (Road | Rail)[] = (byEnd.get(key(free)) ?? []).filter((b) => b !== first);
-      if (next.length !== 1 || seen.has(next[0])) {
-        break;
-      }
-      const n: Road | Rail = next[0];
-      seen.add(n);
-      atStart = key(n.line[n.line.length - 1]) === key(free);
-      first = n;
-    }
-    // each point once; the point a line shares with the one before is that one's twin
-    const chain: { bridge: Road | Rail; i: number; twins: { bridge: Road | Rail; i: number }[] }[] = [];
-    let line: Road | Rail = first;
-    let forward = atStart;
-    for (;;) {
-      done.add(line);
-      const indices = line.line.map((_, i) => i);
-      for (const i of forward ? indices : indices.reverse()) {
-        if (chain.length > 0 && i === (forward ? 0 : line.line.length - 1)) {
-          chain[chain.length - 1].twins.push({ bridge: line, i });
-        } else {
-          chain.push({ bridge: line, i, twins: [] });
-        }
-      }
-      const end: Point = forward ? line.line[line.line.length - 1] : line.line[0];
-      const next: (Road | Rail)[] = (byEnd.get(key(end)) ?? []).filter((b) => b !== line);
-      if (next.length !== 1 || done.has(next[0])) {
-        break;
-      }
-      line = next[0];
-      forward = key(line.line[0]) === key(end);
-    }
-    const along = [0];
-    for (let j = 1; j < chain.length; j++) {
-      const [p, q] = [chain[j - 1].bridge.line[chain[j - 1].i], chain[j].bridge.line[chain[j].i]];
-      along.push(along[j - 1] + Math.hypot(q[0] - p[0], q[1] - p[1]));
-    }
-    const height = (j: number) => (chain[j].bridge.deck ?? [])[chain[j].i];
-    const tops = chain.map((c, j) => (peaks.get(c.bridge)?.has(c.i) ? j : -1)).filter((j) => j >= 0);
-    const grade = "width" in start ? (NOT_FOR_VEHICLES.has(start.kind) ? RISE_GRADE.people : RISE_GRADE.vehicles) : RISE_GRADE.trains;
-    const raised = chain.map((_, j) => Math.max(height(j), ...tops.map((k) => height(k) - grade * Math.abs(along[j] - along[k]))));
-    chain.forEach(({ bridge, i, twins }, j) => {
-      if (j > 0 && j + 1 < chain.length) {
-        for (const point of [{ bridge, i }, ...twins]) {
-          const deck = point.bridge.deck;
-          if (deck) {
-            deck[point.i] = raised[j];
-          }
-        }
-      }
-    });
-  }
-  return count;
 }

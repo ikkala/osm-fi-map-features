@@ -5,7 +5,7 @@ import { applyAges } from "./ages.ts";
 import { applyRegister, BUILDING_REGISTER_ATTRIBUTION, fetchBuildingRegister } from "./buildingRegister.ts";
 import { leaveOutOnDecks, openBarriers } from "./barriers.ts";
 import { MAX_PLINTH_M, setBuildingBases } from "./bases.ts";
-import { raiseDecksOverWays, setBridgeDecks } from "./bridges.ts";
+import { setBridgeDecks } from "./bridges.ts";
 import { setOutlineDecks, standOnDecks } from "./decks.ts";
 import { businessQuery, parseBusinesses, placeBusinesses } from "./businesses.ts";
 import { coverCutTunnels, fitLidsToDecks } from "./cuts.ts";
@@ -22,6 +22,7 @@ import { placeStreetNodes } from "./streets.ts";
 import { cutIntoTiles, latticeProjection, tileHeights, tileName, tilesCovering, type Tile, type TileKey } from "./tiles.ts";
 import { setPlatformTops } from "./platforms.ts";
 import { setTrackBeds } from "./trackbeds.ts";
+import { lowerUnderBridges } from "./underbridges.ts";
 import { setTunnelFloors, uncoverAtGrade } from "./tunnels.ts";
 import { fetchTreeRegister, overlaps, TREE_REGISTERS, type RegisterTree, type TreeRegisterSource } from "./treeRegister.ts";
 import { assignWindows } from "./windows.ts";
@@ -206,12 +207,15 @@ export class MapBuilder {
       setBridgeDecks(features.roads, heightAt);
       setBridgeDecks(features.rails, heightAt);
       logger.log(`${ramps(features.roads) + ramps(features.rails)} bridge approaches raised out of the hollows under bridges`);
-      const ways = [...features.roads, ...features.rails];
-      logger.log(`${raiseDecksOverWays(ways, ways, heightAt)} bridge decks lifted over the ways under them`);
       const outlined = setOutlineDecks(bridgeOutlines, [...features.roads, ...features.rails]);
       features.bridgeDecks = outlined.decks;
       logger.log(`${bridgeOutlines.length} bridge outlines, ${new Set(outlined.decks.map((d) => d.osm)).size} with decks for the ${outlined.ways} ways on them`);
       logger.log(`${fitLidsToDecks([...features.roads, ...features.rails])} lids lowered to the decks over them`);
+      // the decks stay straight: a way under one with too little room goes down into a cut
+      const bridges = [...features.roads, ...features.rails].filter((w) => w.bridge && w.deck);
+      const over = new Set<string>();
+      const cuts = lowerUnderBridges(features.roads, bridges, bridgeOutlines, heightAt, over, features.rails) + lowerUnderBridges(features.rails, bridges, bridgeOutlines, heightAt, over, features.roads);
+      logger.log(`${cuts} ways lowered into cuts under ${over.size} bridges too low over them (their ends may be too low): ${[...over].join(", ")}`);
       // after the decks: the railways end at their bridges' and approaches' heights
       logger.log(`${setTrackBeds(features.rails, heightAt)} railway lines get smoothed track beds`);
       logger.log(`${setPlatformTops(features.areas, heightAt)} railway platforms get their top`);
