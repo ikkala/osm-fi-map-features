@@ -139,6 +139,8 @@ export interface Building {
    * it slopes down to
    */
   roofAngle?: number;
+  /** Steps (building:part=steps): how many (step_count=*), when OSM tells; they climb against a skillion roof's slope */
+  stepCount?: number;
   /** Wall colour: building:colour or colour */
   colour?: string;
   roofColour?: string;
@@ -1152,6 +1154,7 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
     roofHeight = Math.min(roofHeight ?? Math.min(roof.guessedHeight, (height - minHeight) / 2), height - minHeight);
   }
   const roofHeightEstimated = roof !== undefined && taggedRoofHeight === undefined && !roofLevels;
+  const stepCount = kind === "steps" ? stepping(tags).stepCount : undefined;
   const colour = tags["building:colour"] ?? tags.colour;
   return {
     osm,
@@ -1168,6 +1171,7 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
     ...(tags["roof:shape"] === undefined && { roofShapeEstimated: true }),
     ...(roofHeight !== undefined && { roofHeight }),
     ...(roofHeightEstimated && { roofHeightEstimated }),
+    ...(stepCount !== undefined && { stepCount }),
     ...(colour && { colour }),
     ...(tags["roof:colour"] && { roofColour: tags["roof:colour"] }),
     ...(tags["roof:material"] && { roofMaterial: tags["roof:material"] }),
@@ -1231,7 +1235,8 @@ function pitchedRoof(
     const low = taggedHeight === undefined || taggedHeight <= 2 * LEVEL_HEIGHT_M + MAX_GUESSED_ROOF_M;
     shape = (GABLED_BUILDINGS.has(kind) || small) && low ? "gabled" : undefined;
   }
-  if (shape === undefined || box.width < 1) {
+  // steps are often narrow, and their roof tells which way they climb
+  if (shape === undefined || (box.width < 1 && kind !== "steps")) {
     return undefined;
   }
   let angle = tags["roof:orientation"] === "across" ? box.angle + Math.PI / 2 : box.angle;

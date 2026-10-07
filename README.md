@@ -148,6 +148,8 @@ churches, and `building=yes` / `residential` of at most 150 m² and two storeys,
 outline is nearly a rectangle. The ridge runs along the outline's long side unless `roof:orientation=across`; a
 skillion roof slopes down to `roof:direction`. The roof's height is `roof:height` or `roof:levels`, else a 27°
 slope (10° for skillion, at most 6 m): on top of the storeys, or within a tagged `height`, taking at most half of it.
+Outlines under 1 m wide get no roof, except steps (`building:part=steps`), whose skillion roof is the slope they climb;
+they also tell how many steps they have (`step_count`).
 
 Where a city publishes its buildings in 3D, the measured tops of their roofs replace these guesses (`src/roofTops.ts`).
 `ROOF_TOP_SOURCES` lists the open layers known, each with the area it covers, and a map takes those it reaches into

@@ -394,6 +394,31 @@ test("pitched roofs: shape, ridge direction and height from OSM or guessed", () 
   );
 });
 
+test("steps (building:part=steps) tell their count and keep a skillion roof however narrow", () => {
+  const { features } = parseOsm(
+    [
+      // three steps 0.6 m deep, sloping down to the south; five 5 m deep, sloping down to the west, with no count
+      {
+        type: "way",
+        id: 50,
+        tags: { "building:part": "steps", height: "0.5", "roof:shape": "skillion", "roof:height": "0.5", "roof:direction": "S", step_count: "3" },
+        geometry: rectangle(0, 0, 3, 0.6),
+      },
+      { type: "way", id: 51, tags: { "building:part": "steps", height: "1", "roof:shape": "skillion", "roof:height": "1", "roof:direction": "W" }, geometry: rectangle(10, 0, 2, 5) },
+      // as narrow a building keeps no roof, and other buildings no count
+      { type: "way", id: 52, tags: { building: "yes", "roof:shape": "skillion", "roof:direction": "S", step_count: "3" }, geometry: rectangle(20, 0, 3, 0.6) },
+    ],
+    origin,
+  );
+  const steps = (osm: string) => {
+    const b = defined(features.buildings.find((x) => x.osm === osm));
+    return [b.stepCount, b.roofShape, b.roofAngle === undefined ? undefined : Math.round(b.roofAngle), b.roofHeight];
+  };
+  assert.deepEqual(steps("w50"), [3, "skillion", 270, 0.5]);
+  assert.deepEqual(steps("w51"), [undefined, "skillion", 180, 1]);
+  assert.deepEqual(steps("w52").slice(0, 2), [undefined, undefined]);
+});
+
 test("a way through a building opens its walls and is drawn on the ground", () => {
   const { features } = parseOsm(
     [
