@@ -19,6 +19,7 @@ import { parsePlayEquipment, placePlayEquipment, playgroundQuery } from "./playg
 import { fetchRoofColours, ORTHO_ATTRIBUTION } from "./ortho.ts";
 import { bounds, fetchOverpass, inheritFromOutlines, LEVEL_HEIGHT_M, NOT_FOR_VEHICLES, openDoorways, openRailHalls, overpassQuery, parseOsm, type Building, type GeoBox } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
+import { dropStepsInParts } from "./stairs.ts";
 import { placeStreetNodes } from "./streets.ts";
 import { cutIntoTiles, latticeProjection, tileHeights, tileName, tilesCovering, type Tile, type TileKey } from "./tiles.ts";
 import { setPlatformTops } from "./platforms.ts";
@@ -172,6 +173,7 @@ export class MapBuilder {
     for (const warning of warnings) {
       logger.warn(`warning: ${warning}`);
     }
+    logger.log(`${dropStepsInParts(features.roads, features.buildings)} ways of steps inside steps mapped as building parts left out`);
     // simplify lines but keep the points other ways join at (tunnel networks are found by shared points)
     const ways = [...features.roads, ...features.rails];
     const uses = new Map<string, number>();
