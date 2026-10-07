@@ -2,7 +2,7 @@
 // (from the highest of their decks at one end to that at the other), the ways leading on meet it, and the
 // outline is triangulated in short pieces with the deck's heights so the area between the ways, and trees and
 // lamps on it, have a deck.
-import { deckAt, pointAlong, upperHull } from "./bridges.ts";
+import { crests, deckAt, pointAlong, rounded, upperHull } from "./bridges.ts";
 import { dedupe, distanceToSegment, nearestOnLine, orientedBox, pointInPolygon, pointInRing, ringArea, triangulate, type Point, type Polygon, type Ring } from "./geometry.ts";
 import { bounds, crossing, type BridgeDeck, type BridgeOutline } from "./osm.ts";
 
@@ -32,6 +32,8 @@ const RAMP_STEP_M = 2;
  * over this much more (m) */
 const END_M = 2;
 const END_SLOPE_M = 10;
+/** The ways on an outline run mostly one way when their directions add up to this share of their length (1: all one way) */
+const WAYS_ALIGNED = 0.7;
 /** The ways on an outline get a point at least this often (m), so their decks follow the bridge's */
 const LINE_STEP_M = 5;
 /** The pieces of an outline are this long (m) along the bridge */
@@ -77,7 +79,7 @@ export function setOutlineDecks<T extends DeckLine>(
   // the ends of the ways leading on, and the deck heights they are to meet
   const meets = new Map<T, { start?: number; end?: number }>();
   for (const { outline, members } of outlined) {
-    const { angle } = orientedBox(outline.polygon.outer);
+    const angle = waysAngle(members, outline.polygon) ?? orientedBox(outline.polygon.outer).angle;
     const u: Point = [Math.cos(angle), Math.sin(angle)];
     const along = (p: Point) => p[0] * u[0] + p[1] * u[1];
     const profile = deckProfile(members, outline.polygon, along);
@@ -357,8 +359,32 @@ function part(line: Point[], along: number[], from: number, to: number, step: nu
 }
 
 /**
+ * The way the ways on an outline run (radians, either way along them), weighted by their lengths inside it: a bridge
+ * may be wider than long (a wide road over a narrow one), so its outline's shape does not tell. Undefined where they
+ * do not run mostly one way (WAYS_ALIGNED; a junction on a bridge), or have no length inside it.
+ */
+function waysAngle(members: DeckLine[], polygon: Polygon): number | undefined {
+  // doubled angles, so a way and the same way reversed add up
+  let [c, s, total] = [0, 0, 0];
+  for (const m of members) {
+    for (let i = 1; i < m.line.length; i++) {
+      const [a, b] = [m.line[i - 1], m.line[i]];
+      if (pointInPolygon([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], polygon)) {
+        const [de, dn] = [b[0] - a[0], b[1] - a[1]];
+        const length = Math.hypot(de, dn);
+        const doubled = 2 * Math.atan2(dn, de);
+        c += length * Math.cos(doubled);
+        s += length * Math.sin(doubled);
+        total += length;
+      }
+    }
+  }
+  return total > 0 && Math.hypot(c, s) >= WAYS_ALIGNED * total ? Math.atan2(s, c) / 2 : undefined;
+}
+
+/**
  * The deck's height by meters along the bridge: the upper hull of its ways' decks, straight where they are and bending
- * one way only where they rise to a crest, and on straight past its ends
+ * one way only where they rise to a crest, rounded there as a bridge's (see setBridgeDecks), and on straight past its ends
  */
 function deckProfile(members: DeckLine[], polygon: Polygon, along: (p: Point) => number): (t: number) => number {
   const points: { t: number; h: number }[] = [];
@@ -388,14 +414,8 @@ function deckProfile(members: DeckLine[], polygon: Polygon, along: (p: Point) =>
   const last = Math.max(...points.filter((p) => p.t >= t1 - END_M).map((p) => p.h));
   const inner = points.filter((p) => p.t > t0 + END_M && p.t < t1 - END_M).map(({ t, h }) => ({ d: t, h }));
   const hull = upperHull([{ d: t0, h: first }, ...inner, { d: t1, h: last }]);
-  const on = (t: number) => {
-    let i = 1;
-    while (i < hull.length - 1 && t > hull[i].d) {
-      i++;
-    }
-    const [p, q] = [hull[i - 1], hull[i]];
-    return p.h + ((q.h - p.h) * (t - p.d)) / (q.d - p.d || 1);
-  };
+  const curves = crests(hull);
+  const on = (t: number) => rounded(hull, curves, t);
   if (t1 - t0 < 1e-9) {
     return () => first;
   }

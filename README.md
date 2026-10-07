@@ -232,7 +232,9 @@ way leads on from but ways indoors do (`indoor=yes`, left out) goes into a build
 tower's top: it takes no height from the ground, and the deck runs level from the span's other end. Steps up to a
 point of a span with a count and a way they climb (`step_count`, `incline`) tell its height, 0.16 m a step over the
 ground at their foot; the deck then runs straight between the ends and these heights on their upper hull, so it
-may rise to a crest and fall again but never dips. A bridge's outline follows the upper hull of its ways' decks. A tunnel or covered way through a building
+may rise to a crest and fall again but never dips. A bridge's outline follows the upper hull of its ways' decks, its crests rounded
+as a bridge's, along the way its ways run where they run mostly one way (a bridge may be wider than long), else along
+its longer side. A tunnel or covered way through a building
 from one bridge's end to another's (a footbridge through a building's upper floor) carries the span on through it,
 with a deck as the bridges have; the building's openings and the way's room through it then start at the deck
 (`Opening.ground`, `PassageRoom.ground`), and `parseOsm` tells the roads through buildings (`throughBuildings`). The model smooths the cut under a bridge into a

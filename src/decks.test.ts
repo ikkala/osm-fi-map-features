@@ -211,15 +211,20 @@ test("a way on a sloping outline reaching a little past it goes on at the same s
   assert.ok(Math.abs((at(104) - at(100)) / 4 - (at(100) - at(50)) / 50) < 0.001);
 });
 
-test("an outline's deck keeps a crest its ways' decks have, bending one way only", () => {
+test("an outline's deck keeps a crest its ways' decks have, bending one way only, rounded as a bridge's", () => {
   const crest: DeckLine = { bridge: true, line: [[0, 0], [50, 0], [100, 0]], deck: [100, 104, 100] };
   // a footway beside it with a dip, which the deck does not follow
   const dip: DeckLine = { bridge: true, line: [[0, 5], [50, 5], [100, 5]], deck: [100, 99, 100] };
   setOutlineDecks([outline], [crest, dip]);
   const at = (w: DeckLine, p: Point) => deckAt(w.line, w.deck ?? [], p);
-  assert.ok(Math.abs(at(crest, [50, 0]) - 104) < 0.1);
-  assert.ok(Math.abs(at(dip, [50, 5]) - 104) < 0.1);
+  // the grade turns from 8 % up to 8 % down over a curve as long as the stretches beside it allow (50 m), so the
+  // crest is 1 m under where the straight stretches meet
+  assert.ok(Math.abs(at(crest, [50, 0]) - 103) < 0.1, `${at(crest, [50, 0])}`);
+  assert.ok(Math.abs(at(dip, [50, 5]) - 103) < 0.1);
   assert.ok(Math.abs(at(dip, [25, 5]) - 102) < 0.1);
+  // and bends evenly: 10 m either side of the crest it is 0.2 m off the line between, not 0.8 m
+  const bend = at(crest, [50, 0]) - (at(crest, [40, 0]) + at(crest, [60, 0])) / 2;
+  assert.ok(bend < 0.25, `bends ${bend} m`);
 });
 
 test("a way reaching a little past an outline where its ways end at different heights goes on at the deck's slope, not plunging", () => {
@@ -230,4 +235,32 @@ test("a way reaching a little past an outline where its ways end at different he
   setOutlineDecks([outline], [road, low, past]);
   const at = (p: Point) => deckAt(past.line, past.deck ?? [], p);
   assert.ok(Math.abs(at([104, -5]) - 100) < 0.2, `at the end ${at([104, -5])}`);
+});
+
+test("an outline wider than long (a wide road over a narrow one) has its deck along its ways, not across them", () => {
+  // 60 m across, 36 m along the two carriageways, which rise 1.2 m over it
+  const wide: BridgeOutline = { osm: "w2", polygon: { outer: [[-30, -1], [30, -1], [30, 35], [-30, 35]], holes: [] } };
+  const west: DeckLine = { bridge: true, line: [[-8, 0], [-8, 34]], deck: [100, 101.2] };
+  const east: DeckLine = { bridge: true, line: [[8, 0], [8, 34]], deck: [100, 101.2] };
+  setOutlineDecks([wide], [west, east]);
+  // (the highest deck within 2 m of an end is the deck's height there, a little over the lower end's)
+  const near = (w: DeckLine, p: Point, h: number) => assert.ok(Math.abs(deckAt(w.line, w.deck ?? [], p) - h) < 0.1, `${deckAt(w.line, w.deck ?? [], p)} at ${p}, not ${h}`);
+  near(west, [-8, 0], 100);
+  near(west, [-8, 17], 100.6);
+  near(west, [-8, 34], 101.2);
+  near(east, [8, 0], 100);
+  near(east, [8, 34], 101.2);
+});
+
+test("an outline whose ways run many ways (a junction on a bridge) has its deck along its longer side", () => {
+  // 60 m along e, 50 m across; a way along it rising 3 m, and two longer ones across it, level at its heights there
+  const junction: BridgeOutline = { osm: "w3", polygon: { outer: [[-1, -25], [61, -25], [61, 25], [-1, 25]], holes: [] } };
+  const along: DeckLine = { bridge: true, line: [[0, 0], [50, 0]], deck: [100, 103] };
+  const west: DeckLine = { bridge: true, line: [[15, -24], [15, 24]], deck: [100.9, 100.9] };
+  const east: DeckLine = { bridge: true, line: [[45, -24], [45, 24]], deck: [102.7, 102.7] };
+  setOutlineDecks([junction], [along, west, east]);
+  const near = (w: DeckLine, p: Point, h: number) => assert.ok(Math.abs(deckAt(w.line, w.deck ?? [], p) - h) < 0.15, `${deckAt(w.line, w.deck ?? [], p)} at ${p}, not ${h}`);
+  near(along, [0, 0], 100);
+  near(along, [25, 0], 101.5);
+  near(along, [50, 0], 103);
 });

@@ -249,7 +249,7 @@ export function upperHull(points: { d: number; h: number }[]): { d: number; h: n
   return hull;
 }
 
-interface Crest {
+export interface Crest {
   /** Where the curve starts and its length along the span (m), the height and grade there, and the change of grade */
   from: number;
   length: number;
@@ -259,7 +259,7 @@ interface Crest {
 }
 
 /** The curves rounding a profile's crests: CREST_RADIUS_M, no longer than the stretches on either side */
-function crests(profile: { d: number; h: number }[]): Crest[] {
+export function crests(profile: { d: number; h: number }[]): Crest[] {
   const curves: Crest[] = [];
   for (let i = 1; i + 1 < profile.length; i++) {
     const [p, q, r] = [profile[i - 1], profile[i], profile[i + 1]];
@@ -274,7 +274,7 @@ function crests(profile: { d: number; h: number }[]): Crest[] {
 }
 
 /** The height d along a profile, on its crests' curves where they are */
-function rounded(profile: { d: number; h: number }[], curves: Crest[], d: number): number {
+export function rounded(profile: { d: number; h: number }[], curves: Crest[], d: number): number {
   const curve = curves.find((c) => d >= c.from && d <= c.from + c.length);
   if (!curve) {
     return along(profile, d);
