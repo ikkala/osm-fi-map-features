@@ -161,3 +161,65 @@ test("a way through a building between two bridges' ends carries the span on thr
   setBridgeDecks([alone], ground, () => false, () => true);
   assert.equal(alone.deck, undefined);
 });
+
+test("a way above the ground that is no bridge, where steps come up to its end, is carried at the height they tell", () => {
+  // straight steps above the ground from the street at 103.2 m down to where a spiral of 24 steps goes on down to a
+  // footway at 98.15 m; the ground under them is 98.9 m
+  const ground = (e: number, n: number) => (e <= 0 ? 103.2 : n < -5 ? 98.15 : 98.9);
+  const street: BridgeLine = { bridge: false, line: [[-10, 0], [0, 0]] };
+  const straight: BridgeLine = { bridge: false, layer: 1, line: [[0, 0], [13, 0]] };
+  const spiral: BridgeLine = { bridge: false, line: [[13, 0], [16, -3], [13, -6], [10, -3], [13, -10]], stepCount: 24, incline: "down" };
+  const footway: BridgeLine = { bridge: false, line: [[13, -10], [20, -10]] };
+  setBridgeDecks([street, straight, spiral, footway], ground);
+  const at = (l: BridgeLine, p: Point) => Math.round(deckAt(l.line, l.deck ?? [], p) * 100) / 100;
+  assert.deepEqual([at(straight, [0, 0]), at(straight, [13, 0])], [103.2, 101.99]);
+  // the spiral and the ways on the ground keep to the ground, the spiral drawn between the deck and the footway
+  assert.deepEqual([spiral.deck, street.deck, footway.deck], [undefined, undefined, undefined]);
+});
+
+test("a way above the ground that steps come up to, ending where no way goes on, runs level from where they come up", () => {
+  // 16 steps up to a landing at a door
+  const landing: BridgeLine = { bridge: false, layer: 1, line: [[0, 0], [2, 0]] };
+  const steps: BridgeLine = { bridge: false, layer: 1, line: [[0, -5], [0, 0]], stepCount: 16, incline: "up" };
+  setBridgeDecks([landing, steps], () => 100);
+  assert.deepEqual(landing.deck?.map((h) => Math.round(h * 100) / 100), [102.56, 102.56]);
+  assert.equal(steps.deck, undefined);
+});
+
+test("steps up to a way above the ground do not lift it where a way on the ground meets them, nor by less than half a metre", () => {
+  const onGround = (): BridgeLine[] => [
+    { bridge: false, layer: 1, line: [[0, 0], [10, 0]] },
+    { bridge: false, line: [[0, -5], [0, 0]], stepCount: 16, incline: "up" },
+  ];
+  const [met, upMet] = onGround();
+  const path: BridgeLine = { bridge: false, line: [[0, 0], [-10, 0]] };
+  setBridgeDecks([met, upMet, path], () => 100);
+  assert.equal(met.deck, undefined);
+  // 3 steps up a slope that climbs 0.4 m
+  const near: BridgeLine = { bridge: false, layer: 1, line: [[0, 0], [10, 0]] };
+  const few: BridgeLine = { bridge: false, line: [[0, -5], [0, 0]], stepCount: 3, incline: "up" };
+  setBridgeDecks([near, few], (_e, n) => (n < -1 ? 100 : 100.4));
+  assert.equal(near.deck, undefined);
+});
+
+test("steps lift a way above the ground only from a way on the ground or a dead end: not a landing two flights tell apart", () => {
+  // a landing between a flight of 27 steps up from 137 m and one of 40 steps up to a level at 152.6 m: they tell its
+  // ends 141.3 m and 146.2 m
+  const ground = (e: number) => (e < 0 ? 137 : e > 20 ? 152.6 : 140);
+  const lower: BridgeLine = { bridge: false, layer: 1, line: [[-5, 0], [0, 0]], stepCount: 27, incline: "up" };
+  const landing: BridgeLine = { bridge: false, layer: 1, line: [[0, 0], [7, 0]] };
+  const upper: BridgeLine = { bridge: false, layer: 1, line: [[7, 0], [25, 0]], stepCount: 40, incline: "up" };
+  setBridgeDecks([lower, landing, upper], ground);
+  assert.deepEqual([lower.deck, landing.deck, upper.deck], [undefined, undefined, undefined]);
+});
+
+test("the end of a way above the ground that a way on the ground passes through takes the ground's height there", () => {
+  // as the stairs to the spiral, but the street passes through their top
+  const ground = (e: number, n: number) => (e <= 0 ? 103.2 : n < -5 ? 98.15 : 98.9);
+  const street: BridgeLine = { bridge: false, line: [[0, -10], [0, 0], [0, 10]] };
+  const straight: BridgeLine = { bridge: false, layer: 1, line: [[0, 0], [13, 0]] };
+  const spiral: BridgeLine = { bridge: false, line: [[13, 0], [16, -3], [13, -6], [10, -3], [13, -10]], stepCount: 24, incline: "down" };
+  setBridgeDecks([street, straight, spiral], ground);
+  assert.deepEqual(straight.deck?.map((h) => Math.round(h * 100) / 100), [103.2, 101.99]);
+  assert.equal(street.deck, undefined);
+});

@@ -232,7 +232,10 @@ way leads on from but ways indoors do (`indoor=yes`, left out) goes into a build
 tower's top: it takes no height from the ground, and the deck runs level from the span's other end. Steps up to a
 point of a span with a count and a way they climb (`step_count`, `incline`) tell its height, 0.16 m a step over the
 ground at their foot; the deck then runs straight between the ends and these heights on their upper hull, so it
-may rise to a crest and fall again but never dips. A bridge's outline follows the upper hull of its ways' decks, its crests rounded
+may rise to a crest and fall again but never dips. Such steps also lift a way above the ground that is no bridge
+(`layer` over 0: stairs on a structure, a landing) where they tell an end of it more than 0.5 m over the ground, no
+way on the ground meets them there, and its other end is a dead end (a landing at a door, level) or meets a way on
+the ground no lower (stairs down from a street to where a spiral goes on down). A bridge's outline follows the upper hull of its ways' decks, its crests rounded
 as a bridge's, along the way its ways run where they run mostly one way (a bridge may be wider than long), else along
 its longer side. A tunnel or covered way through a building
 from one bridge's end to another's (a footbridge through a building's upper floor) carries the span on through it,

@@ -12,6 +12,9 @@ export interface BridgeLine {
   /** Steps: how many, and whether they climb along line or go down it */
   stepCount?: number;
   incline?: "up" | "down";
+  /** OSM's layer: over 0, above the ground (a bridge, or a way on a structure that is not tagged one) */
+  layer?: number;
+  tunnel?: boolean;
 }
 
 /** The approach is walked this often, and at most this far from the bridge's end (m) */
@@ -26,6 +29,8 @@ const RISER_M = 0.16;
 /** A deck's crest is rounded over a curve of this radius (m), with a point this often (m) */
 const CREST_RADIUS_M = 400;
 const CREST_STEP_M = 2;
+/** Steps lift a way above the ground that is no bridge only where they tell it more than this over the ground (m) */
+const LIFT_M = 0.5;
 /** Maximum rounds of junction height averaging */
 const JUNCTION_ROUNDS = 1000;
 
@@ -39,7 +44,11 @@ const JUNCTION_ROUNDS = 1000;
  * Approaches are split off the lines leading on and get decks too. heightAt takes meters east / north. An end that
  * no line leads on from but ways indoors do (indoors) goes into a building, at whatever floor: it takes no height
  * from the ground, so the deck runs level from the span's other end. A line through a building (through) from one
- * bridge's end to another's carries the span on through it, getting a deck as the bridges do.
+ * bridge's end to another's carries the span on through it, getting a deck as the bridges do. So does a line above the
+ * ground that is no bridge (layer over 0: stairs on a structure, a landing) where steps up to an end of it tell a height
+ * more than LIFT_M over the ground there, no line on the ground meets them, and its other end is a dead end or meets a
+ * line on the ground no lower than that (stairs down from a street to where a spiral goes on down, a landing at a
+ * door): a dead end takes no height from the ground, and the lines meeting such a line are not raised as approaches.
  */
 export function setBridgeDecks<T extends BridgeLine>(
   lines: T[],
@@ -52,11 +61,55 @@ export function setBridgeDecks<T extends BridgeLine>(
   const carried = new Set(
     lines.filter((l) => !l.bridge && l.line.length >= 2 && through(l) && bridgeEnds.has(key(l.line[0])) && bridgeEnds.has(key(l.line[l.line.length - 1]))),
   );
-  const bridges = lines.filter((l) => (l.bridge || carried.has(l)) && l.line.length >= 2);
+  // the heights steps up to a point tell: from the ground at their other end, a riser a step
+  const stepped = new Map<string, { h: number; by: T }[]>();
+  const telling = (l: T) => !l.bridge && l.stepCount !== undefined && l.stepCount > 0 && l.incline !== undefined && l.line.length >= 2;
+  for (const l of lines.filter(telling)) {
+    const [start, end] = [l.line[0], l.line[l.line.length - 1]];
+    const rise = (l.incline === "up" ? 1 : -1) * (l.stepCount ?? 0) * RISER_M;
+    for (const [at, from, up] of [[end, start, rise], [start, end, -rise]] as const) {
+      const ground = heightAt(...from);
+      if (ground !== undefined) {
+        stepped.set(key(at), [...(stepped.get(key(at)) ?? []), { h: ground + up, by: l }]);
+      }
+    }
+  }
+  const toldAt = (p: Point, except?: T) => {
+    const heights = (stepped.get(key(p)) ?? []).filter((t) => t.by !== except).map((t) => t.h);
+    return heights.length > 0 ? Math.max(...heights) : undefined;
+  };
+  // the lines above the ground that steps lift: only steps telling its height and lines above the ground at its end
+  const atPoint = new Map<string, T[]>();
+  for (const l of lines) {
+    for (const p of l.line) {
+      atPoint.set(key(p), [...(atPoint.get(key(p)) ?? []), l]);
+    }
+  }
+  const others = (l: T, p: Point) => (atPoint.get(key(p)) ?? []).filter((o) => o !== l);
+  const onGround = (o: T) => !o.bridge && !o.tunnel && (o.layer ?? 0) <= 0;
+  // whether steps up to p lift l there, its other end at r
+  const lifted = (l: T, p: Point, r: Point) => {
+    const told = toldAt(p, l);
+    const ground = heightAt(...p);
+    if (told === undefined || ground === undefined || told <= ground + LIFT_M || !others(l, p).every((o) => !o.bridge && ((o.layer ?? 0) > 0 || telling(o)))) {
+      return false;
+    }
+    const beyond = others(l, r);
+    const below = heightAt(...r);
+    return beyond.length === 0 || (beyond.some(onGround) && below !== undefined && told <= below + LIFT_M);
+  };
+  const elevated = new Set(
+    lines.filter((l) => {
+      const [a, b] = [l.line[0], l.line[l.line.length - 1]];
+      return !l.bridge && !carried.has(l) && !l.tunnel && (l.layer ?? 0) > 0 && l.line.length >= 2 && (lifted(l, a, b) || lifted(l, b, a));
+    }),
+  );
+  const spanned = (l: T) => l.bridge || carried.has(l) || elevated.has(l);
+  const bridges = lines.filter((l) => spanned(l) && l.line.length >= 2);
   // the lines leading on from bridges, by their ends
   const onward = new Map<string, T[]>();
   for (const l of lines) {
-    if (!l.bridge && !carried.has(l) && l.line.length >= 2) {
+    if (!spanned(l) && l.line.length >= 2) {
       for (const p of [l.line[0], l.line[l.line.length - 1]]) {
         onward.set(key(p), [...(onward.get(key(p)) ?? []), l]);
       }
@@ -131,9 +184,13 @@ export function setBridgeDecks<T extends BridgeLine>(
       if (ends.has(key(end)) || junction(key(end))) {
         continue;
       }
-      const approaches = (onward.get(key(end)) ?? []).filter((l) => l.deck === undefined).map((l) => approach(l, key(l.line[0]) === key(end), heightAt));
-      const inBuilding = indoors(end) && (onward.get(key(end)) ?? []).length === 0;
-      const heights = [inBuilding ? undefined : heightAt(...end), ...approaches.map((a) => a.top)].filter((h) => h !== undefined);
+      const leading = onward.get(key(end)) ?? [];
+      const lifting = (byEnd.get(key(end)) ?? []).some((b) => elevated.has(b));
+      const approaches = lifting ? [] : leading.filter((l) => l.deck === undefined).map((l) => approach(l, key(l.line[0]) === key(end), heightAt));
+      // no line on: into a building, or a lifted line's dead end
+      const through = (atPoint.get(key(end)) ?? []).filter((o) => !spanned(o));
+      const free = (indoors(end) && leading.length === 0) || (lifting && through.length === 0);
+      const heights = [free ? undefined : heightAt(...end), ...approaches.map((a) => a.top)].filter((h) => h !== undefined);
       ends.set(key(end), { height: heights.length > 0 ? Math.max(...heights) : undefined, approaches });
     }
   }
@@ -163,29 +220,14 @@ export function setBridgeDecks<T extends BridgeLine>(
     }
   }
 
-  // the heights steps up to a point tell: from the ground at their other end, a riser a step
-  const stepped = new Map<string, number>();
-  for (const l of lines) {
-    if (l.bridge || !l.stepCount || !l.incline || l.line.length < 2) {
-      continue;
-    }
-    const [start, end] = [l.line[0], l.line[l.line.length - 1]];
-    const rise = (l.incline === "up" ? 1 : -1) * l.stepCount * RISER_M;
-    for (const [at, from, up] of [[end, start, rise], [start, end, -rise]] as const) {
-      const ground = heightAt(...from);
-      if (ground !== undefined) {
-        stepped.set(key(at), Math.max(stepped.get(key(at)) ?? -Infinity, ground + up));
-      }
-    }
-  }
   let told = 0;
   for (const { span, points, distances } of spans) {
     const total = distances[distances.length - 1];
     const first = heightOf(key(points[0].p));
     const last = heightOf(key(points[points.length - 1].p));
     // the known heights along the span: its ends, and where steps come up to it; an end without one is level
-    const known: { d: number; h: number }[] = points.flatMap(({ p }, i) => {
-      const h = stepped.get(key(p));
+    const known: { d: number; h: number }[] = points.flatMap(({ p, owner }, i) => {
+      const h = toldAt(p, owner);
       return h === undefined ? [] : [{ d: distances[i], h }];
     });
     told += known.length;
