@@ -133,7 +133,8 @@ whole building, and so reaches every part; a part in no outline still gets the p
 On a slope a building stands at its highest ground, so its entrance on the uphill side is not in the hill, and its
 walls reach down to its lowest ground: a plinth or a basement storey on the downhill side, with windows in it. On a
 steep slope it stands at most 6 m above its lowest ground. The build takes the ground from the elevation model
-along the outline (`base` in the tiles); a building's parts all stand at the building's base, so they line up.
+along the outline (`base` in the tiles); a building's parts all stand at the building's base, so they line up. Its
+walls reach down to `low`, the lowest ground along its outline and its courtyards' (each part's its own).
 Without an elevation model buildings stand at their lowest ground. A building over a tunnel in a cut (see below)
 stands at least at the top of the tunnel's lid, since it really stands on the deck over the cut, and so does an open
 roof over a lid (a platform's roof), which otherwise stands on its lowest ground; an open roof over a railway

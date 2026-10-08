@@ -116,6 +116,8 @@ export interface Building {
   minHeight: number;
   /** Meters above sea level that height and minHeight count from (see setBuildingBases); unset without elevations */
   base?: number;
+  /** Meters above sea level of the lowest ground along its outline and holes, which its walls reach down to */
+  low?: number;
   /** Storeys in the walls, from minHeight to the eaves, when OSM or a building register has them */
   levels?: number;
   /** Its main use in the building register */

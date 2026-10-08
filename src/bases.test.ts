@@ -51,6 +51,21 @@ test("setBuildingBases gives parts the base of their building", () => {
   assert.deepEqual([outline.base, low.base, high.base], [106, 106, 106]);
 });
 
+test("setBuildingBases gives a building and each part its own lowest ground, along holes too, as its low", () => {
+  const outline = square(0, 30, { hasParts: true });
+  const low = square(0, 5, { part: true });
+  const high = square(20, 5, { part: true });
+  const shelter = square(100, 4, { shelter: "roof" });
+  setBuildingBases([outline, low, high, shelter], heightAt);
+  assert.deepEqual([outline.low, low.low, high.low, shelter.low], [100, 100, 110, undefined]);
+  // a courtyard 2 m under the ground around the building
+  const sunken = (e: number, n: number) => (e >= 10 && e <= 20 && n >= 10 && n <= 20 ? 98 : 100);
+  const yard: Point[] = [[10, 10], [10, 20], [20, 20], [20, 10]];
+  const block = square(0, 30, { polygon: { outer: square(0, 30).polygon.outer, holes: [yard] } });
+  setBuildingBases([block], sunken);
+  assert.deepEqual([block.base, block.low], [100, 98]);
+});
+
 test("setBuildingBases stands a building at the ground by its OSM entrance, a main one first", () => {
   // ground 100 + e / 2: from 100 at the west edge to 105 at the east edge
   const main = square(0, 10, { entrances: [{ at: [8, 0], kind: "yes" }, { at: [2, 0], kind: "main" }] });

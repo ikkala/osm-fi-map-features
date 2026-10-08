@@ -1,6 +1,6 @@
 // The height buildings stand at on sloping ground: at an OSM entrance, else at their highest ground, with
 // walls down to the lowest ground (a plinth or basement on the downhill side).
-import { pointInPolygon, ringCentroid, type Point, type Ring } from "./geometry.ts";
+import { pointInPolygon, ringCentroid, type Point, type Polygon, type Ring } from "./geometry.ts";
 import { bounds, LEVEL_HEIGHT_M, type Area, type Building, type Entrance } from "./osm.ts";
 
 /** A building stands at most this far above its lowest ground (m), so it does not tower on a steep slope */
@@ -23,7 +23,9 @@ const ROOF_THICKNESS_M = 0.3;
  * nothing under it counts that minHeight from its own highest ground. Open shelters get a base only on a lid or
  * a railway platform (an area with a top) under them; one of an estimated height is made tall enough for
  * ROOM_UNDER_ROOF_M over the ways under it, standing at its lowest corner on a slope. A carport stands as a
- * building does, so there is room for a car under all of it on a slope. Returns how many buildings got a base.
+ * building does, so there is room for a car under all of it on a slope. A building or part with a base also gets its
+ * own low: the lowest ground along its outline and holes, which its walls reach down to. Returns how many buildings
+ * got a base.
  */
 export function setBuildingBases(
   buildings: Building[],
@@ -72,6 +74,7 @@ export function setBuildingBases(
   let count = 0;
   for (const b of buildings) {
     delete b.base;
+    delete b.low;
     if (b.shelter !== undefined && b.shelter !== "carport") {
       // on a lid, so its posts do not reach down into the tunnel, or on a platform, its roof over the platform
       const under = Math.max(lidUnder(b, lids), platformUnder(b, platforms));
@@ -88,6 +91,10 @@ export function setBuildingBases(
     const base = outline ? outlineBases.get(outline) : baseOf(b, b.entrances ?? []);
     if (base !== undefined) {
       b.base = base;
+      const low = lowestGround(b.polygon, heightAt);
+      if (low !== undefined) {
+        b.low = low;
+      }
       count++;
       const high = b.minHeight > 0 && !b.hasParts ? groundRange(b.polygon.outer, heightAt)?.high : undefined;
       if (high !== undefined && high > base && floating(b)) {
@@ -188,6 +195,12 @@ function lidUnder(b: Building, lids: { line: Point[]; lid: number[] }[]): number
     }
   }
   return top;
+}
+
+/** The lowest ground along a polygon's outer ring and its holes, where its walls stand, or undefined */
+function lowestGround(polygon: Polygon, heightAt: (e: number, n: number) => number | undefined): number | undefined {
+  const lows = [polygon.outer, ...polygon.holes].flatMap((ring) => groundRange(ring, heightAt)?.low ?? []);
+  return lows.length > 0 ? Math.min(...lows) : undefined;
 }
 
 /** The lowest and highest ground along a ring, or undefined where the elevation model has none */
