@@ -32,7 +32,9 @@ export function placeStreetNodes(nodes: StreetNode[], features: MapFeatures): { 
     if (node.kind === "crossing" && onStreet) {
       features.crossings.push(wayPoint(onStreet.item, onStreet.segment, node.point) satisfies Crossing);
     } else if (node.kind === "signal" && onStreet) {
-      const signal: TrafficSignal = { ...wayPoint(onStreet.item, onStreet.segment, node.point), ...(node.direction && { direction: node.direction }) };
+      // on a one-way road, for its traffic only unless tagged
+      const direction = node.direction ?? oneWay(onStreet.item);
+      const signal: TrafficSignal = { ...wayPoint(onStreet.item, onStreet.segment, node.point), ...(direction && { direction }) };
       features.signals.push(signal);
     } else if (node.kind === "gate" && onStreet) {
       const way = wayPoint(onStreet.item, onStreet.segment, node.point);
@@ -66,6 +68,14 @@ function nearest<T>(candidates: Candidate<T>[], p: Point): { item: T; segment: n
     }
   }
   return best;
+}
+
+/** The direction of a one-way road's traffic along its line, or undefined for both */
+function oneWay(road: Road): TrafficSignal["direction"] {
+  if (road.oneway === 1) {
+    return "forward";
+  }
+  return road.oneway === -1 ? "backward" : undefined;
 }
 
 /** p on a road: the road's direction on the segment, its kind and width, and its deck's height if any */

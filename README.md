@@ -322,7 +322,8 @@ Crossings, traffic signals and gates are nodes of the ways they are on (`src/str
 direction there, kind, width and deck height; a gate (`barrier=gate`) spans the way it is on, or else lies in its
 fence or wall, 1.2 m wide unless tagged. Only crossings with markings are kept: not `crossing=unmarked` or
 `crossing:markings=no`, and of the markings only stripes (`zebra`, `yes`, ...). A traffic signal's
-`traffic_signals:direction` (forward or backward along the way) tells which traffic it is for. Around the centre of
+`traffic_signals:direction` (forward or backward along the way) tells which traffic it is for; untagged, one on a
+one-way street is for that street's traffic. Around the centre of
 Tampere there are about 1 100 painted crossings, 200 signals and 200 gates on their ways.
 
 Fences, walls, retaining walls and hedges (`barrier=*` ways, about 1 000 around the centre) get OSM's `height`, or

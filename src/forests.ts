@@ -117,11 +117,13 @@ export function mergeTrees(register: Tree[], osm: Tree[]): Tree[] {
 
 /** A tree on a way is moved this far (m) beyond the way's edge */
 const OFF_WAY_M = 0.5;
+/** A tree this close (m) beyond a way's edge stands on it too: its trunk reaches over the edge */
+const TRUNK_M = 0.3;
 
 /**
- * The trees, those standing on a way (within its width; not on a bridge or over a tunnel) moved off it to beside
- * its edge: OSM draws a path as a line, which may pass a tree that the path really goes round. A tree with no
- * room beside the way, on another way there too, is left out.
+ * The trees, those standing on a way (within its width, or a trunk's half beyond its edge; not on a bridge or over a
+ * tunnel) moved off it to beside its edge: OSM draws a path as a line, which may pass a tree that the path really
+ * goes round. A tree with no room beside the way, on another way there too, is left out.
  */
 export function moveTreesOffWays(trees: Tree[], roads: Road[], rails: Rail[]): Tree[] {
   const lines = [
@@ -137,7 +139,8 @@ export function moveTreesOffWays(trees: Tree[], roads: Road[], rails: Rail[]): T
   for (const { line, half } of lines) {
     for (let i = 0; i + 1 < line.length; i++) {
       const [a, b] = [line[i], line[i + 1]];
-      grid.add({ minX: Math.min(a[0], b[0]) - half, minY: Math.min(a[1], b[1]) - half, maxX: Math.max(a[0], b[0]) + half, maxY: Math.max(a[1], b[1]) + half }, { a, b, half });
+      const r = half + TRUNK_M;
+      grid.add({ minX: Math.min(a[0], b[0]) - r, minY: Math.min(a[1], b[1]) - r, maxX: Math.max(a[0], b[0]) + r, maxY: Math.max(a[1], b[1]) + r }, { a, b, half });
     }
   }
   // the segment the point is on (within its half width), the nearest such
@@ -145,7 +148,7 @@ export function moveTreesOffWays(trees: Tree[], roads: Road[], rails: Rail[]): T
     let best: { a: Point; b: Point; half: number; d: number } | undefined;
     for (const s of grid.at(p)) {
       const d = distanceToSegment(p, s.a, s.b);
-      if (d < s.half && (!best || d - s.half < best.d - best.half)) {
+      if (d < s.half + TRUNK_M && (!best || d - s.half < best.d - best.half)) {
         best = { ...s, d };
       }
     }
