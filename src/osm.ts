@@ -402,6 +402,8 @@ export interface PlayEquipment {
   height?: number;
   /** playground:theme=* in lower case (ship, train, whale, ...), when known */
   theme?: string;
+  /** On a bridge: the deck's height there, meters above sea level */
+  base?: number;
 }
 
 export interface MapFeatures {

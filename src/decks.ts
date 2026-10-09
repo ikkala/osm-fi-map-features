@@ -639,10 +639,12 @@ function barycentric(p: Point, a: Point, b: Point, c: Point): [number, number, n
   return [wa, wb, 1 - wa - wb];
 }
 
-/** Stands trees and lamps without a base yet on the bridge decks they are on. Returns how many of each. */
-export function standOnDecks(decks: BridgeDeck[], trees: { point: Point; base?: number }[], lamps: { point: Point; base?: number }[]): { trees: number; lamps: number } {
+type Standing = { point: Point; base?: number }[];
+
+/** Stands trees, lamps and playground equipment without a base yet on the bridge decks they are on. Returns how many of each. */
+export function standOnDecks(decks: BridgeDeck[], trees: Standing, lamps: Standing, play: Standing): { trees: number; lamps: number; play: number } {
   const index = indexDecks(decks);
-  const stand = (list: { point: Point; base?: number }[]) => {
+  const stand = (list: Standing) => {
     let count = 0;
     for (const item of list) {
       const height = item.base === undefined ? heightOnDecks(index, item.point) : undefined;
@@ -653,5 +655,5 @@ export function standOnDecks(decks: BridgeDeck[], trees: { point: Point; base?: 
     }
     return count;
   };
-  return { trees: stand(trees), lamps: stand(lamps) };
+  return { trees: stand(trees), lamps: stand(lamps), play: stand(play) };
 }

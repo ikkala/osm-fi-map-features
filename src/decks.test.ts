@@ -74,14 +74,16 @@ test("an outline with no bridge way with a deck on it gets no deck", () => {
   assert.deepEqual(setOutlineDecks([outline], [road]), { decks: [], ways: 0 });
 });
 
-test("trees and lamps on a deck stand on it; lamps on a way's deck already keep theirs", () => {
+test("trees, lamps and playground equipment on a deck stand on it; lamps on a way's deck already keep theirs", () => {
   const { road, footway } = ways();
   const { decks } = setOutlineDecks([outline], [road, footway]);
   const trees: { point: Point; base?: number }[] = [{ point: [50, 8] }, { point: [50, 20] }];
   const lamps: { point: Point; base?: number }[] = [{ point: [50, -8] }, { point: [60, 0], base: 101 }];
-  assert.deepEqual(standOnDecks(decks, trees, lamps), { trees: 1, lamps: 1 });
+  const play: { point: Point; base?: number }[] = [{ point: [40, 6] }, { point: [40, -20] }];
+  assert.deepEqual(standOnDecks(decks, trees, lamps, play), { trees: 1, lamps: 1, play: 1 });
   assert.deepEqual(trees.map((t) => t.base && round(t.base)), [100, undefined]);
   assert.deepEqual(lamps.map((l) => l.base && round(l.base)), [100, 101]);
+  assert.deepEqual(play.map((p) => p.base && round(p.base)), [100, undefined]);
 });
 
 test("an outline with a notch (two decks side by side) gets no triangles over the gap", () => {

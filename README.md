@@ -267,7 +267,7 @@ pieces 4 m long, as triangles with the height of the nearest way's deck at each 
 deck can be drawn between the ways too. The outline's triangles are cut rather than the outline itself, and each
 piece's cuts joined again, since a cut ring would run back over a gap in the outline (Näsinsillat in Tampere is two
 decks side by side, joined in the middle); a triangle steeper than 45° (a sliver whose corners are at different
-heights) is left out. Trees and street lamps on the deck stand on it (`base`).
+heights) is left out. Trees, street lamps and playground equipment on the deck stand on it (`base`).
 
 Railways (not tramways) that are not bridges or tunnels get a track bed (`bed`): the elevation model has
 platform edges, underpass roofs and the like under the tracks, a metre up and down every few metres, so the bed is
