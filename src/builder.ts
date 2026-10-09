@@ -26,7 +26,7 @@ import { setPlatformTops } from "./platforms.ts";
 import { applyRoofTops, fetchRoofTops, ROOF_TOP_SOURCES, type RoofTopSource } from "./roofTops.ts";
 import { setTrackBeds } from "./trackbeds.ts";
 import { lowerUnderBridges } from "./underbridges.ts";
-import { raisePassages } from "./raisedPassages.ts";
+import { passagesUpSlopes, raisePassages } from "./raisedPassages.ts";
 import { setTunnelFloors, uncoverAtGrade } from "./tunnels.ts";
 import { fetchTreeRegister, overlaps, TREE_REGISTERS, type RegisterTree, type TreeRegisterSource } from "./treeRegister.ts";
 import { assignWindows } from "./windows.ts";
@@ -343,6 +343,7 @@ export class MapBuilder {
       // buildings raised to a door up a slope are stair halls: open them where covered ways come in
       const openings = openDoorways(raised, covered, heightAt);
       logger.log(`${raised.length} buildings raised over a door up a slope, ${openings} openings where covered ways come in at their doors`);
+      logger.log(`${passagesUpSlopes(features.buildings, heightAt)} passage openings and rooms count from the ground up a slope`);
       // measured tops are above sea level: the buildings must stand at their base first
       const notRaised = features.buildings.filter((b) => !raised.includes(b));
       for (const source of (this.#options.roofTops ?? ROOF_TOP_SOURCES).filter((s) => overlaps(s.covers, fetchBox))) {

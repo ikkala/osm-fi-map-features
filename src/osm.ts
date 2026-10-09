@@ -225,8 +225,8 @@ export interface Opening {
   to: Point;
   height: number;
   /**
-   * Where the opening does not start at the building's base (a door up a slope, into a stair hall): the
-   * ground there (m above sea level), which its height counts from
+   * Where the opening does not start at the building's base (a door up a slope into a stair hall, a passage up a
+   * slope, a way on a deck): the ground there (m above sea level), which its height counts from
    */
   ground?: number;
 }
@@ -243,7 +243,10 @@ export interface PassageRoom {
   closed: [boolean, boolean];
   /** The room's walls, each with the room on its right (solid side left), less where in another room */
   walls: [Point, Point][];
-  /** Where the way runs on a deck through the building: its height (m above sea level), which height counts from */
+  /**
+   * Where the way runs on a deck through the building, or up a slope over its base: the deck's or the ground's
+   * highest along the room (m above sea level), which height counts from
+   */
   ground?: number;
 }
 
@@ -751,8 +754,8 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   const bridgeOutlines: BridgeOutline[] = [];
   const playgrounds: Polygon[] = [];
   const passages: Passage[] = [];
-  // tunnels and covered ways that may be passages through buildings tagged otherwise
-  const maybePassages: { road: Road; passage: Passage }[] = [];
+  // tunnels and covered ways (arcades too) that may be passages through buildings tagged otherwise
+  const maybePassages: { road: Road; passage: Passage; arcade: boolean }[] = [];
   const covered: Road[] = [];
   const levels = new Map<Road | Rail, number[]>();
   // the roads through buildings: building passages, and tunnels and covered ways found to be
@@ -814,8 +817,8 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
           if (road.tunnel === "building_passage") {
             passages.push(passage);
             through.add(way);
-          } else if ((way.tunnel || road.covered === "yes") && way.layer >= -1) {
-            maybePassages.push({ road: way, passage });
+          } else if ((way.tunnel || road.covered === "yes" || road.covered === "arcade") && way.layer >= -1) {
+            maybePassages.push({ road: way, passage, arcade: road.covered === "arcade" });
             if (road.covered === "yes" && !way.tunnel) {
               covered.push(way);
             }
@@ -899,8 +902,18 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
 
   markBuildingsWithParts(features.buildings);
   const found = new Set<Road>();
-  for (const { road, passage } of maybePassages) {
-    if (runsThroughBuildings(passage.line, features.buildings)) {
+  // how many ways have each point: the end of a covered way on the ground floor where another goes on is no dead end
+  // (a ramp down into a garage goes on into its tunnel, a way on an upper storey into the building)
+  const ways = new Map<string, number>();
+  for (const r of features.roads) {
+    for (const key of new Set(r.line.map(pointKey))) {
+      ways.set(key, (ways.get(key) ?? 0) + 1);
+    }
+  }
+  for (const { road, passage, arcade } of maybePassages) {
+    const groundFloor = !road.tunnel && road.layer >= 0 && (levels.get(road) ?? [0]).every((storey) => storey === 0);
+    const goesOn = (p: Point) => groundFloor && (ways.get(pointKey(p)) ?? 0) > 1;
+    if (runsThroughBuildings(passage.line, features.buildings, arcade, goesOn)) {
       road.tunnel = false;
       passages.push(passage);
       found.add(road);
@@ -1572,16 +1585,16 @@ function spansLeft(spans: [number, number][]): [number, number][] {
 }
 
 /**
- * Whether a tunnel or covered way is really a passage through buildings (often tagged tunnel=yes): short,
- * at least half inside one, and neither end well inside (a ramp into a garage ends inside). The caller leaves out
- * layers under -1.
+ * Whether a tunnel or covered way is really a passage through buildings (often tagged tunnel=yes): short (an
+ * arcade, along a building's front, may be long), at least half inside one, and neither end well inside (a ramp
+ * into a garage ends inside) unless another way goes on from it (goesOn). The caller leaves out layers under -1.
  */
-function runsThroughBuildings(line: Point[], buildings: Building[]): boolean {
+function runsThroughBuildings(line: Point[], buildings: Building[], arcade = false, goesOn: (p: Point) => boolean = () => false): boolean {
   let length = 0;
   for (let i = 0; i + 1 < line.length; i++) {
     length += Math.hypot(line[i + 1][0] - line[i][0], line[i + 1][1] - line[i][1]);
   }
-  if (length > MAX_GUESSED_PASSAGE_M) {
+  if (length > MAX_GUESSED_PASSAGE_M && !arcade) {
     return false;
   }
   const reach = bounds(line);
@@ -1592,7 +1605,8 @@ function runsThroughBuildings(line: Point[], buildings: Building[]): boolean {
     const box = bounds(b.polygon.outer);
     return box.maxX >= reach.minX && box.minX <= reach.maxX && box.maxY >= reach.minY && box.minY <= reach.maxY;
   });
-  const deepInside = (p: Point) => grounded.some((b) => pointInPolygon(p, b.polygon) && distanceToRing(p, b.polygon.outer) > THROUGH_END_SLACK_M);
+  const deepInside = (p: Point) =>
+    !goesOn(p) && grounded.some((b) => pointInPolygon(p, b.polygon) && distanceToRing(p, b.polygon.outer) > THROUGH_END_SLACK_M);
   if (grounded.length === 0 || deepInside(line[0]) || deepInside(line[line.length - 1])) {
     return false;
   }

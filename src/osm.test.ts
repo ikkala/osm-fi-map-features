@@ -483,6 +483,47 @@ test("a tunnel through a building is taken for a passage, a ramp into it or a de
   assert.deepEqual(defined(features.buildings[0].passages).map((o) => Math.round(o.from[0])).sort((a, b) => a - b), [0, 20]);
 });
 
+test("an arcade along a building's front is a passage however long, as are covered steps up to it ending inside", () => {
+  const { features, throughBuildings } = parseOsm(
+    [
+      { type: "way", id: 55, tags: { building: "office", "building:levels": "5", layer: "2" }, geometry: rectangle(0, 0, 80, 20) },
+      { type: "way", id: 56, tags: { highway: "footway", covered: "arcade", layer: "1" }, geometry: [at(-2, 18), at(70, 18), at(82, 18)] },
+      { type: "way", id: 57, tags: { highway: "steps", covered: "yes" }, geometry: [at(85, 10), at(70, 10)] },
+      { type: "way", id: 58, tags: { highway: "footway" }, geometry: [at(70, 10), at(70, 18)] },
+      // ending 8 m inside with no way on, or where a way goes on but below the ground or on a storey above
+      { type: "way", id: 59, tags: { highway: "footway", covered: "yes" }, geometry: [at(40, -3), at(40, 8)] },
+      { type: "way", id: 60, tags: { highway: "service", covered: "yes", layer: "-1" }, geometry: [at(20, -3), at(20, 8)] },
+      { type: "way", id: 61, tags: { highway: "service", tunnel: "yes", layer: "-1" }, geometry: [at(20, 8), at(30, 8)] },
+      { type: "way", id: 62, tags: { highway: "footway", covered: "yes", level: "1" }, geometry: [at(60, -3), at(60, 8)] },
+      { type: "way", id: 63, tags: { highway: "footway", level: "1" }, geometry: [at(60, 8), at(65, 8)] },
+    ],
+    origin,
+  );
+  assert.deepEqual(
+    features.roads.map((r) => [r.osm, throughBuildings(r)]),
+    [
+      ["w56", true],
+      ["w57", true],
+      ["w58", false],
+      ["w59", false],
+      ["w60", false],
+      ["w61", false],
+      ["w62", false],
+      ["w63", false],
+    ],
+  );
+  // the west and east walls open for the arcade, the east wall for the steps
+  const openings = defined(features.buildings[0].passages).map((o) => [o.from, o.to].map(([e, n]) => [Math.round(e), Math.round(n)]));
+  assert.deepEqual(
+    openings.sort((a, b) => a[0][0] - b[0][0] || a[0][1] - b[0][1]),
+    [
+      [[0, 19], [0, 17]],
+      [[80, 9], [80, 11]],
+      [[80, 17], [80, 19]],
+    ],
+  );
+});
+
 test("a way through a building gets a room walled off from the building's insides", () => {
   const building = (outer: Point[], holes: Point[][] = []): Building => ({
     osm: "w1",

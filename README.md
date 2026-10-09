@@ -184,12 +184,16 @@ wooden villas of the 1920s in Pyynikki, 6.4 m tall before and now under roofs 5â
 
 Ways through buildings (`tunnel=building_passage`) are drawn on the ground like other ways, and open the walls
 they cross: as wide as the way (wider where it crosses at a slant, and on over nearly straight corners) and as
-tall as its `maxheight`, else 4 m for vehicles and 3 m for people, leaving at least 0.5 m of wall under the eaves.
+tall as its `maxheight`, else 4 m for vehicles and 3 m for people, leaving at least 0.5 m of wall under the eaves;
+up a slope, where the ground at an opening is over the building's base, from the ground there.
 A building is only its walls and roof, so the way also gets a room through it (`passageRooms`): walls along its
 sides from opening to opening (mitred at its corners, and across its end where it ends inside) and a ceiling at
-the opening's height. Where ways beside or across each other meet inside, their rooms are one space.
-Passages are often tagged `tunnel=yes` or `covered=yes` instead: such a way is taken for a passage when it is at
-most 60 m long and not deeper than `layer=-1`, neither end is more than 1 m inside a building, and at least half
+the opening's height (up a slope, over the highest ground along it). Where ways beside or across each other meet
+inside, their rooms are one space.
+Passages are often tagged `tunnel=yes`, `covered=yes` or `covered=arcade` instead: such a way is taken for a passage
+when it is at most 60 m long (an arcade, along a building's front, may be longer) and not deeper than `layer=-1`,
+neither end is more than 1 m inside a building (unless, for a covered way on the ground floor, not below the ground
+nor on a `level` above, another way goes on from there: steps up under a building to an arcade), and at least half
 of it is inside buildings.
 A railway (not in a tunnel or on a bridge) running into a building, such as a depot whose doors OSM does not map,
 opens its walls 4.5 m wide, and a building lower than 6 m becomes 6 m tall, without a room.
