@@ -19,7 +19,7 @@ import { parsePlayEquipment, placePlayEquipment, playgroundQuery } from "./playg
 import { fetchRoofColours, ORTHO_ATTRIBUTION } from "./ortho.ts";
 import { bounds, fetchOverpass, inheritFromOutlines, LEVEL_HEIGHT_M, NOT_FOR_VEHICLES, openDoorways, openRailHalls, overpassQuery, parseOsm, type Building, type GeoBox } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
-import { dropStepsInParts } from "./stairs.ts";
+import { dropStepsInParts, setStaircaseDecks } from "./stairs.ts";
 import { placeStreetNodes } from "./streets.ts";
 import { cutIntoTiles, latticeProjection, tileHeights, tileName, tilesCovering, type Tile, type TileKey } from "./tiles.ts";
 import { setPlatformTops } from "./platforms.ts";
@@ -234,6 +234,8 @@ export class MapBuilder {
       const carried = features.roads.filter((r) => r.deck && !r.bridge && throughBuildings(r));
       raisePassages(features.buildings, carried);
       logger.log(`${carried.length} ways through buildings carried on bridges' spans`);
+      // after the decks, which a staircase may end on
+      logger.log(`${setStaircaseDecks(features.roads, heightAt)} staircases with landings out of line with the ground get decks, one riser all the way`);
       // the decks stay straight: a way under one with too little room goes down into a cut
       const bridges = [...features.roads, ...features.rails].filter((w) => w.bridge && w.deck);
       const over = new Set<string>();

@@ -239,7 +239,11 @@ ground at their foot; the deck then runs straight between the ends and these hei
 may rise to a crest and fall again but never dips. Such steps also lift a way above the ground that is no bridge
 (`layer` over 0: stairs on a structure, a landing) where they tell an end of it more than 0.5 m over the ground, no
 way on the ground meets them there, and its other end is a dead end (a landing at a door, level) or meets a way on
-the ground no lower (stairs down from a street to where a spiral goes on down). A bridge's outline follows the upper hull of its ways' decks, its crests rounded
+the ground no lower (stairs down from a street to where a spiral goes on down). A staircase, ways of steps joined
+end to end where no other way meets them, each telling its count and which way it climbs, all the same way, gets
+decks too (`src/stairs.ts`) where the model has a landing out of line, so that a flight goes down or climbs less than
+a quarter of its share of the staircase's rise by its count (a landing beside a wall or a cliff the model has
+lower): one riser all the way between the heights at its ends, the ground's or a deck's. A bridge's outline follows the upper hull of its ways' decks, its crests rounded
 as a bridge's, along the way its ways run where they run mostly one way (a bridge may be wider than long), else along
 its longer side. A tunnel or covered way through a building
 from one bridge's end to another's (a footbridge through a building's upper floor) carries the span on through it,
