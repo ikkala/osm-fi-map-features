@@ -27,7 +27,7 @@ import { applyRoofTops, fetchRoofTops, ROOF_TOP_SOURCES, type RoofTopSource } fr
 import { setTrackBeds } from "./trackbeds.ts";
 import { lowerUnderBridges } from "./underbridges.ts";
 import { raisePassages } from "./raisedPassages.ts";
-import { setTunnelFloors, uncoverAtGrade } from "./tunnels.ts";
+import { portalWallsAt, raiseToWalls, setTunnelFloors, uncoverAtGrade } from "./tunnels.ts";
 import { fetchTreeRegister, overlaps, TREE_REGISTERS, type RegisterTree, type TreeRegisterSource } from "./treeRegister.ts";
 import { assignWindows } from "./windows.ts";
 import { cutWaterways, parseWaterways, setWaterLevels, waterwayQuery, type WaterLevels } from "./waterways.ts";
@@ -85,8 +85,10 @@ interface Built {
   info: MapInfo;
   tiles: Map<string, Tile>;
   heightAt: ((e: number, n: number) => number | undefined) | undefined;
-  /** The elevation model and where a point (m) is in its coordinates, for the tiles' heights */
-  ground: { grid: ElevationGrid; toTm: (e: number, n: number) => [number, number] } | undefined;
+  /** The elevation model, where a point (m) is in its coordinates and the portals' walls over it, for the tiles' heights */
+  ground:
+    | { grid: ElevationGrid; toTm: (e: number, n: number) => [number, number]; wallsAt?: (e: number, n: number) => number | undefined }
+    | undefined;
   /** The water's surface where it is levelled, over the elevation model's */
   water: WaterLevels | undefined;
 }
@@ -124,10 +126,12 @@ export class MapBuilder {
     if (!tile || !built.ground || tile.heights) {
       return tile;
     }
-    const { grid, toTm } = built.ground;
+    const { grid, toTm, wallsAt } = built.ground;
     const at = latticeProjection(tile, this.#options.tileSizeM, TM_LATTICE_M, toTm);
     const water = built.water;
-    const { heights, missing } = tileHeights(tile, this.#options.tileSizeM, HEIGHT_STEP_M, (e, n) => water?.levelAt([e, n]) ?? sampleElevation(grid, ...at(e, n)));
+    const model = (e: number, n: number) => sampleElevation(grid, ...at(e, n));
+    const ground = wallsAt ? raiseToWalls(model, wallsAt) : model;
+    const { heights, missing } = tileHeights(tile, this.#options.tileSizeM, HEIGHT_STEP_M, (e, n) => water?.levelAt([e, n]) ?? ground(e, n));
     if (missing > 0) {
       this.#logger.warn(`warning: tile ${tileName(tile)}: ${missing} height points outside the elevation model got the tile's average`);
     }
@@ -212,7 +216,11 @@ export class MapBuilder {
       logger.log(`${covered.tunnels} tunnels in cuts get lids, ${covered.crossings} ways over them become bridges`);
       logger.log(`${uncoverAtGrade(features, heightAt)} tunnels run at the ground under buildings`);
       const tunnels = setTunnelFloors(features, heightAt, levels);
-      logger.log(`${tunnels.floors} tunnel ways under hills and lakes get floors, ${tunnels.ramps} ways out of their portals ramps`);
+      logger.log(`${tunnels.floors} tunnel ways under hills and lakes get floors, ${tunnels.ramps} ways out of their portals ramps, ${tunnels.walls.length} stretches of ground raised over portals`);
+      // from here on, and in the tiles' heights, the ground over the tunnels' ends is raised to their portals' walls
+      const wallsAt = portalWallsAt(tunnels.walls);
+      heightAt = raiseToWalls(heightAt, wallsAt);
+      ground = { grid, toTm, wallsAt };
       // before cutting into tiles, so a bridge's deck goes from end to end
       const ramps = (lines: { bridge: boolean; deck?: number[] }[]) => lines.filter((l) => l.deck && !l.bridge).length;
       const stepped = setBridgeDecks(features.roads, heightAt, indoors, throughBuildings) + setBridgeDecks(features.rails, heightAt, indoors);

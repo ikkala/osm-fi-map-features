@@ -212,16 +212,22 @@ rounds the cut's sides off, and a way mapped on them would rise and fall with th
 the lid along most of it, such as a pavement beside a tramway) is in the same cut, under the same lid and on its floor. Once the bridges have their decks, a lid is lowered to the decks over it (they run from the ground at their ends),
 leaving at least 2.5 m of room over the floor for people, 3.5 m for vehicles and 4 m for trains. Any other tunnel, under a
 hill or a lake, gets its floor (`floor`, with a point every 10 m): straight between its portals' ground (the
-lowest within 4 m outside, since at the portal the model has the top of its wall), a junction underground
+lowest within 4 m outside, along the ways leading on and on past a short one, since at the portal the model has
+the top of its wall), a junction underground
 hanging between its branches' ends by distance, but at least room and a 1 m roof under the ground (3 m of
 room for people, 4.8 m for vehicles, 6 m for trains; reached 30 m in from a portal; under water areas 3 m more, since the model has the water's surface) and no
-steeper than 7 %. Under a way over it (where the way's width and the tunnel's room overlap, but not at the tunnel's
-free ends) it is that deep from the start, and rises from there no steeper than 7 %, to the portals too. Where it
+steeper than 7 %. The model smooths a portal's wall into a slope over the tunnel's end, so the ground over the
+room (in the tiles' heights too) is raised from the portal 6 m in to the ground there, and so is the ground under a
+way over that, across its width and as far along it as the model is lower (the cut in front of a portal is often
+wider than the tunnel), at most 10 m either way: a way over the portal stays level. Under a way over it (where the way's width and the tunnel's room overlap, but not at the tunnel's
+free ends nor beyond them, as a way going on from a short way out of a portal) it is that deep from the start, and rises from there no steeper than 7 %, to the portals too. Where it
 would follow the ground's humps it is smoothed, lowered only: no point is more than 0.1 m over the line between its
 neighbours (portals and junctions stay).
 Where the ground at a portal (the top of its wall) is over the floor, a ramp is split off each way leading on, with
 a `floor` of its own: straight from the portal's floor to where a 7 % slope from it meets the ground, at most 40 m
-on. A way leads on from a tunnel's end only on the tunnel's storey (`level`, when both have one): one on another
+on. A way that ends before that, where only other ways ending there go on, rises 7 % of its length, and they ramp on
+from there, reaching the ground at most 8 m from the portal (beyond its wall the model has the open ground), when that
+leaves them at least 4 m to rise in. A way leads on from a tunnel's end only on the tunnel's storey (`level`, when both have one): one on another
 goes on from a lift. Ways indoors (`indoor=yes`, and corridors, `highway=corridor`, tagged so or not) are left out,
 except up to 30 m on from a tunnel's end. Stairs leading on (`highway=steps`, also indoors), and corridors (on at the tunnel's level into a building), go up out of the
 tunnel, such as from an underpass to the platforms over it: they rise from its floor to the ground at 60 %, and
