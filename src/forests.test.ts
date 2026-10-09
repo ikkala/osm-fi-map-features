@@ -120,6 +120,8 @@ test("moveTreesOffWays moves a tree standing on a way to beside it, and leaves o
   // between two paths 2.2 m apart there is no room
   const other: Road = { ...path, osm: "w3", line: [[0, -2.2], [20, -2.2]] };
   const squeezed: Tree = { point: [15, -0.8], kind: "broadleaved", height: 10 };
-  const trees = moveTreesOffWays([onPath, beside, overTunnel, squeezed], [path, tunnel, other], []);
-  assert.deepEqual(trees.map((t) => t.point), [[5, 1 + 0.5], [5, 3], [5, 10]]);
+  // just beyond the edge, its trunk on the path
+  const atEdge: Tree = { point: [10, 1.2], kind: "broadleaved", height: 10 };
+  const trees = moveTreesOffWays([onPath, beside, overTunnel, squeezed, atEdge], [path, tunnel, other], []);
+  assert.deepEqual(trees.map((t) => t.point), [[5, 1 + 0.5], [5, 3], [5, 10], [10, 1 + 0.5]]);
 });
