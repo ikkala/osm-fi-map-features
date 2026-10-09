@@ -33,6 +33,24 @@ test("a crossing and a traffic signal go on the street, not on the footway acros
   assert.deepEqual(map.signals.map((s) => [s.point, s.along, s.direction]), [[[60, 0.4], 180, "forward"]]);
 });
 
+test("a traffic signal on a one-way road is for its traffic only, unless tagged otherwise", () => {
+  const map = features([
+    road("w1", "unclassified", [[0, 0], [100, 0]], { oneway: 1 }),
+    road("w2", "unclassified", [[0, 20], [100, 20]], { oneway: -1 }),
+    road("w3", "unclassified", [[0, 40], [100, 40]]),
+  ]);
+  placeStreetNodes(
+    [
+      { kind: "signal", point: [50, 0] },
+      { kind: "signal", point: [60, 0], direction: "backward" },
+      { kind: "signal", point: [50, 20] },
+      { kind: "signal", point: [50, 40] },
+    ],
+    map,
+  );
+  assert.deepEqual(map.signals.map((s) => s.direction), ["forward", "backward", "backward", undefined]);
+});
+
 test("a gate spans the way it is on, or lies in its fence, and a crossing on a bridge gets the deck's height", () => {
   const bridge = road("w3", "residential", [[0, 50], [100, 50]], { bridge: true, deck: [100, 110] });
   const map = features([road("w1", "service", [[0, 0], [0, 100]], { width: 4 }), bridge], [fence("w2", [[20, 0], [20, 40]])]);
