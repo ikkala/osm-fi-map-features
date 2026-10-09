@@ -72,7 +72,7 @@ export interface Road {
   /** Steps: how many (step_count=*), and whether they climb along line or go down it (incline=*), when OSM tells */
   stepCount?: number;
   incline?: "up" | "down";
-  /** surface=* (asphalt, paving_stones, fine_gravel, ...), when OSM tells */
+  /** surface=* (asphalt, paving_stones, fine_gravel, ...), when OSM tells; steps without one take their material=* */
   surface?: string;
 }
 
@@ -727,6 +727,12 @@ export interface ParseResult {
   throughBuildings: (road: Road) => boolean;
 }
 
+/** A way's surface=*; steps tagged only with what they are made of (material=*) are of that */
+function surfaceOf(tags: Record<string, string>): { surface?: string } {
+  const surface = tags.surface ?? (tags.highway === "steps" ? tags.material : undefined);
+  return surface ? { surface } : {};
+}
+
 /** Steps' count (step_count=*, a whole number) and which way they climb (incline=up / down, or a slope's sign) */
 function stepping(tags: Record<string, string>): { stepCount?: number; incline?: "up" | "down" } {
   const count = /^[0-9]+$/.test(tags.step_count ?? "") ? Number(tags.step_count) : undefined;
@@ -793,7 +799,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
           ...(walkway ? (road.footway ? { footway: road.footway } : {}) : { ...sidewalks(road), ...motorAccess(road) }),
           ...access(road),
           ...(road.highway === "steps" ? stepping(road) : {}),
-          ...(road.surface && { surface: road.surface }),
+          ...surfaceOf(road),
           line: points,
         };
         const storeys = storeysOf(road);

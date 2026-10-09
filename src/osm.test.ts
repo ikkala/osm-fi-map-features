@@ -603,6 +603,9 @@ test("ways and areas carry their surface, buildings their roof material, and a c
       { type: "way", id: 73, tags: { highway: "pedestrian", area: "yes", surface: "paving_stones" }, geometry: square(30, 20, 20) },
       { type: "way", id: 74, tags: { building: "church", "roof:material": "copper" }, geometry: square(60, 0, 20) },
       { type: "way", id: 75, tags: { building: "carport" }, geometry: square(90, 0, 6) },
+      { type: "way", id: 76, tags: { highway: "steps", material: "granite" }, geometry: [at(0, 50), at(5, 50)] },
+      { type: "way", id: 77, tags: { highway: "steps", surface: "concrete", material: "metal" }, geometry: [at(0, 60), at(5, 60)] },
+      { type: "way", id: 78, tags: { highway: "footway", material: "wood" }, geometry: [at(0, 70), at(5, 70)] },
     ],
     origin,
   );
@@ -610,6 +613,8 @@ test("ways and areas carry their surface, buildings their roof material, and a c
   const area = (osm: string) => defined(features.areas.find((a) => a.osm === osm));
   const building = (osm: string) => defined(features.buildings.find((b) => b.osm === osm));
   assert.deepEqual([road("w70").surface, road("w71").surface], ["fine_gravel", undefined]);
+  // steps tagged only with their material are of it
+  assert.deepEqual([road("w76").surface, road("w77").surface, road("w78").surface], ["granite", "concrete", undefined]);
   assert.deepEqual([area("w72").kind, area("w72").surface, area("w73").kind, area("w73").surface], ["pitch", "clay", "paved", "paving_stones"]);
   assert.equal(building("w74").roofMaterial, "copper");
   // no guessed gabled roof over an open one
