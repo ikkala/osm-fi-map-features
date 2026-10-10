@@ -25,8 +25,11 @@ test("a tunnel's floor goes straight from portal to portal when the ground over 
   const ground = (e: number) => (e <= 0 ? 100 : e >= 200 ? 90 : 130);
   const tunnel = road("w1", [[0, 0], [200, 0]], { tunnel: true, layer: -2 });
   const map = features([road("w2", [[-50, 0], [0, 0]]), tunnel, road("w3", [[200, 0], [250, 0]])]);
-  assert.deepEqual(counts(setTunnelFloors(map, ground)), { floors: 1, ramps: 0 });
+  assert.deepEqual(counts(setTunnelFloors(map, ground)), { floors: 1, ramps: 2 });
   assert.equal(tunnel.line.length, 21);
+  // the ways out stay at the floor under the portals' walls (the hill's ground raised over the ends), level to the ground on
+  const ramps = map.roads.filter((r) => r.floor && !r.tunnel).map((r) => [r.line, round(r.floor)]);
+  assert.deepEqual(ramps, [[[[-2, 0], [0, 0]], [100, 100]], [[[200, 0], [202, 0]], [90, 90]]]);
   assert.deepEqual(round(tunnel.floor), tunnel.line.map(([e]) => Math.round((100 - e / 20) * 10) / 10));
 });
 

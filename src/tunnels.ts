@@ -347,12 +347,12 @@ export function setTunnelFloors(
     }
   }
 
-  // the ways leading on ramp down to the floor (the model has the portal wall's top), outside the walls
+  // the ways leading on ramp down to the floor from the portal wall's top (in the model, or raised)
   const portalFloor = (p: Point) => {
     const node = nodes.get(key(p));
     return (node?.portal !== undefined || node?.stairs) && Number.isFinite(node.floor) ? node.floor : undefined;
   };
-  const ramps = rampOut(features.roads, inTunnels, portalFloor, modelAt) + rampOut(features.rails, inTunnels, portalFloor, modelAt);
+  const ramps = rampOut(features.roads, inTunnels, portalFloor, heightAt) + rampOut(features.rails, inTunnels, portalFloor, heightAt);
   return { floors, ramps, walls };
 }
 
