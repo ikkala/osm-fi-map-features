@@ -8,7 +8,7 @@ import type { Point } from "./geometry.ts";
 
 /** How far beyond its way a tunnel's lid reaches on both sides (m), and how thick it is */
 export const LID_EDGE_M = 2;
-export const LID_THICKNESS_M = 1;
+export const LID_THICKNESS_M = 0.5;
 /** A rail's lid is as wide as its ballast */
 const RAIL_WIDTH_M = 3;
 /** The ground beside a tunnel is looked for this far out on both sides, this often (m) */
@@ -25,7 +25,7 @@ const RIM_RISE_M = 0.2;
 const CLEARANCE_M = 3.5;
 /** A tunnel this close to the lid of a tunnel in a cut (m, edge to edge) is beside it, in the same cut */
 const BESIDE_M = 2;
-/** A lid lowered to the decks over it leaves at least this much room over the floor (m) */
+/** A lid fitted to the decks over it leaves at least this much room over the floor (m) */
 const LID_ROOM_M = { people: 2.5, vehicles: 3.5, trains: 4 };
 /** A cut's bottom under a way is looked for this far beyond the way's edges (m) */
 const FLOOR_REACH_M = 4;
@@ -73,33 +73,42 @@ export function coverCutTunnels(features: MapFeatures, heightAt: (e: number, n: 
   return { tunnels: tunnels.length, crossings };
 }
 
+/** The rims of the cut beside p, lower first: walking out on both sides, where the ground stops rising after MIN_CUT_M, else the highest ground */
+function rims(p: Point, along: Point, heightAt: (e: number, n: number) => number | undefined): [number, number] {
+  const [dx, dy] = along;
+  const [nx, ny] = [-dy, dx];
+  const floor = heightAt(...p) ?? -Infinity;
+  const side = (sign: number) => {
+    let top = floor;
+    for (let d = SIDE_STEP_M; d <= SIDE_REACH_M; d += SIDE_STEP_M) {
+      const h = heightAt(p[0] + nx * d * sign, p[1] + ny * d * sign);
+      if (h === undefined) {
+        continue;
+      }
+      if (top - floor >= MIN_CUT_M && h - top < RIM_RISE_M) {
+        break;
+      }
+      top = Math.max(top, h);
+    }
+    return top;
+  };
+  const [a, b] = [side(1), side(-1)];
+  return [Math.min(a, b), Math.max(a, b)];
+}
+
+/** The way a line goes from a to c, as a unit vector */
+function direction(a: Point, c: Point): Point {
+  const length = Math.hypot(c[0] - a[0], c[1] - a[1]);
+  return length > 0 ? [(c[0] - a[0]) / length, (c[1] - a[1]) / length] : [1, 0];
+}
+
+/** The way a line goes at its point i */
+function directionAt(line: Point[], i: number): Point {
+  return direction(line[Math.max(0, i - 1)], line[Math.min(line.length - 1, i + 1)]);
+}
+
 /** The lid's top at each point of a tunnel's line (the lower rim, at least clearance over the floor), or undefined if not in a cut */
 export function cutLid(line: Point[], heightAt: (e: number, n: number) => number | undefined): number[] | undefined {
-  // the rim beside p: walking out, where the ground stops rising after MIN_CUT_M, else the highest ground
-  const beside = (p: Point, along: Point) => {
-    const [dx, dy] = along;
-    const [nx, ny] = [-dy, dx];
-    const floor = heightAt(...p) ?? -Infinity;
-    const side = (sign: number) => {
-      let top = floor;
-      for (let d = SIDE_STEP_M; d <= SIDE_REACH_M; d += SIDE_STEP_M) {
-        const h = heightAt(p[0] + nx * d * sign, p[1] + ny * d * sign);
-        if (h === undefined) {
-          continue;
-        }
-        if (top - floor >= MIN_CUT_M && h - top < RIM_RISE_M) {
-          break;
-        }
-        top = Math.max(top, h);
-      }
-      return top;
-    };
-    return Math.min(side(1), side(-1));
-  };
-  const direction = (a: Point, c: Point): Point => {
-    const length = Math.hypot(c[0] - a[0], c[1] - a[1]);
-    return length > 0 ? [(c[0] - a[0]) / length, (c[1] - a[1]) / length] : [1, 0];
-  };
   let samples = 0;
   let deep = 0;
   for (let i = 0; i + 1 < line.length; i++) {
@@ -110,7 +119,7 @@ export function cutLid(line: Point[], heightAt: (e: number, n: number) => number
       const p: Point = [a[0] + ((c[0] - a[0]) * (k + 0.5)) / steps, a[1] + ((c[1] - a[1]) * (k + 0.5)) / steps];
       const floor = heightAt(...p);
       samples++;
-      if (floor !== undefined && beside(p, along) - floor >= MIN_CUT_M) {
+      if (floor !== undefined && rims(p, along, heightAt)[0] - floor >= MIN_CUT_M) {
         deep++;
       }
     }
@@ -119,9 +128,8 @@ export function cutLid(line: Point[], heightAt: (e: number, n: number) => number
     return undefined;
   }
   return line.map((p, i) => {
-    const along = direction(line[Math.max(0, i - 1)], line[Math.min(line.length - 1, i + 1)]);
     const floor = heightAt(...p) ?? 0;
-    return Math.max(beside(p, along), floor + CLEARANCE_M + LID_THICKNESS_M);
+    return Math.max(rims(p, directionAt(line, i), heightAt)[0], floor + CLEARANCE_M + LID_THICKNESS_M);
   });
 }
 
@@ -196,11 +204,12 @@ function besideCut(
 }
 
 /**
- * Lowers the lids of tunnels in cuts to the decks of the bridges over them, which run from the ground at their
- * ends: a lid at the clearance over the floor stood over them. At least LID_ROOM_M stays over the floor.
- * Returns how many lids were lowered.
+ * Fits the lids of tunnels in cuts to the decks of the bridges over them, which run from the ground at their ends:
+ * a lid at the lower rim or at the clearance over the floor stood over them or under them. A lid point under decks
+ * goes to the lowest deck crossing the line beside it, no higher than the cut's higher rim there, and at least
+ * LID_ROOM_M over the floor. Returns how many lids were moved.
  */
-export function fitLidsToDecks(ways: Way[]): number {
+export function fitLidsToDecks(ways: Way[], heightAt: (e: number, n: number) => number | undefined): number {
   const decks = ways.filter((w) => w.bridge && w.deck && w.line.length >= 2);
   let count = 0;
   for (const way of ways) {
@@ -210,22 +219,28 @@ export function fitLidsToDecks(ways: Way[]): number {
     }
     const room = !("width" in way) ? LID_ROOM_M.trains : WALKWAYS.has(way.kind) ? LID_ROOM_M.people : LID_ROOM_M.vehicles;
     const width = "width" in way ? way.width : RAIL_WIDTH_M;
-    const fitted = [...lid];
+    // the lowest deck crossing the line beside each point
+    const lowest = lid.map(() => Infinity);
     for (let i = 0; i + 1 < way.line.length; i++) {
-      let lowest = Infinity;
       for (const bridge of decks) {
         for (let k = 0; k + 1 < bridge.line.length; k++) {
           const hit = crossing(bridge.line[k], bridge.line[k + 1], way.line[i], way.line[i + 1], width);
           if (hit && bridge.deck) {
-            lowest = Math.min(lowest, bridge.deck[k] + (bridge.deck[k + 1] - bridge.deck[k]) * hit.at);
+            const h = bridge.deck[k] + (bridge.deck[k + 1] - bridge.deck[k]) * hit.at;
+            lowest[i] = Math.min(lowest[i], h);
+            lowest[i + 1] = Math.min(lowest[i + 1], h);
           }
         }
       }
-      for (const j of [i, i + 1]) {
-        fitted[j] = Math.min(fitted[j], Math.max(lowest, floor[j] + room + LID_THICKNESS_M));
-      }
     }
-    if (fitted.some((h, i) => h < lid[i])) {
+    const fitted = lid.map((h, j) => {
+      if (lowest[j] === Infinity) {
+        return h;
+      }
+      const higherRim = rims(way.line[j], directionAt(way.line, j), heightAt)[1];
+      return Math.max(Math.min(lowest[j], Math.max(h, higherRim)), floor[j] + room + LID_THICKNESS_M);
+    });
+    if (fitted.some((h, i) => h !== lid[i])) {
       way.lid = fitted;
       count++;
     }
@@ -250,7 +265,7 @@ function nearestOnLine(p: Point, line: Point[]): { distance: number; at: Point }
   return best;
 }
 
-/** Splits the ways crossing the lids and makes the stretches over them bridges. Returns how many. */
+/** Splits the ways crossing the lids and makes the stretches over them bridges on the lids. Returns how many. */
 function bridgeOverLids<T extends Way>(ways: T[], tunnels: { way: Way; width: number }[]): number {
   const portals = tunnels.flatMap(({ way }) => [way.line[0], way.line[way.line.length - 1]]);
   const added: T[] = [];
@@ -306,8 +321,11 @@ function bridgeOverLids<T extends Way>(ways: T[], tunnels: { way: Way; width: nu
     }
     way.line = first.line;
     way.bridge = first.bridge;
+    if (first.bridge) {
+      way.onLid = true;
+    }
     for (const piece of rest) {
-      added.push({ ...way, line: piece.line, bridge: piece.bridge });
+      added.push({ ...way, line: piece.line, bridge: piece.bridge, ...(piece.bridge && { onLid: true }) });
     }
     count += merged.length;
   }
