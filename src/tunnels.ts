@@ -1,6 +1,8 @@
 // Tunnel floors. OSM does not tell a tunnel's depth, so the floor hangs between its portals' ground (a
 // branching network like a stretched net), deep enough for the room and roof, and no steeper than a road
-// tunnel, and deep enough under the ways crossing over it. Tunnels in cuts (cuts.ts) are left to their cut.
+// tunnel, and deep enough under the ways and tunnels crossing over it; between its portals and junctions it
+// keeps steady grades down to its deepest points and up again, rather than rising and falling with the ground.
+// Tunnels in cuts (cuts.ts) are left to their cut.
 import { pointAlong } from "./bridges.ts";
 import { pointInPolygon, pointKey, type Point } from "./geometry.ts";
 import { bounds, openPassages, type MapFeatures, type Rail, type Road } from "./osm.ts";
@@ -60,6 +62,8 @@ const MAX_BEND_M = 0.1;
 const SMOOTH_ROUNDS = 500;
 /** Junction floors are averaged this many rounds (they settle in far fewer) */
 const ROUNDS = 1000;
+/** A tunnel under others is lowered under them this many rounds at most (their floors may come down too) */
+const UNDER_TUNNEL_ROUNDS = 5;
 /** Tunnels whose rooms overlap with floors less than this apart (m) are one hall, with one floor; levelled this many rounds at most */
 const ONE_HALL_M = 1;
 const HALL_ROUNDS = 50;
@@ -332,8 +336,24 @@ export function setTunnelFloors(
   }
 
   easeToGrade(nodes);
+  steadyGrades(nodes);
   smoothFloors(nodes);
   levelHalls(tunnels, nodes);
+  // under the tunnels crossing over, once their floors are set: from there no steeper than MAX_GRADE, as above
+  for (let round = 0; round < UNDER_TUNNEL_ROUNDS; round++) {
+    const under = underTunnels(tunnels, nodes);
+    if (under.length === 0) {
+      break;
+    }
+    const lowered = spread(nodes, under, (length) => MAX_GRADE * length);
+    for (const [k, node] of nodes) {
+      node.floor = Math.min(node.floor, lowered.get(k) ?? Infinity);
+    }
+    easeToGrade(nodes);
+    steadyGrades(nodes);
+    smoothFloors(nodes);
+    levelHalls(tunnels, nodes);
+  }
 
   let floors = 0;
   for (const way of tunnels) {
@@ -584,6 +604,55 @@ function underCrossings(features: MapFeatures, tunnels: Way[], nodes: Map<string
   return floors;
 }
 
+/**
+ * The floors a tunnel needs under the tunnels of a higher layer crossing over it, once their floors are set: its
+ * room and roof under their floor, at its points either side of where their rooms overlap
+ */
+function underTunnels(tunnels: Way[], nodes: Map<string, Node>): [string, number][] {
+  const rooms = tunnels.map((way) => ({ way, half: ("width" in way ? way.width : RAIL_WIDTH_M) / 2 + ROOM_SIDE_M, box: bounds(way.line) }));
+  const floorAt = (p: Point) => nodes.get(pointKey(p))?.floor ?? Infinity;
+  const floors: [string, number][] = [];
+  for (const lower of rooms) {
+    for (const upper of rooms) {
+      const reach = lower.half + upper.half;
+      if (
+        upper.way.layer <= lower.way.layer ||
+        upper.box.minX > lower.box.maxX + reach || upper.box.maxX < lower.box.minX - reach ||
+        upper.box.minY > lower.box.maxY + reach || upper.box.maxY < lower.box.minY - reach
+      ) {
+        continue;
+      }
+      const line = lower.way.line;
+      for (let i = 0; i + 1 < line.length; i++) {
+        const [a, c] = [line[i], line[i + 1]];
+        const length = Math.hypot(c[0] - a[0], c[1] - a[1]);
+        let lowest = Infinity;
+        for (let d = 0; d <= length; d += 1) {
+          const p: Point = length > 0 ? [a[0] + ((c[0] - a[0]) * d) / length, a[1] + ((c[1] - a[1]) * d) / length] : a;
+          for (let k = 0; k + 1 < upper.way.line.length; k++) {
+            const [u, v] = [upper.way.line[k], upper.way.line[k + 1]];
+            const { distance, at } = nearestOnSegment(p, u, v);
+            if (distance < reach) {
+              const span = Math.hypot(v[0] - u[0], v[1] - u[1]);
+              const t = span > 0 ? Math.hypot(at[0] - u[0], at[1] - u[1]) / span : 0;
+              lowest = Math.min(lowest, floorAt(u) + (floorAt(v) - floorAt(u)) * t);
+            }
+          }
+        }
+        if (Number.isFinite(lowest)) {
+          for (const q of [a, c]) {
+            const node = nodes.get(pointKey(q));
+            if (node && node.floor > lowest - node.depth + 1e-3) {
+              floors.push([pointKey(q), lowest - node.depth]);
+            }
+          }
+        }
+      }
+    }
+  }
+  return floors;
+}
+
 /** The nearest point of segment a-c to p, and how far it is */
 function nearestOnSegment(p: Point, a: Point, c: Point): { distance: number; at: Point } {
   const [dx, dy] = [c[0] - a[0], c[1] - a[1]];
@@ -815,46 +884,7 @@ function smoothFloors(nodes: Map<string, Node>): void {
  * between are linear. Nodes reaching no portal keep an infinite floor.
  */
 function hang(nodes: Map<string, Node>): void {
-  const isKey = (node: Node) => node.next.length !== 2 || node.portal !== undefined;
-  // the stretches between key nodes: their nodes in order and each one's distance from the first
-  const stretches: { keys: string[]; along: number[] }[] = [];
-  const walked = new Set<string>();
-  const edge = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
-  const walkFrom = (start: string) => {
-    for (const first of nodes.get(start)?.next ?? []) {
-      if (walked.has(edge(start, first.key))) {
-        continue;
-      }
-      const keys = [start];
-      const along = [0];
-      let step = first;
-      for (;;) {
-        walked.add(edge(keys[keys.length - 1], step.key));
-        keys.push(step.key);
-        along.push(along[along.length - 1] + step.length);
-        const node = nodes.get(step.key);
-        if (!node || isKey(node) || step.key === start) {
-          break;
-        }
-        const previous = keys[keys.length - 2];
-        const onward = node.next.find((n) => n.key !== previous);
-        if (!onward) {
-          break;
-        }
-        step = onward;
-      }
-      stretches.push({ keys, along });
-    }
-  };
-  const keys = [...nodes].filter(([, node]) => isKey(node)).map(([k]) => k);
-  keys.forEach(walkFrom);
-  // loops without key nodes: any node of one will do
-  for (const [k, node] of nodes) {
-    if (node.next.some((n) => !walked.has(edge(k, n.key)))) {
-      keys.push(k);
-      walkFrom(k);
-    }
-  }
+  const { stretches, keys } = stretchesBetween(nodes, (node) => node.next.length !== 2 || node.portal !== undefined);
 
   const value = new Map<string, number>();
   for (const k of keys) {
@@ -909,6 +939,95 @@ function hang(nodes: Map<string, Node>): void {
         node.floor = a ?? b ?? Infinity;
       }
     });
+  }
+}
+
+/**
+ * The stretches between key nodes: their nodes in order and each one's distance from the first, and the key
+ * nodes (with a node of each loop that has none)
+ */
+function stretchesBetween(nodes: Map<string, Node>, isKey: (node: Node) => boolean): { stretches: { keys: string[]; along: number[] }[]; keys: string[] } {
+  const stretches: { keys: string[]; along: number[] }[] = [];
+  const walked = new Set<string>();
+  const edge = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+  const walkFrom = (start: string) => {
+    for (const first of nodes.get(start)?.next ?? []) {
+      if (walked.has(edge(start, first.key))) {
+        continue;
+      }
+      const keys = [start];
+      const along = [0];
+      let step = first;
+      for (;;) {
+        walked.add(edge(keys[keys.length - 1], step.key));
+        keys.push(step.key);
+        along.push(along[along.length - 1] + step.length);
+        const node = nodes.get(step.key);
+        if (!node || isKey(node) || step.key === start) {
+          break;
+        }
+        const previous = keys[keys.length - 2];
+        const onward = node.next.find((n) => n.key !== previous);
+        if (!onward) {
+          break;
+        }
+        step = onward;
+      }
+      stretches.push({ keys, along });
+    }
+  };
+  const keys = [...nodes].filter(([, node]) => isKey(node)).map(([k]) => k);
+  keys.forEach(walkFrom);
+  // loops without key nodes: any node of one will do
+  for (const [k, node] of nodes) {
+    if (node.next.some((n) => !walked.has(edge(k, n.key)))) {
+      keys.push(k);
+      walkFrom(k);
+    }
+  }
+  return { stretches, keys };
+}
+
+/**
+ * Between its portals, junctions and stairs' feet a floor keeps steady grades rather than rising and falling
+ * with the ground: each stretch comes down to the lower convex hull of its floor, which goes straight from
+ * the stretch's ends to the deepest points it must reach and stays deep enough everywhere. A hull is no
+ * steeper than the floor it is under.
+ */
+function steadyGrades(nodes: Map<string, Node>): void {
+  const { stretches } = stretchesBetween(
+    nodes,
+    (node) => node.next.length !== 2 || node.portal !== undefined || node.stairs === true || node.sideStairs === true,
+  );
+  for (const { keys, along } of stretches) {
+    const points = keys.map((k, i) => ({ node: nodes.get(k), along: along[i] }));
+    if (points.length < 3 || !points.every(({ node }) => node && Number.isFinite(node.floor))) {
+      continue;
+    }
+    const floorOf = (i: number) => points[i].node?.floor ?? Infinity;
+    // the lower hull, by Andrew's monotone chain: a point stays while the turn from the two before it is left
+    const hull: number[] = [];
+    for (let i = 0; i < points.length; i++) {
+      while (hull.length >= 2) {
+        const [a, b] = [hull[hull.length - 2], hull[hull.length - 1]];
+        const cross = (points[b].along - points[a].along) * (floorOf(i) - floorOf(a)) - (floorOf(b) - floorOf(a)) * (points[i].along - points[a].along);
+        if (cross > 0) {
+          break;
+        }
+        hull.pop();
+      }
+      hull.push(i);
+    }
+    for (let h = 0; h + 1 < hull.length; h++) {
+      const [a, b] = [hull[h], hull[h + 1]];
+      const span = points[b].along - points[a].along;
+      for (let i = a + 1; i < b; i++) {
+        const node = points[i].node;
+        if (node && span > 0) {
+          node.floor = Math.min(node.floor, floorOf(a) + ((floorOf(b) - floorOf(a)) * (points[i].along - points[a].along)) / span);
+        }
+      }
+    }
   }
 }
 

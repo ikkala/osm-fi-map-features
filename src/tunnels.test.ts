@@ -70,6 +70,39 @@ test("the floor sinks under a dip in the ground, no steeper than a road tunnel, 
   }
 });
 
+test("past a dip the floor keeps a steady grade to the portal rather than rising up under the ground again", () => {
+  // portals at 100 at e = 0 and 400; the ground dips to 96 at e = 90..110 and is 110 elsewhere over the tunnel
+  const ground = (e: number) => (e <= 0 || e >= 400 ? 100 : e >= 90 && e <= 110 ? 96 : 110);
+  const tunnel = road("w1", [[0, 0], [400, 0]], { tunnel: true, layer: -2 });
+  setTunnelFloors(features([road("w2", [[-50, 0], [0, 0]]), tunnel, road("w3", [[400, 0], [450, 0]])]), ground);
+  const floor = defined(tunnel.floor);
+  const deepest = 96 - ROAD_CLEARANCE_M - ROOF_M;
+  assert.equal(Math.round(Math.min(...floor) * 10) / 10, deepest);
+  // down to the dip and up from it, never down again: no point is over the line between its neighbours
+  const low = floor.indexOf(Math.min(...floor));
+  for (let i = 1; i < floor.length; i++) {
+    assert.ok(i <= low ? floor[i] <= floor[i - 1] + 1e-9 : floor[i] >= floor[i - 1] - 1e-9, `floor ${floor[i]} at ${tunnel.line[i][0]}`);
+  }
+  // halfway from the dip to the east portal the floor is about halfway between their floors, far under the
+  // 110 - 5.8 the ground alone would allow
+  const middle = tunnel.line.findIndex(([e]) => e === 250);
+  assert.ok(Math.abs(floor[middle] - (deepest + 100) / 2) < 1, `floor ${floor[middle]} at 250`);
+});
+
+test("a tunnel under another one crossing over it runs with its roof under the other's floor", () => {
+  // a footway tunnel (layer -1) across a road tunnel (layer -2) at e = 105, both under level ground at 110
+  const ground = (e: number, n: number) => (Math.abs(e - 100) <= 60 && Math.abs(n) <= 60 ? 110 : 100);
+  const lower = road("w1", [[0, 0], [200, 0]], { tunnel: true, layer: -2 });
+  const upper = road("w2", [[105, -100], [105, 100]], { tunnel: true, layer: -1, kind: "footway", width: 2.5 });
+  const ways = [lower, upper, road("w3", [[-50, 0], [0, 0]]), road("w4", [[200, 0], [250, 0]])];
+  ways.push(road("w5", [[105, -150], [105, -100]], { kind: "footway", width: 2.5 }), road("w6", [[105, 100], [105, 150]], { kind: "footway", width: 2.5 }));
+  setTunnelFloors(features(ways), ground);
+  const at = (way: Road, e: number, n: number) => defined(way.floor)[way.line.findIndex((p) => p[0] === e && p[1] === n)];
+  for (const e of [100, 110]) {
+    assert.ok(at(lower, e, 0) + ROAD_CLEARANCE_M + ROOF_M <= at(upper, 105, 0) + 1e-6, `${at(lower, e, 0)} under ${at(upper, 105, 0)}`);
+  }
+});
+
 test("a branching tunnel's junction hangs between its portals", () => {
   // three branches from a junction at (100, 0) to portals at 100, 100 and 94, under ground at 200
   const a = road("w1", [[0, 0], [100, 0]], { tunnel: true, layer: -2 });
