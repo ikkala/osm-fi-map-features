@@ -811,6 +811,24 @@ test("a road under construction is drawn as the road it will be", () => {
   );
 });
 
+test("a building under construction is drawn as the building it will be", () => {
+  const square = (e: number) => [at(e, 0), at(e + 20, 0), at(e + 20, 20), at(e, 20), at(e, 0)];
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 42, tags: { building: "construction", construction: "roof", layer: "1" }, geometry: square(0) },
+      { type: "way", id: 43, tags: { building: "construction" }, geometry: square(40) },
+    ],
+    origin,
+  );
+  assert.deepEqual(
+    features.buildings.map((b) => [b.osm, b.kind, b.shelter]),
+    [
+      ["w42", "roof", "roof"],
+      ["w43", "construction", undefined],
+    ],
+  );
+});
+
 test("a bridge's outline (man_made=bridge) is kept apart for its deck, not drawn as an area", () => {
   const { features, bridgeOutlines } = parseOsm(
     [

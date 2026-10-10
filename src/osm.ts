@@ -935,7 +935,9 @@ function addPolygonFeature(features: MapFeatures, bridgeOutlines: BridgeOutline[
     bridgeOutlines.push({ osm, ...optionalName(tags), polygon });
     return;
   }
-  const buildingKind = tags.building && tags.building !== "no" ? tags.building : undefined;
+  // a building under construction is drawn as the building it will be, as a road is
+  const buildingTag = tags.building === "construction" && tags.construction ? tags.construction : tags.building;
+  const buildingKind = buildingTag && buildingTag !== "no" ? buildingTag : undefined;
   const partKind = tags["building:part"] && tags["building:part"] !== "no" ? tags["building:part"] : undefined;
   // many chimneys, tanks and towers are mapped as man_made=* alone
   const buildingOrPart = partKind ?? buildingKind ?? (tags.man_made !== undefined && STRUCTURES.has(tags.man_made) ? tags.man_made : undefined);

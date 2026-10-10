@@ -100,7 +100,9 @@ as Tampere's old factory chimneys are (see [Measured in Tampere](#measured-in-ta
 Pispalan haulitorni, and so is the filler under a part on top of one. A roof's material is `roof:material`
 (`roofMaterial`: roof_tiles, metal, copper, glass, grass, ...). A carport (`building=carport`) is an open roof on posts
 as a canopy is (`shelter`), but stands at its highest ground as a building does, so a car fits under all of it on a
-slope, and is not lifted over vehicles on a road under it. Parts without a frame or roof material take their outline's. Ways and ground areas
+slope, and is not lifted over vehicles on a road under it. A building under construction (`building=construction`)
+is drawn as the building it will be when `construction=*` tells, as a road under construction is: a roof being built
+over a way is an open roof, not a closed body over it. Parts without a frame or roof material take their outline's. Ways and ground areas
 carry their `surface` (asphalt, paving_stones, fine_gravel, artificial_turf, clay, ...) when OSM has one.
 
 The register used to come from the City of Tampere's own
