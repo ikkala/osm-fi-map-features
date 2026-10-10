@@ -74,6 +74,8 @@ interface Node {
   portal?: number;
   /** Stairs lead up out of the tunnel here */
   stairs?: boolean;
+  /** Stairs lead up out of the tunnel here, where it goes on past them */
+  sideStairs?: boolean;
   /** The storeys (level=*) of the tunnel ways through it, when OSM tells */
   storeys?: number[];
   floor: number;
@@ -275,6 +277,8 @@ export function setTunnelFloors(
         if (known.length > 0) {
           node.portal = Math.min(node.portal ?? Infinity, ...known);
         }
+      } else if (node && "width" in way && way.kind === "steps") {
+        node.sideStairs = true;
       }
     }
   }
@@ -347,10 +351,14 @@ export function setTunnelFloors(
     }
   }
 
-  // the ways leading on ramp down to the floor from the portal wall's top (in the model, or raised)
+  // the ways leading on ramp down to the floor from the portal wall's top (in the model, or raised); stairs
+  // beside a tunnel start rising once out of its room
   const portalFloor = (p: Point) => {
     const node = nodes.get(key(p));
-    return (node?.portal !== undefined || node?.stairs) && Number.isFinite(node.floor) ? node.floor : undefined;
+    if (!node || !Number.isFinite(node.floor) || (node.portal === undefined && !node.stairs && !node.sideStairs)) {
+      return undefined;
+    }
+    return { floor: node.floor, level: node.sideStairs ? node.half : 0 };
   };
   const ramps = rampOut(features.roads, inTunnels, portalFloor, heightAt) + rampOut(features.rails, inTunnels, portalFloor, heightAt);
   return { floors, ramps, walls };
@@ -595,12 +603,13 @@ function nearestOnSegment(p: Point, a: Point, c: Point): { distance: number; at:
 /**
  * Splits ramps off ways leading on from portals, rising from the floor until they meet the ground. A way that
  * ends before its ramp meets the ground, where other ways go on, rises as the grade lets it, and they ramp on
- * from there, up to RAMP_ON_M from the portal. Returns the count.
+ * from there, up to RAMP_ON_M from the portal; ways ending at a ramp on its way ramp on from its floor there.
+ * Returns the count.
  */
 function rampOut<T extends Way>(
   ways: T[],
   tunnels: Set<Way>,
-  portalFloor: (p: Point) => number | undefined,
+  portalFloor: (p: Point) => { floor: number; level: number } | undefined,
   heightAt: (e: number, n: number) => number | undefined,
 ): number {
   const added: T[] = [];
@@ -618,10 +627,11 @@ function rampOut<T extends Way>(
       }
     });
   }
-  // where ramps start: the floor there, how much further they may reach, and whether that is on past a short way
-  let startAt = (p: Point): { floor: number; reach: number; on?: boolean } | undefined => {
-    const floor = portalFloor(p);
-    return floor === undefined ? undefined : { floor, reach: RAMP_REACH_M };
+  // where ramps start: the floor there, how much further they may reach, whether that is on past a short way, and
+  // how far they stay level before rising
+  let startAt = (p: Point): { floor: number; reach: number; on?: boolean; level?: number } | undefined => {
+    const start = portalFloor(p);
+    return start === undefined ? undefined : { ...start, reach: RAMP_REACH_M };
   };
   for (;;) {
     const onward = new Map<string, { floor: number; reach: number; on: boolean }>();
@@ -643,12 +653,14 @@ function rampOut<T extends Way>(
         const length = along[along.length - 1];
         const reach = Math.min(start.reach, length);
         const grade = "width" in way && RISING.has(way.kind) ? STAIRS_GRADE : MAX_GRADE;
+        const flat = Math.min(start.level ?? 0, length);
+        const rise = (d: number) => grade * Math.max(0, d - flat);
         let end = reach;
         let met = false;
         for (let d = RAMP_STEP_M; d < reach; d += RAMP_STEP_M) {
           const p = pointAlong(outward, d);
           const h = p && heightAt(...p);
-          if (h !== undefined && h <= floor + grade * d) {
+          if (h !== undefined && h <= floor + rise(d)) {
             end = d;
             met = true;
             break;
@@ -662,19 +674,31 @@ function rampOut<T extends Way>(
           !met &&
           end >= length - 0.01 &&
           (start.on ? start.reach : RAMP_ON_M) - length >= RAMP_ON_LEFT_M &&
-          ground > floor + grade * length + RAMP_TOLERANCE_M &&
+          ground > floor + rise(length) + RAMP_TOLERANCE_M &&
           (ends.get(pointKey(last)) ?? 0) > 1 &&
           !held.has(pointKey(last));
-        const top = goesOn ? floor + grade * length : ground;
+        const top = goesOn ? floor + rise(length) : ground;
         if (goesOn) {
           const reachOn = (start.on ? start.reach : RAMP_ON_M) - length;
           onward.set(pointKey(last), { floor: Math.min(top, onward.get(pointKey(last))?.floor ?? Infinity), reach: reachOn, on: true });
         }
         const ramp: Point[] = [...outward.filter((_, i) => along[i] < end), endPoint];
+        // level to where it starts rising, with a point there
+        const level = flat < end ? flat : 0;
+        const rising = along.findIndex((a) => a >= level);
+        if (level > 0 && along[rising] - level > 0.01) {
+          ramp.splice(rising, 0, pointAlong(outward, level) ?? outward[rising]);
+        }
         let d = 0;
         const heights = ramp.map((p, i) => {
           d += i > 0 ? Math.hypot(p[0] - ramp[i - 1][0], p[1] - ramp[i - 1][1]) : 0;
-          return end > 0 ? floor + ((top - floor) * d) / end : floor;
+          return end > level ? floor + ((top - floor) * Math.max(0, d - level)) / (end - level) : floor;
+        });
+        // the ways ending at its points on the way ramp on from its floor there
+        ramp.forEach((p, i) => {
+          if (i > 0 && i < ramp.length - 1 && (ends.get(pointKey(p)) ?? 0) > 0) {
+            onward.set(pointKey(p), { floor: Math.min(heights[i], onward.get(pointKey(p))?.floor ?? Infinity), reach: RAMP_REACH_M, on: true });
+          }
         });
         count++;
         if (end >= length - 0.01) {

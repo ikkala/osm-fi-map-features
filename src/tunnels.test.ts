@@ -138,6 +138,34 @@ test("stairs are the portals of an underpass with no other way out, their foot a
   assert.deepEqual(ramps.map((r) => [r.line, round(r.floor)]), [[[[0, 0], [-8, 0]], [96, 100]], [[[30, 0], [38, 0]], [96, 100]]]);
 });
 
+test("stairs up out of an underpass where it goes on past them rise from its floor there, once out of its room", () => {
+  // an underpass between portals at 100 under ground at 106, stairs up from its middle
+  const ground = (e: number) => (e <= 0 || e >= 100 ? 100 : 106);
+  const hall = road("w1", [[0, 0], [50, 0], [100, 0]], { tunnel: true, layer: -1, kind: "footway", width: 4 });
+  const stairs = road("w2", [[50, 0], [50, -20]], { kind: "steps", width: 2 });
+  const map = features([hall, stairs, road("w3", [[-20, 0], [0, 0]]), road("w4", [[100, 0], [120, 0]])]);
+  setTunnelFloors(map, ground);
+  assert.deepEqual(round(hall.floor), hall.line.map(() => 100));
+  // level across the room (2 m and 1 m beside the way), then 0.6 a meter: to the ground 10 m on, met at the 2 m step after
+  const ramp = defined(map.roads.find((r) => r.osm === "w2" && r.floor));
+  assert.deepEqual([ramp.line, round(ramp.floor)], [[[50, 0], [50, -3], [50, -14]], [100, 100, 106]]);
+});
+
+test("a way ending at a ramp on its way ramps on from the ramp's floor there; a way passing through does not", () => {
+  // a footway underpass 12 m long under a street on level ground at 100; the way out west ramps up 40 m
+  const tunnel = road("w1", [[0, 0], [12, 0]], { tunnel: true, layer: -1, kind: "footway", width: 2.5 });
+  const west = road("w3", [[-60, 0], [-20, 0], [-10, 0], [0, 0]], { kind: "footway", width: 2.5 });
+  const joining = road("w5", [[-10, 0], [-10, -30]], { kind: "path", width: 1.5 });
+  const across = road("w6", [[-20, -10], [-20, 0], [-20, 10]], { kind: "path", width: 1.5 });
+  const map = features([west, tunnel, road("w4", [[12, 0], [72, 0]], { kind: "footway", width: 2.5 }), road("w2", [[6, -20], [6, 20]]), joining, across]);
+  setTunnelFloors(map, () => 100);
+  const ramp = defined(map.roads.find((r) => r.osm === "w3" && r.floor));
+  const at = ramp.line.findIndex(([e]) => e === -10);
+  assert.ok(defined(ramp.floor)[at] < 99, `the ramp at ${defined(ramp.floor)[at]}`);
+  assert.deepEqual([joining.line[0], defined(joining.floor)[0], defined(joining.floor).at(-1)], [[-10, 0], defined(ramp.floor)[at], 100]);
+  assert.equal(across.floor, undefined);
+});
+
 test("under water the floor is deeper by the water's depth", () => {
   // the elevation model has the water's surface, 100, over the middle of the tunnel
   const tunnel = road("w1", [[0, 0], [300, 0]], { tunnel: true, layer: -2 });

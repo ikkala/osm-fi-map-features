@@ -227,12 +227,14 @@ Where the ground at a portal (the top of its wall) is over the floor, a ramp is 
 a `floor` of its own: straight from the portal's floor to where a 7 % slope from it meets the ground, at most 40 m
 on. A way that ends before that, where only other ways ending there go on, rises 7 % of its length, and they ramp on
 from there, reaching the ground at most 8 m from the portal (beyond its wall the model has the open ground), when that
-leaves them at least 4 m to rise in. A way leads on from a tunnel's end only on the tunnel's storey (`level`, when both have one): one on another
+leaves them at least 4 m to rise in. A way ending at a ramp on its way (a path joining a cycleway going down to an
+underpass) ramps on from the ramp's floor there in the same way. A way leads on from a tunnel's end only on the tunnel's storey (`level`, when both have one): one on another
 goes on from a lift. Ways indoors (`indoor=yes`, and corridors, `highway=corridor`, tagged so or not) are left out,
 except up to 30 m on from a tunnel's end. Stairs leading on (`highway=steps`, also indoors), and corridors (on at the tunnel's level into a building), go up out of the
 tunnel, such as from an underpass to the platforms over it: they rise from its floor to the ground at 60 %, and
 their foot is no portal the floor hangs from, unless the tunnel has no other way out (then it is as deep as the
-room and the roof need). Lines are simplified to 0.3 m, but not where other ways join them, so a tunnel's branches
+room and the roof need). Stairs leaving a tunnel from a point it passes rise from its floor there too, level across
+its room first (the way's half width and 1 m). Lines are simplified to 0.3 m, but not where other ways join them, so a tunnel's branches
 stay joined to it.
 
 A bridge's ways (the road, its sidewalks, a cycleway) each get a `deck` (`src/bridges.ts`): ways meeting end to end
