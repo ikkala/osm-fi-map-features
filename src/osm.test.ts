@@ -320,10 +320,18 @@ test("areaKind prefers the first matching rule", () => {
   assert.equal(areaKind({ landuse: "residential" }), undefined);
 });
 
+test("areaKind makes farmland a field, and wetlands, golf courses and orchards grass", () => {
+  assert.equal(areaKind({ landuse: "farmland" }), "field");
+  assert.equal(areaKind({ natural: "wetland", wetland: "reedbed" }), "grass");
+  assert.equal(areaKind({ leisure: "golf_course" }), "grass");
+  assert.equal(areaKind({ landuse: "orchard" }), "grass");
+});
+
 test("overpassQuery asks for every area rule key", () => {
   const query = overpassQuery({ south: 1, west: 2, north: 3, east: 4 });
   assert.match(query, /\[bbox:1,2,3,4\]/);
   assert.match(query, /way\["natural"~"\^\(water\|sand\|/);
+  assert.match(query, /way\["landuse"~"\^\([^)]*\|farmland\)\$"\];/);
   assert.match(query, /way\["area:highway"\];/);
   assert.match(query, /node\[natural~"\^\(tree\|shrub\)\$"\];/);
   assert.match(query, /way\[natural=tree_row\];/);

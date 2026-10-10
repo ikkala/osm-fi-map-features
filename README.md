@@ -455,7 +455,7 @@ viewer high up, where their full features would be far too many:
 
 - `cover`: what covers the ground as a coarse picture, 128 × 128 cells by default, row by row from the north-west
   corner, one character each (the index in `FAR_CLASSES` as a base-36 digit): ground, grass, forest, sand, rock,
-  pitch, paved, water, road, path, rail. Areas are painted in that order (platforms as paved), and roads, paths (footways, cycleways,
+  pitch, paved, water, road, path, rail, field. Areas are painted fields first, then in that order (platforms as paved), and roads, paths (footways, cycleways,
   steps, ...) and railways over them at their width; tunnels are left out.
 - `heights`: the ground's heights resampled to 17 × 17 points over the tile, in the tile's `Heights` format.
 - `boxes`: each building as the smallest box around its outline with a side along one of its edges (its centre,

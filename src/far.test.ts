@@ -65,6 +65,23 @@ test("farTile's cover paints areas, then roads, paths and rails over them, rows 
   assert.equal(cell(far.cover.cells, 105, 250), "ground");
 });
 
+test("farTile's cover paints fields under the other areas, as the last class", () => {
+  const field: Point[] = [[100, 200], [150, 200], [150, 300], [100, 300]];
+  const woods: Point[] = [[100, 250], [130, 250], [130, 300], [100, 300]];
+  const far = farTile(
+    tile({
+      areas: [
+        { osm: "w4", kind: "forest", polygon: { outer: woods, holes: [] } },
+        { osm: "w5", kind: "field", polygon: { outer: field, holes: [] } },
+      ],
+    }),
+    100,
+    { coverSize: 10 },
+  );
+  assert.deepEqual([cell(far.cover.cells, 140, 225), cell(far.cover.cells, 115, 275), cell(far.cover.cells, 175, 225)], ["field", "forest", "ground"]);
+  assert.equal(FAR_CLASSES.indexOf("field"), FAR_CLASSES.length - 1);
+});
+
 test("farTile makes a turned building a box around it, and leaves out small ones and outlines with parts", () => {
   // a 20 m × 10 m building turned 30 degrees, centred at (150, 250)
   const angle = Math.PI / 6;

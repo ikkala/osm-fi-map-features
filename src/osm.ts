@@ -247,7 +247,7 @@ export interface PassageRoom {
   ground?: number;
 }
 
-export type AreaKind = "water" | "grass" | "forest" | "sand" | "rock" | "pitch" | "paved" | "platform";
+export type AreaKind = "water" | "grass" | "forest" | "field" | "sand" | "rock" | "pitch" | "paved" | "platform";
 
 export interface Area {
   osm: string;
@@ -433,11 +433,12 @@ const AREA_RULES: [key: string, values: Record<string, AreaKind>][] = [
   ["amenity", { parking: "paved" }],
   ["place", { square: "paved" }],
   ["area:highway", { "*": "paved" }],
-  ["leisure", { pitch: "pitch", playground: "sand", park: "grass", garden: "grass" }],
+  ["leisure", { pitch: "pitch", playground: "sand", park: "grass", garden: "grass", golf_course: "grass" }],
   ["natural", { sand: "sand", beach: "sand", shingle: "sand", bare_rock: "rock", scree: "rock" }],
-  ["natural", { wood: "forest", scrub: "forest", grassland: "grass", heath: "grass" }],
+  ["natural", { wood: "forest", scrub: "forest", grassland: "grass", heath: "grass", wetland: "grass" }],
   ["landuse", { forest: "forest" }],
-  ["landuse", { grass: "grass", meadow: "grass", village_green: "grass", flowerbed: "grass", allotments: "grass", cemetery: "grass" }],
+  ["landuse", { grass: "grass", meadow: "grass", village_green: "grass", flowerbed: "grass", allotments: "grass", cemetery: "grass", orchard: "grass" }],
+  ["landuse", { farmland: "field" }],
 ];
 
 /** Default road widths in meters by highway=* value; other values are not roads. */

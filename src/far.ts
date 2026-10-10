@@ -3,8 +3,8 @@ import { orientedBox, triangulate, type Point } from "./geometry.ts";
 import type { AreaKind } from "./osm.ts";
 import { tileRect, type Heights, type Tile } from "./tiles.ts";
 
-/** What a cell of the cover shows, by its index (see FarTile.cover). Later areas are painted over earlier ones. */
-export const FAR_CLASSES = ["ground", "grass", "forest", "sand", "rock", "pitch", "paved", "water", "road", "path", "rail"] as const;
+/** What a cell of the cover shows, by its index (see FarTile.cover); new classes go at the end, so the indices stay. */
+export const FAR_CLASSES = ["ground", "grass", "forest", "sand", "rock", "pitch", "paved", "water", "road", "path", "rail", "field"] as const;
 export type FarClass = (typeof FAR_CLASSES)[number];
 
 /** A building as the box around its outline, with a side along one of its edges. */
@@ -45,9 +45,10 @@ export interface FarOptions {
 const COVER_SIZE = 128;
 const HEIGHT_COUNT = 17;
 const MIN_AREA_M2 = 40;
-/** Areas in painting order, as FAR_CLASSES has them, and the class each is painted as */
-const AREA_ORDER: AreaKind[] = ["grass", "forest", "sand", "rock", "pitch", "paved", "platform", "water"];
+/** Areas in painting order, later ones over earlier ones, and the class each is painted as */
+const AREA_ORDER: AreaKind[] = ["field", "grass", "forest", "sand", "rock", "pitch", "paved", "platform", "water"];
 const AREA_CLASS: Record<AreaKind, FarClass> = {
+  field: "field",
   grass: "grass",
   forest: "forest",
   sand: "sand",
