@@ -349,3 +349,38 @@ test("a levelled way's ground is raised around its ends too, a portal's wall onl
   const at = portalWallsAt(walls);
   assert.deepEqual([at(40.5, 0), at(38, 5.8), at(38, 6.5)], [undefined, 104, undefined]);
 });
+
+test("tunnels side by side in one hall get one floor, the lower, at their portals too; apart they keep their own", () => {
+  // a footway and a cycleway along e under ground at 110, from portals at 100 (the footway's) and 100.3 to 98
+  const pair = (gap: number) => {
+    const ground = (e: number, n: number) => (e <= 0 ? (n < gap / 2 ? 100 : 100.3) : e >= 200 ? 98 : 110);
+    const footway = road("w1", [[0, 0], [200, 0]], { tunnel: true, layer: -1, kind: "footway", width: 2.5 });
+    const cycleway = road("w2", [[0, gap], [200, gap]], { tunnel: true, layer: -1, kind: "cycleway", width: 4 });
+    const outs = [road("w3", [[-20, 0], [0, 0]]), road("w4", [[200, 0], [220, 0]]), road("w5", [[-20, gap], [0, gap]]), road("w6", [[200, gap], [220, gap]])];
+    setTunnelFloors(features([footway, cycleway, ...outs]), ground);
+    return [defined(footway.floor), defined(cycleway.floor)];
+  };
+  // rooms 2.25 m and 3 m to either side: one hall 3.5 m apart
+  const [footway, cycleway] = pair(3.5);
+  assert.deepEqual(round(cycleway), round(footway));
+  assert.deepEqual([round(footway)?.[0], round(footway)?.at(-1)], [100, 98]);
+  const [, apart] = pair(20);
+  assert.equal(round(apart)?.[0], 100.3);
+});
+
+test("stairs' feet in one hall stay where they are, so their stairs rise no steeper", () => {
+  // two underpasses side by side from portals at 100 and 100.3, under a yard at 106, each up stairs at its end
+  const pair = (gap: number) => {
+    const ground = (e: number, n: number) => (e <= 0 ? (n < gap / 2 ? 100 : 100.3) : 106);
+    const footway = road("w1", [[0, 0], [60, 0]], { tunnel: true, layer: -1, kind: "footway", width: 2.5 });
+    const cycleway = road("w2", [[0, gap], [60, gap]], { tunnel: true, layer: -1, kind: "cycleway", width: 4 });
+    const stairs = [road("w3", [[60, 0], [60, -15]], { kind: "steps", width: 2 }), road("w4", [[60, gap], [60, gap + 15]], { kind: "steps", width: 2 })];
+    const outs = [road("w5", [[-20, 0], [0, 0]]), road("w6", [[-20, gap], [0, gap]])];
+    setTunnelFloors(features([footway, cycleway, ...stairs, ...outs]), ground);
+    return [defined(footway.floor), defined(cycleway.floor)];
+  };
+  const [footway, cycleway] = pair(3.5);
+  const [, apart] = pair(20);
+  assert.equal(round(cycleway)?.at(-1), round(apart)?.at(-1));
+  assert.deepEqual(round(cycleway.slice(0, -1)), round(footway.slice(0, -1)));
+});

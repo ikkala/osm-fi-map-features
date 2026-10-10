@@ -60,6 +60,9 @@ const MAX_BEND_M = 0.1;
 const SMOOTH_ROUNDS = 500;
 /** Junction floors are averaged this many rounds (they settle in far fewer) */
 const ROUNDS = 1000;
+/** Tunnels whose rooms overlap with floors less than this apart (m) are one hall, with one floor; levelled this many rounds at most */
+const ONE_HALL_M = 1;
+const HALL_ROUNDS = 50;
 
 type Way = Road | Rail;
 
@@ -328,19 +331,9 @@ export function setTunnelFloors(
     node.floor = Math.min(node.floor, crossed.get(k) ?? Infinity);
   }
 
-  // no steeper than MAX_GRADE: the floor is lowered toward the low points, but not at the portals
-  const lowest = spread(
-    nodes,
-    [...nodes].filter(([, node]) => Number.isFinite(node.floor)).map(([k, node]) => [k, node.floor]),
-    (length) => MAX_GRADE * length,
-  );
-  for (const [k, node] of nodes) {
-    if (node.portal === undefined) {
-      node.floor = lowest.get(k) ?? node.floor;
-    }
-  }
-
+  easeToGrade(nodes);
   smoothFloors(nodes);
+  levelHalls(tunnels, nodes);
 
   let floors = 0;
   for (const way of tunnels) {
@@ -717,6 +710,77 @@ function rampOut<T extends Way>(
   }
   ways.push(...added);
   return count;
+}
+
+/** No steeper than MAX_GRADE: the floor is lowered toward the low points, but not at the portals (or where `keep` says) */
+function easeToGrade(nodes: Map<string, Node>, keep: (node: Node) => boolean = (node) => node.portal !== undefined): void {
+  const lowest = spread(
+    nodes,
+    [...nodes].filter(([, node]) => Number.isFinite(node.floor)).map(([k, node]) => [k, node.floor]),
+    (length) => MAX_GRADE * length,
+  );
+  for (const [k, node] of nodes) {
+    if (!keep(node)) {
+      node.floor = lowest.get(k) ?? node.floor;
+    }
+  }
+}
+
+/**
+ * Gives tunnels side by side in one hall (their rooms overlapping, their floors less than ONE_HALL_M apart) one
+ * floor: each point comes down to the floor of the tunnel beside it, lowering only (deeper is always deep enough),
+ * and the floors around are eased to MAX_GRADE and smoothed again, until they agree. Stairs' feet stay where they
+ * are, or the stairs would rise steeper; a portal comes down, and the way leading on ramps down to it.
+ */
+function levelHalls(tunnels: Way[], nodes: Map<string, Node>): void {
+  const keep = (node: Node) => node.stairs === true || node.sideStairs === true;
+  const rooms = tunnels.map((way) => ({ way, half: ("width" in way ? way.width : RAIL_WIDTH_M) / 2 + ROOM_SIDE_M, box: bounds(way.line) }));
+  // the points with a tunnel beside them, and where on its line: between its points i - 1 and i, t of the way
+  const beside: { node: Node; line: Point[]; i: number; t: number }[] = [];
+  for (const a of rooms) {
+    for (const b of rooms) {
+      const reach = a.half + b.half;
+      if (a === b || a.box.minX > b.box.maxX + reach || a.box.maxX < b.box.minX - reach || a.box.minY > b.box.maxY + reach || a.box.maxY < b.box.minY - reach) {
+        continue;
+      }
+      const line = b.way.line;
+      for (const p of a.way.line) {
+        const node = nodes.get(pointKey(p));
+        let nearest = { distance: Infinity, i: 0, t: 0 };
+        for (let i = 1; i < line.length; i++) {
+          const [dx, dy] = [line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]];
+          const lengthSq = dx * dx + dy * dy;
+          const t = lengthSq > 0 ? Math.min(Math.max(((p[0] - line[i - 1][0]) * dx + (p[1] - line[i - 1][1]) * dy) / lengthSq, 0), 1) : 0;
+          const distance = Math.hypot(line[i - 1][0] + dx * t - p[0], line[i - 1][1] + dy * t - p[1]);
+          if (distance < nearest.distance) {
+            nearest = { distance, i, t };
+          }
+        }
+        if (node && nearest.distance < reach) {
+          beside.push({ node, line, i: nearest.i, t: nearest.t });
+        }
+      }
+    }
+  }
+  const floorAt = ({ line, i, t }: { line: Point[]; i: number; t: number }) => {
+    const [u, v] = [nodes.get(pointKey(line[i - 1]))?.floor, nodes.get(pointKey(line[i]))?.floor];
+    return u !== undefined && v !== undefined ? u + (v - u) * t : undefined;
+  };
+  for (let round = 0; round < HALL_ROUNDS; round++) {
+    let moved = 0;
+    for (const b of beside) {
+      const floor = floorAt(b);
+      if (floor !== undefined && floor < b.node.floor && b.node.floor - floor < ONE_HALL_M && !keep(b.node)) {
+        moved = Math.max(moved, b.node.floor - floor);
+        b.node.floor = floor;
+      }
+    }
+    if (moved < 0.001) {
+      break;
+    }
+    easeToGrade(nodes, (node) => node.portal !== undefined || keep(node));
+    smoothFloors(nodes);
+  }
 }
 
 /**
