@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Point } from "./geometry.ts";
 import { DAM_WIDTH_M, landmarkQuery, parseLandmarks, PIER_WIDTH_M } from "./landmarks.ts";
-import type { MapFeatures, OverpassResponse } from "./osm.ts";
+import type { Area, MapFeatures, OverpassResponse } from "./osm.ts";
 import { LocalProjection } from "./projection.ts";
-import { setCourseHeights, type Ride } from "./rides.ts";
+import { setCourseHeights, withoutCourseWater, type Ride } from "./rides.ts";
 import { defined } from "./testing.ts";
 import { cutIntoTiles } from "./tiles.ts";
 
@@ -160,6 +160,49 @@ test("a course runs at its layer's height in its middle and meets the courses it
   assert.deepEqual(c.heights, [9, 6, 3]);
   // in a tunnel: at the ground
   assert.deepEqual(d.heights, [0, 0, 0]);
+});
+
+test("courses crossing without meeting run 4 m apart, the one on the higher layer (or else the higher one) over", () => {
+  const course = (osm: string, line: Point[], layer?: number, kind = "track"): Ride => ({ osm, kind, point: line[0], line, ...(layer && { layer }) });
+  // 6 m apart already: only the crossing's point added
+  const [a, b] = [course("a", [[0, 0], [20, 0]], 1), course("b", [[5, -10], [5, 10]], 2)];
+  setCourseHeights([a, b]);
+  assert.deepEqual(a.line, [[0, 0], [5, 0], [10, 0], [20, 0]]);
+  assert.deepEqual(a.heights, [6, 6, 6, 6]);
+  assert.deepEqual(b.heights, [12, 12, 12]);
+  // on the same layer each moves half the way, straight to its points before and after
+  const [c, d] = [course("c", [[0, 0], [40, 0]], 1), course("d", [[10, -10], [10, 10]], 1, "log_flume")];
+  setCourseHeights([c, d]);
+  assert.deepEqual(c.line, [[0, 0], [10, 0], [20, 0], [40, 0]]);
+  assert.deepEqual(c.heights, [6, 4, 6, 6]);
+  assert.deepEqual(d.heights, [6, 8, 6]);
+  // on the ground the lower one stays, a course crossing itself rises over its earlier stretch
+  const loop = course("e", [[0, 0], [20, 0], [20, 10], [10, 10], [10, -10]]);
+  setCourseHeights([loop]);
+  const crossing = defined(loop.line).findIndex((p, i) => i > 0 && p[0] === 10 && p[1] === 0);
+  assert.equal(defined(loop.heights)[crossing], 1);
+  const again = defined(loop.line).findLastIndex((p) => p[0] === 10 && p[1] === 0);
+  assert.ok(again > crossing);
+  assert.ok(Math.abs(defined(loop.heights)[again] - 5) < 1e-9);
+  // in a tunnel: under the ground, no crossing
+  const [f, g] = [course("f", [[0, 0], [20, 0]]), { ...course("g", [[10, -10], [10, 10]], -1), tunnel: true }];
+  setCourseHeights([f, g]);
+  assert.deepEqual(f.heights, [1, 1, 1]);
+});
+
+test("the water areas along a water ride's course are left to it", () => {
+  const water = (osm: string, outer: Point[], kind: Area["kind"] = "water"): Area => ({ osm, kind, polygon: { outer, holes: [] } });
+  const rectangle = (e0: number, n0: number, e1: number, n1: number): Point[] => [[e0, n0], [e1, n0], [e1, n1], [e0, n1]];
+  const flume: Ride = { osm: "w1", kind: "river_rafting", point: [25, 0], line: [[0, 0], [50, 0]], layer: 1 };
+  const track: Ride = { osm: "w2", kind: "track", point: [25, 100], line: [[0, 100], [50, 100]] };
+  const areas = [
+    water("a", rectangle(0, -1, 50, 1)),
+    water("b", rectangle(10, -10, 30, 10)),
+    water("c", rectangle(0, -1, 50, 1), "grass"),
+    water("d", rectangle(0, 99, 50, 101)),
+  ];
+  assert.deepEqual(withoutCourseWater(areas, [flume, track]).map((a) => a.osm), ["b", "c", "d"]);
+  assert.equal(withoutCourseWater(areas, [{ ...flume, tunnel: true }]).length, 4);
 });
 
 test("landmarks into the tiles: points to their tile, lines cut with their heights, outlines to their middle's tile", () => {

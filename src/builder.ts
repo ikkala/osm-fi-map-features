@@ -16,6 +16,7 @@ import { mergeTrees, moveTreesOffWays, plantForests } from "./forests.ts";
 import { pointKey, simplifyLine, type Point } from "./geometry.ts";
 import { placeLamps } from "./lamps.ts";
 import { landmarkQuery, parseLandmarks } from "./landmarks.ts";
+import { withoutCourseWater } from "./rides.ts";
 import { parsePlayEquipment, placePlayEquipment, playgroundQuery } from "./playgrounds.ts";
 import { fetchRoofColours, ORTHO_ATTRIBUTION } from "./ortho.ts";
 import { bounds, fetchOverpass, inheritFromOutlines, LEVEL_HEIGHT_M, NOT_FOR_VEHICLES, openDoorways, openRailHalls, overpassQuery, parseOsm, type Building, type GeoBox } from "./osm.ts";
@@ -346,11 +347,14 @@ export class MapBuilder {
       const { response: landmarkResponse, cached: landmarksCached } = await fetchOverpass(landmarkQuery(fetchBox), { url: overpassUrl, cache, refresh });
       const found = parseLandmarks(landmarkResponse.elements, origin);
       Object.assign(features, found);
+      const areas = features.areas.length;
+      features.areas = withoutCourseWater(features.areas, found.rides);
       const lit = found.seamarks.filter((s) => s.light).length;
       logger.log(
         `landmarks (${landmarksCached ? "cached" : "fetched"}): ${found.seamarks.length} seamarks (${lit} lit), ${found.landmarks.length} masts, ` +
           `flagpoles, stones, fountains, artworks and memorials, ${found.piers.length} piers, ${found.dams.length} dams and weirs, ` +
-          `${found.rides.length} rides and tracks, ${found.powerLines.length} power lines, ${found.pistes.length} pistes`,
+          `${found.rides.length} rides and tracks (${areas - features.areas.length} water areas along flumes left to them), ` +
+          `${found.powerLines.length} power lines, ${found.pistes.length} pistes`,
       );
     } catch (err) {
       logger.warn(`warning: no landmarks: ${err instanceof Error ? err.message : String(err)}`);
