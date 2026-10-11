@@ -17,6 +17,8 @@ export interface WaterwayLine {
   name?: string;
   /** In a culvert or tunnel */
   tunnel: boolean;
+  /** Dry most of the time (intermittent=yes) */
+  dry?: boolean;
   line: Point[];
 }
 
@@ -82,7 +84,7 @@ export function parseWaterways(elements: OverpassResponse["elements"], origin: G
     }
     const tunnel = (tags.tunnel !== undefined && tags.tunnel !== "no") || tags.covered === "yes";
     const line = element.geometry.map((p) => projection.toMeters({ latitude: p.lat, longitude: p.lon }));
-    result.push({ osm: `w${element.id}`, kind, ...(tags.name && { name: tags.name }), tunnel, line });
+    result.push({ osm: `w${element.id}`, kind, ...(tags.name && { name: tags.name }), tunnel, ...(tags.intermittent === "yes" && { dry: true }), line });
   }
   return result;
 }
@@ -109,7 +111,7 @@ interface Sample {
 
 /**
  * Sets the levels of the water areas from heightAt (m above sea level at a point) and follows the
- * waterways through them. Lines in tunnels join waterways but have no water of their own.
+ * waterways through them. Lines in tunnels, and dry ones, join waterways but have no water of their own.
  */
 export function setWaterLevels(areas: Area[], lines: WaterwayLine[], heightAt: (e: number, n: number) => number | undefined): WaterLevels {
   const waters: Water[] = areas
@@ -135,7 +137,7 @@ export function setWaterLevels(areas: Area[], lines: WaterwayLine[], heightAt: (
   // each line's points in the water, levelled to fall downstream
   const runs = new Map<WaterwayLine, { point: Point; along: Point; waters: Water[]; height: number }[]>();
   for (const line of lines) {
-    if (line.tunnel) {
+    if (line.tunnel || line.dry) {
       continue;
     }
     const points = [];
