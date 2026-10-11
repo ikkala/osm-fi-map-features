@@ -396,7 +396,11 @@ Landmarks come from a query of their own (`src/landmarks.ts`); the tiles have th
   flume, a train's loop) is a line, closed back to its start when its way is, and has `heights` over the ground:
   OSM seldom tells them, only the layer, so a course is at 6 m a layer over 0 (1 m on layer 0 or unset, at the
   ground in a tunnel) halfway along, and each end at the mean of those of the courses that meet there, straight
-  between them, so joined pieces meet.
+  between them, so joined pieces meet. Where courses cross without meeting, the one on the higher layer (on the same
+  layer the higher one there) runs 4 m over the other, each moved half the way (the lower one no lower than 1 m),
+  straight to the points before and after; the crossing is a point of both lines. A water area that lies all along a
+  flume's, rafting river's or water slide's course (within 3 m of its line) is the course's water and is left out of
+  `areas`.
 - `powerLines` (`power=line`, `minor_line`) with their highest `voltage` and `cables`, and `pistes`
   (`piste:type=*`, not proposed or under construction) with their `grooming`, name (`piste:name`, else
   `name`) and `width`; a closed piste is a loop unless `area=yes`.
