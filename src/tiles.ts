@@ -2,7 +2,7 @@
 // y*size ... (y+1)*size meters from the map origin. Lines and areas are cut at tile edges; buildings,
 // points and bridge deck pieces belong whole to the tile of their centre.
 import { deckAt } from "./bridges.ts";
-import { clipPolygon, clipPolyline, ringCentroid, simplifyRing, type Point, type Polygon, type Rect } from "./geometry.ts";
+import { clipPolygon, clipPolyline, ringCentroid, simplifyRing, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
 import {
   bounds,
   type Area,
@@ -178,6 +178,7 @@ export function cutIntoTiles(features: MapFeatures, keys: TileKey[], size: numbe
     const [e, n] = deck.vertices.reduce(([se, sn], [ve, vn]) => [se + ve, sn + vn], [0, 0]);
     tileAt([e / deck.vertices.length, n / deck.vertices.length])?.bridgeDecks.push(deck satisfies BridgeDeck);
   }
+  cutLandmarks(features, tiles, tileAt, touched, size);
 
   const byOsmId = (a: { osm: string }, b: { osm: string }) => compareOsmIds(a.osm, b.osm);
   // trees, lamps and the points on ways have no ids: south to north, then west to east
@@ -195,8 +196,69 @@ export function cutIntoTiles(features: MapFeatures, keys: TileKey[], size: numbe
     tile.barriers.sort(byOsmId);
     tile.playEquipment.sort(byOsmId);
     tile.bridgeDecks.sort(byOsmId);
+    for (const key of LANDMARK_SECTIONS) {
+      tile[key]?.sort(byOsmId);
+    }
   }
   return [...tiles.values()];
+}
+
+const LANDMARK_SECTIONS = ["seamarks", "landmarks", "piers", "dams", "rides", "powerLines", "pistes"] as const;
+
+/**
+ * The landmarks into the tiles, each section only where the features have it: points (and outlines) whole to the tile
+ * of their middle, lines cut at the tiles' edges, a course's heights with its line.
+ */
+function cutLandmarks(
+  features: MapFeatures,
+  tiles: Map<string, Tile>,
+  tileAt: (point: Point) => Tile | undefined,
+  touched: (points: Point[]) => Tile[],
+  size: number,
+): void {
+  for (const tile of tiles.values()) {
+    for (const key of LANDMARK_SECTIONS) {
+      if (features[key]) {
+        tile[key] = [];
+      }
+    }
+  }
+  // a line cut at the tiles' edges, an outline whole to the tile of its middle
+  const place = <T extends { line?: Point[]; outline?: Ring }>(list: T[] | undefined, section: (tile: Tile) => T[] | undefined) => {
+    for (const feature of list ?? []) {
+      const { line, outline } = feature;
+      for (const tile of line ? touched(line) : []) {
+        for (const piece of line ? clipPolyline(line, tileRect(tile, size)) : []) {
+          section(tile)?.push({ ...feature, line: piece });
+        }
+      }
+      const target = !line && outline ? tileAt(ringCentroid(outline)) : undefined;
+      if (target) {
+        section(target)?.push(feature);
+      }
+    }
+  };
+  for (const seamark of features.seamarks ?? []) {
+    tileAt(seamark.point)?.seamarks?.push(seamark);
+  }
+  for (const landmark of features.landmarks ?? []) {
+    tileAt(landmark.point)?.landmarks?.push(landmark);
+  }
+  for (const ride of features.rides ?? []) {
+    const { line, heights } = ride;
+    for (const tile of line ? touched(line) : []) {
+      for (const piece of line ? clipPolyline(line, tileRect(tile, size)) : []) {
+        tile.rides?.push({ ...ride, line: piece, ...(line && heights && { heights: piece.map((p) => deckAt(line, heights, p)) }) });
+      }
+    }
+    if (!line) {
+      tileAt(ride.point)?.rides?.push(ride);
+    }
+  }
+  place(features.piers, (tile) => tile.piers);
+  place(features.dams, (tile) => tile.dams);
+  place(features.pistes, (tile) => tile.pistes);
+  place(features.powerLines, (tile) => tile.powerLines);
 }
 
 /**

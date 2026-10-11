@@ -2,7 +2,9 @@
 
 Map features for a 3D map of a Finnish city, in meters around an origin point and a square tile at a time:
 roads, rails, buildings (with 3D parts, roofs, windows, entrances and the businesses in them), trees, street
-lamps, crossings, traffic signals, gates, fences and walls, playground equipment, and ground areas from
+lamps, crossings, traffic signals, gates, fences and walls, playground equipment, landmarks (lighthouses and other
+seamarks with their lights, masts, flagpoles, boulders, fountains, artworks, memorials, piers, dams, amusement
+rides, power lines and ski tracks), and ground areas from
 [OpenStreetMap](https://www.openstreetmap.org/), combined with Finnish open data:
 
 - the ground heights of the [National Land Survey of Finland](https://www.maanmittauslaitos.fi/en)'s
@@ -45,15 +47,19 @@ const builder = new MapBuilder({
 });
 const info = await builder.info(); // tiles, OSM timestamp, attributions
 for (const key of info.tiles) {
-  const tile = await builder.tile(key); // roads, rails, buildings, areas, trees, lamps, crossings, signals, gates, barriers, playEquipment, bridgeDecks, waterways, heights
+  const tile = await builder.tile(key); // roads, rails, buildings, areas, trees, lamps, crossings, signals, gates, barriers, playEquipment, bridgeDecks,
+  // seamarks, landmarks, piers, dams, rides, powerLines, pistes, waterways, heights
+
 }
 ```
 
 Coordinates are meters east (first) and north (second) of the origin. Tile `x, y` covers east `x * size ..
 (x + 1) * size` and north `y * size .. (y + 1) * size`. Roads, rails and areas are cut at tile edges; a
 building belongs whole to the tile its centroid is in, a tree to the tile of its trunk, a lamp to the tile of
-its foot and a piece of playground equipment to the tile of its middle. The types are in
-`src/osm.ts` (`MapFeatures`, `Building`, ...) and `src/tiles.ts` (`Tile`, `Heights`).
+its foot and a piece of playground equipment or a landmark to the tile of its middle; landmarks drawn as lines
+(piers, dams, rides' courses, power lines, pistes) are cut at tile edges. The types are in
+`src/osm.ts` (`MapFeatures`, `Building`, ...), `src/landmarks.ts`, `src/seamarks.ts`, `src/rides.ts` and
+`src/tiles.ts` (`Tile`, `Heights`).
 
 ### Sources and the cache
 
@@ -354,6 +360,42 @@ node lines up with the nearest swing within 6 m (frames in a row), and other nod
 2 m long) of the playground (`leisure=playground`) they stand in; nodes of one kind within 1.5 m of each other are
 one piece mapped twice. Around Tampere there are about 1 200 pieces in 560 playgrounds, half of them swings and a
 third sandpits; 130 swings stand in a row, and 370 other pieces line up with their playground's edge.
+
+Landmarks come from a query of their own (`src/landmarks.ts`); the tiles have their sections (`seamarks`,
+`landmarks`, `piers`, `dams`, `rides`, `powerLines`, `pistes`) only when it was had. Elements drawn as buildings
+(`building=*`) or indoors (`indoor=yes`) are left out of `landmarks`, and relations are left out.
+
+- `seamarks` (`src/seamarks.ts`): lighthouses (`man_made=lighthouse`), lights (`seamark:type=light_*`), beacons
+  and buoys (`beacon_*`, `buoy_*`), with their type and category (a cardinal's north, east, ...), colours top
+  first, colour pattern, shape, topmark and `height`, and their light: its colour (the first of a list), its height
+  over the water and its rhythm, `phases`: seconds lit and dark in turn over its period, lit first, empty for a
+  fixed light. The rhythm is `seamark:light:sequence` when tagged (`0.2+(0.25)+...+0.2+(4)`, dark in brackets,
+  turned round to start lit and its last dark lengthened to the period), else made from the character as the IALA
+  abbreviations describe it: a flash 0.5 s (a long flash 2 s) with 1 s between the flashes of a group, quick lights
+  at 60, 120 and 240 flashes a minute, interrupted ones (and those with a group or a period) dark for the rest of
+  their period, isophase lights half lit, occulting ones lit but for 1 s eclipses; F, and what is not understood, is
+  fixed. Without a period, Fl takes 5 s, LFl 8 s, Iso 4 s and Oc 5 s. A light with numbered lights
+  (`seamark:light:1:*`) all with `sector_start` and `sector_end` has `sectors`: its colour by bearing from the
+  water. Around Tampere there are one lighthouse and four lights, all but the lighthouse fixed, and 57 beacons and
+  buoys.
+- `landmarks`: masts (`man_made=mast`, with `tower:type` and `tower:construction`), towers mapped as a node (as
+  a way they are buildings), flagpoles, boulders (`natural=stone`), fountains, artworks (`tourism=artwork`, with
+  `artwork_type`), memorials and monuments (`historic=memorial` with `memorial=*`, `historic=monument`) and power
+  towers and poles, each with its `name`, `height` and `material`, and a way's outline; a fountain that is an
+  artwork is a fountain. Around Tampere about 900 flagpoles (none with a height), 200 masts, 230 power supports and
+  180 fountains, artworks and memorials.
+- `piers` (`man_made=pier`): a closed way's outline, or an open way's line with its `width` (2 m unless
+  tagged), whether it is `floating`, and its `surface` (or `material`). `dams`: `waterway=dam`, `weir` and
+  `lock_gate` ways, an outline or a line 3 m thick unless tagged.
+- `rides` (`src/rides.ts`): the rides of `attraction=*` (roller coasters, carousels, drop towers, ...; not
+  `animal` or `maze`) and roller coasters' tracks (`roller_coaster=track`, kind `track`). A course (a track, a
+  flume, a train's loop) is a line, closed back to its start when its way is, and has `heights` over the ground:
+  OSM seldom tells them, only the layer, so a course is at 6 m a layer over 0 (1 m on layer 0 or unset, at the
+  ground in a tunnel) halfway along, and each end at the mean of those of the courses that meet there, straight
+  between them, so joined pieces meet.
+- `powerLines` (`power=line`, `minor_line`) with their highest `voltage` and `cables`, and `pistes`
+  (`piste:type=*`, not proposed or under construction) with their `grooming`, name (`piste:name`, else
+  `name`) and `width`; a closed piste is a loop unless `area=yes`.
 
 Businesses (`Building.businesses`) are the OSM elements with `shop`, `office`, `craft` or `healthcare`, or with an
 `amenity`, `tourism` or `leisure` value that is a business (restaurants, cafes, pharmacies, banks, cinemas, hotels,

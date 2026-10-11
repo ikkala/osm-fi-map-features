@@ -2,6 +2,9 @@
 import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
 import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
+import type { Dam, Landmark, Pier, Piste, PowerLine } from "./landmarks.ts";
+import type { Ride } from "./rides.ts";
+import type { Seamark } from "./seamarks.ts";
 import { field, isObject, items, optionalNumber, optionalString } from "./json.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 import {
@@ -423,6 +426,14 @@ export interface MapFeatures {
   barriers: Barrier[];
   playEquipment: PlayEquipment[];
   bridgeDecks: BridgeDeck[];
+  /** The landmarks of a query of their own (landmarks.ts), when it was had */
+  seamarks?: Seamark[];
+  landmarks?: Landmark[];
+  piers?: Pier[];
+  dams?: Dam[];
+  rides?: Ride[];
+  powerLines?: PowerLine[];
+  pistes?: Piste[];
 }
 
 /**

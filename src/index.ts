@@ -14,6 +14,17 @@ export {
   type RoadFlows,
 } from "./flows.ts";
 export { triangulate, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
+export {
+  DAM_WIDTH_M,
+  PIER_WIDTH_M,
+  type Dam,
+  type Landmark,
+  type LandmarkKind,
+  type Landmarks,
+  type Pier,
+  type Piste,
+  type PowerLine,
+} from "./landmarks.ts";
 export { ORTHO_ATTRIBUTION } from "./ortho.ts";
 export type {
   Area,
@@ -47,7 +58,9 @@ export type {
   WindowStyle,
 } from "./osm.ts";
 export { isValidGeoPoint, LocalProjection, type GeoPoint } from "./projection.ts";
+export type { Ride } from "./rides.ts";
 export { ROOF_TOP_SOURCES, TAMPERE_ROOF_TOPS, type RoofTopSource } from "./roofTops.ts";
 export { TAMPERE_TREE_REGISTER, TREE_REGISTERS, type TreeRegisterSource } from "./treeRegister.ts";
+export { lightPhases, type Light, type LightSector, type Seamark, type SeamarkKind } from "./seamarks.ts";
 export { tileName, tileRect, type Heights, type Tile, type TileKey } from "./tiles.ts";
 export type { Waterway, WaterwayKind } from "./waterways.ts";
