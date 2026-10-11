@@ -237,7 +237,7 @@ export class MapBuilder {
       }
       features.bridgeDecks = outlined.decks;
       logger.log(`${bridgeOutlines.length} bridge outlines, ${new Set(outlined.decks.map((d) => d.osm)).size} with decks for the ${outlined.ways} ways on them`);
-      logger.log(`${fitLidsToDecks([...features.roads, ...features.rails])} lids lowered to the decks over them`);
+      logger.log(`${fitLidsToDecks([...features.roads, ...features.rails], heightAt)} lids fitted to the decks over them`);
       // ways carried through buildings on a span open their walls from the deck up
       const carried = features.roads.filter((r) => r.deck && !r.bridge && throughBuildings(r));
       raisePassages(features.buildings, carried);

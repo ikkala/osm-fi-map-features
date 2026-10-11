@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { coverCutTunnels, cutLid, fitLidsToDecks } from "./cuts.ts";
+import { coverCutTunnels, cutLid, fitLidsToDecks, LID_THICKNESS_M } from "./cuts.ts";
 import type { Point } from "./geometry.ts";
 import type { Building, MapFeatures, Rail, Road } from "./osm.ts";
 
@@ -24,7 +24,7 @@ test("cutLid covers a tunnel in a cut at the ground beside it, and not one under
 
 test("cutLid leaves room for vehicles under a lid over a shallow cut", () => {
   const shallow = (e: number, n: number) => (Math.abs(n) <= 4 ? 95 : 99);
-  assert.deepEqual(cutLid([[10, 0], [50, 0]], shallow), [95 + 3.5 + 1, 95 + 3.5 + 1]);
+  assert.deepEqual(cutLid([[10, 0], [50, 0]], shallow), [95 + 3.5 + LID_THICKNESS_M, 95 + 3.5 + LID_THICKNESS_M]);
 });
 
 test("coverCutTunnels gives the tunnel a lid, makes the ways over it bridges and opens walls over it", () => {
@@ -45,6 +45,7 @@ test("coverCutTunnels gives the tunnel a lid, makes the ways over it bridges and
     pieces.map((r) => [r.line[0][1], r.line[r.line.length - 1][1], r.bridge]),
     [[-40, -3.5, false], [-3.5, 3.5, true], [3.5, 40, false]],
   );
+  assert.deepEqual(pieces.map((r) => r.onLid), [undefined, true, undefined]);
   assert.deepEqual([street.bridge, street.line.length], [false, 2]);
   // the station's walls are open over the tunnel, below its floor
   assert.deepEqual(station.passages?.map((o) => o.height), [0, 0]);
@@ -81,8 +82,22 @@ test("fitLidsToDecks lowers a lid to the decks of the bridges over it, leaving r
   const street = road("w2", [[10, -5], [10, 5]], { bridge: true, deck: [104.5, 104.5] });
   const low = road("w3", [[0, 10], [20, 10]], { kind: "footway", width: 2.5, layer: -1, tunnel: true, lid: [105.3, 105.3], floor: [100.8, 100.8] });
   const lowStreet = road("w4", [[10, 5], [10, 15]], { bridge: true, deck: [102, 102] });
-  fitLidsToDecks([underpass, street, low, lowStreet]);
+  assert.equal(fitLidsToDecks([underpass, street, low, lowStreet], () => 105.3), 2);
   assert.deepEqual(underpass.lid, [104.5, 104.5]);
   // no lower than 2.5 m of room and the lid over the floor
-  assert.deepEqual(low.lid, [100.8 + 2.5 + 1, 100.8 + 2.5 + 1]);
+  assert.deepEqual(low.lid, [100.8 + 2.5 + LID_THICKNESS_M, 100.8 + 2.5 + LID_THICKNESS_M]);
+});
+
+test("fitLidsToDecks raises a lid at the lower rim to the decks over it, no higher than the higher rim", () => {
+  // the cut's bottom at 95 within 4 m of n = 0 and n = 20, its rims at 101 south of n = 0 and 102 elsewhere; west of
+  // the portals at e = 12 all at 95, so the rims are where the decks cross, not at the line's ends
+  const rims = (e: number, n: number) => (e < 12 || Math.abs(n) <= 4 || Math.abs(n - 20) <= 4 ? 95 : n < 0 ? 101 : 102);
+  const tram = rail("w1", [[10, 0], [30, 0], [50, 0]], { kind: "light_rail", layer: -1, tunnel: true, lid: [101, 101, 101], floor: [95, 95, 95] });
+  const railway = rail("w2", [[20, -10], [20, 10]], { bridge: true, deck: [101.6, 101.4] });
+  const high = rail("w3", [[10, 20], [50, 20]], { kind: "light_rail", layer: -1, tunnel: true, lid: [101, 101], floor: [95, 95] });
+  const footbridge = road("w4", [[30, 10], [30, 30]], { kind: "footway", width: 2.5, bridge: true, deck: [108, 108] });
+  assert.equal(fitLidsToDecks([tram, railway, high, footbridge], rims), 2);
+  // at the deck where it crosses; the last point has no deck beside it
+  assert.deepEqual(tram.lid, [101.5, 101.5, 101]);
+  assert.deepEqual(high.lid, [102, 102]);
 });

@@ -57,6 +57,8 @@ export interface Road {
   deck?: number[];
   /** A tunnel in a cut in the elevation model: its lid's top (m above sea level) at every point of line */
   lid?: number[];
+  /** A bridge's stretch over a tunnel's lid, which carries it */
+  onLid?: boolean;
   /** Other tunnels and ramps to their portals: the floor (m above sea level) at every point of line, when known */
   floor?: number[];
   /** People walking along the way per average day, both directions, at every point of line (see footfall.ts) */
@@ -90,6 +92,8 @@ export interface Rail {
   deck?: number[];
   /** A tunnel in a cut in the elevation model: its lid's top (m above sea level) at every point of line */
   lid?: number[];
+  /** A bridge's stretch over a tunnel's lid, which carries it */
+  onLid?: boolean;
   /** Other tunnels and ramps to their portals: the floor (m above sea level) at every point of line, when known */
   floor?: number[];
   /** Other railways: the track bed (m above sea level) at every point of line, the ground smoothed along it */
