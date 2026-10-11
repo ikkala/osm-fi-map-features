@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { Point, Polygon } from "./geometry.ts";
 import type { Building, MapFeatures, Rail, Road } from "./osm.ts";
 import { defined } from "./testing.ts";
-import { densify, portalWallsAt, RAIL_CLEARANCE_M, raiseToWalls, ROAD_CLEARANCE_M, ROOF_M, setTunnelFloors, uncoverAtGrade, WATER_DEPTH_M } from "./tunnels.ts";
+import { BED_M, densify, portalWallsAt, RAIL_CLEARANCE_M, raiseToWalls, ROAD_CLEARANCE_M, ROOF_M, setTunnelFloors, uncoverAtGrade, WATER_DEPTH_M } from "./tunnels.ts";
 
 function road(osm: string, line: Point[], extra: Partial<Road> = {}): Road {
   return { osm, kind: "primary", width: 8, layer: 0, bridge: false, tunnel: false, line, ...extra };
@@ -199,14 +199,24 @@ test("a way ending at a ramp on its way ramps on from the ramp's floor there; a 
   assert.equal(across.floor, undefined);
 });
 
-test("under water the floor is deeper by the water's depth", () => {
+test("under water the floor is deeper by the water's depth and a bed over the roof", () => {
   // the elevation model has the water's surface, 100, over the middle of the tunnel
   const tunnel = road("w1", [[0, 0], [300, 0]], { tunnel: true, layer: -2 });
   const lake: Polygon = { outer: [[100, -50], [200, -50], [200, 50], [100, 50]], holes: [] };
   const map = features([road("w2", [[-50, 0], [0, 0]]), tunnel, road("w3", [[300, 0], [350, 0]])]);
   map.areas.push({ osm: "w4", kind: "water", polygon: lake });
   setTunnelFloors(map, () => 100);
-  assert.equal(Math.round(Math.min(...defined(tunnel.floor)) * 10) / 10, 100 - ROAD_CLEARANCE_M - ROOF_M - WATER_DEPTH_M);
+  assert.equal(Math.round(Math.min(...defined(tunnel.floor)) * 10) / 10, 100 - ROAD_CLEARANCE_M - ROOF_M - WATER_DEPTH_M - BED_M);
+});
+
+test("water over only the side of a tunnel's room takes it under the water's surface there", () => {
+  // a river falling across the tunnel: its surface 96 over the room's south side, the ground 100 over its line
+  const tunnel = road("w1", [[0, 0], [300, 0]], { tunnel: true, layer: -2 });
+  const river: Polygon = { outer: [[100, -50], [200, -50], [200, -3], [100, -3]], holes: [] };
+  const map = features([road("w2", [[-50, 0], [0, 0]]), tunnel, road("w3", [[300, 0], [350, 0]])]);
+  map.areas.push({ osm: "w4", kind: "water", polygon: river });
+  setTunnelFloors(map, (_, n) => (n < -3 ? 96 : 100));
+  assert.equal(Math.round(Math.min(...defined(tunnel.floor)) * 10) / 10, 96 - ROAD_CLEARANCE_M - ROOF_M - WATER_DEPTH_M - BED_M);
 });
 
 test("tunnels on level ground run at the ground: railways anywhere, roads and paths under buildings", () => {
