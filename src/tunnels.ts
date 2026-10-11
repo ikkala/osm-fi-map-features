@@ -339,24 +339,29 @@ export function setTunnelFloors(
     node.floor = Math.min(node.floor, crossed.get(k) ?? Infinity);
   }
 
-  easeToGrade(nodes);
-  steadyGrades(nodes);
-  smoothFloors(nodes);
-  levelHalls(tunnels, nodes);
-  // under the tunnels crossing over, once their floors are set: from there no steeper than MAX_GRADE, as above
-  for (let round = 0; round < UNDER_TUNNEL_ROUNDS; round++) {
-    const under = underTunnels(tunnels, nodes);
-    if (under.length === 0) {
-      break;
+  // each group of tunnels that touch goes through the passes on its own, so its floors do not depend on tunnels
+  // elsewhere: twice (a pass may undo another's work), and again under the tunnels crossing over, once their
+  // floors are set, as long as that lowers any (from there no steeper than MAX_GRADE, as above)
+  for (const group of touchingGroups(tunnels)) {
+    const groupNodes = new Map([...nodes].filter(([k]) => group.keys.has(k)));
+    const settle = () => {
+      easeToGrade(groupNodes);
+      steadyGrades(groupNodes);
+      smoothFloors(groupNodes);
+      levelHalls(group.ways, groupNodes);
+    };
+    settle();
+    for (let round = 0; round < UNDER_TUNNEL_ROUNDS; round++) {
+      const under = underTunnels(group.ways, groupNodes);
+      if (under.length === 0 && round > 0) {
+        break;
+      }
+      const lowered = spread(groupNodes, under, (length) => MAX_GRADE * length);
+      for (const [k, node] of groupNodes) {
+        node.floor = Math.min(node.floor, lowered.get(k) ?? Infinity);
+      }
+      settle();
     }
-    const lowered = spread(nodes, under, (length) => MAX_GRADE * length);
-    for (const [k, node] of nodes) {
-      node.floor = Math.min(node.floor, lowered.get(k) ?? Infinity);
-    }
-    easeToGrade(nodes);
-    steadyGrades(nodes);
-    smoothFloors(nodes);
-    levelHalls(tunnels, nodes);
   }
 
   let floors = 0;
@@ -627,6 +632,71 @@ function underCrossings(features: MapFeatures, tunnels: Way[], nodes: Map<string
     }
   }
   return floors;
+}
+
+/**
+ * The tunnels in groups that touch: meeting at a point, or with their rooms overlapping (side by side, or one
+ * crossing over the other), and their points' keys
+ */
+function touchingGroups(tunnels: Way[]): { ways: Way[]; keys: Set<string> }[] {
+  const rooms = tunnels.map((way) => ({ way, half: ("width" in way ? way.width : RAIL_WIDTH_M) / 2 + ROOM_SIDE_M, box: bounds(way.line) }));
+  const parent = rooms.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const join = (i: number, j: number) => {
+    parent[find(i)] = find(j);
+  };
+  const byKey = new Map<string, number>();
+  rooms.forEach(({ way }, i) => {
+    for (const p of way.line) {
+      const other = byKey.get(pointKey(p));
+      if (other === undefined) {
+        byKey.set(pointKey(p), i);
+      } else {
+        join(i, other);
+      }
+    }
+  });
+  for (let i = 0; i < rooms.length; i++) {
+    for (let j = i + 1; j < rooms.length; j++) {
+      const [a, b] = [rooms[i], rooms[j]];
+      const reach = a.half + b.half;
+      if (
+        find(i) === find(j) ||
+        a.box.minX > b.box.maxX + reach || a.box.maxX < b.box.minX - reach ||
+        a.box.minY > b.box.maxY + reach || a.box.maxY < b.box.minY - reach
+      ) {
+        continue;
+      }
+      if (linesWithin(a.way.line, b.way.line, reach)) {
+        join(i, j);
+      }
+    }
+  }
+  const groups = new Map<number, { ways: Way[]; keys: Set<string> }>();
+  rooms.forEach(({ way }, i) => {
+    const group = groups.get(find(i)) ?? { ways: [], keys: new Set<string>() };
+    group.ways.push(way);
+    way.line.forEach((p) => group.keys.add(pointKey(p)));
+    groups.set(find(i), group);
+  });
+  return [...groups.values()];
+}
+
+/** Whether two lines come within `reach` of each other anywhere (looked at every meter along the first) */
+function linesWithin(line: Point[], other: Point[], reach: number): boolean {
+  for (let i = 0; i + 1 < line.length; i++) {
+    const [a, c] = [line[i], line[i + 1]];
+    const length = Math.hypot(c[0] - a[0], c[1] - a[1]);
+    for (let d = 0; d <= length; d += 1) {
+      const p: Point = length > 0 ? [a[0] + ((c[0] - a[0]) * d) / length, a[1] + ((c[1] - a[1]) * d) / length] : a;
+      for (let k = 0; k + 1 < other.length; k++) {
+        if (nearestOnSegment(p, other[k], other[k + 1]).distance < reach) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
 }
 
 /**

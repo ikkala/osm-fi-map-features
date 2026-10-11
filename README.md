@@ -224,7 +224,9 @@ way over that, across its width and as far along it as the model is lower (the c
 wider than the tunnel), at most 10 m either way: a way over the portal stays level. Under a way over it (where the way's width and the tunnel's room overlap, but not at the tunnel's
 free ends nor beyond them, as a way going on from a short way out of a portal) it is that deep from the start, and rises from there no steeper than 7 %, to the portals too. Where it
 would follow the ground's humps it is smoothed, lowered only: no point is more than 0.1 m over the line between its
-neighbours (portals and junctions stay).
+neighbours (portals and junctions stay). Tunnels that touch (meeting at a point, or with their rooms overlapping: side
+by side, or one crossing over the other) are a group whose floors go through these passes together, twice, and again
+under the tunnels crossing over in it as long as that lowers any: a floor does not depend on tunnels elsewhere.
 Where the ground at a portal (the top of its wall) is over the floor, a ramp is split off each way leading on, with
 a `floor` of its own: straight from the portal's floor to where a 7 % slope from it meets the ground, at most 40 m
 on. A way that ends before that, where only other ways ending there go on, rises 7 % of its length, and they ramp on
