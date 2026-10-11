@@ -427,3 +427,20 @@ test("stairs' feet in one hall stay where they are, so their stairs rise no stee
   assert.equal(round(cycleway)?.at(-1), round(apart)?.at(-1));
   assert.deepEqual(round(cycleway.slice(0, -1)), round(footway.slice(0, -1)));
 });
+
+test("a tunnel's floor does not depend on tunnels crossing elsewhere: each group of tunnels that touch goes through the passes on its own", () => {
+  // a footway beside a road tunnel in one hall, under a hill with steps in it; far north a tunnel under another
+  const bumps = [3, 3, 5.7, 18.6, 0.2, 17.8];
+  const ground = (e: number, n: number) => (n > 500 ? 100 : e <= 0 ? (n > 3.5 ? 97.8 : 96.4) : e >= 60 ? (n > 3.5 ? 102.9 : 97.3) : 100 + bumps[Math.min(5, Math.floor(e / 10))]);
+  const floors = (far: boolean) => {
+    const a = road("w1", [[0, 0], [60, 0]], { tunnel: true, layer: -1 });
+    const b = road("w2", [[0, 7], [46, 7]], { tunnel: true, layer: -1, kind: "footway", width: 2.5 });
+    const outs = [road("w3", [[-20, 0], [0, 0]]), road("w4", [[60, 0], [80, 0]]), road("w5", [[-20, 7], [0, 7]])];
+    const crossing = far
+      ? [road("w6", [[0, 1000], [100, 1000]], { tunnel: true, layer: -1 }), road("w7", [[55, 950], [55, 1050]], { tunnel: true, layer: -2 }), road("w8", [[-20, 1000], [0, 1000]]), road("w9", [[100, 1000], [120, 1000]]), road("w10", [[55, 930], [55, 950]]), road("w11", [[55, 1050], [55, 1070]])]
+      : [];
+    setTunnelFloors(features([a, b, ...outs, ...crossing]), ground);
+    return [a.floor, b.floor].map((floor) => floor?.map((v) => Math.round(v * 100) / 100));
+  };
+  assert.deepEqual(floors(false), floors(true));
+});
