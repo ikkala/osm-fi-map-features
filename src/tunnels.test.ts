@@ -288,6 +288,37 @@ test("under a way crossing over it the floor is deep enough under that way, fall
   assert.equal(beyond.floor, undefined);
 });
 
+test("a way beside a tunnel under an open roof over its portal is not over it: the tunnel is a covered cut there", () => {
+  // a ramp 20 m long from a portal on level ground at 100 into a garage, and a footway along it over its room's side
+  const floorWith = (roof: Building[]) => {
+    const tunnel = road("w1", [[0, 0], [20, 0]], { tunnel: true, layer: -1, kind: "service", width: 4 });
+    const footway = road("w3", [[-5, -4], [25, -4]], { kind: "footway", width: 2.5 });
+    const map = { ...features([road("w2", [[-20, 0], [0, 0]], { kind: "service", width: 4 }), tunnel, footway]), buildings: roof };
+    setTunnelFloors(map, () => 100);
+    return round(tunnel.floor)?.[0];
+  };
+  const roof = (outer: Point[]): Building => ({ osm: "w4", kind: "roof", part: false, hasParts: false, height: 5, minHeight: 0, shelter: "roof", polygon: { outer, holes: [] } });
+  assert.equal(floorWith([]), 100 - ROAD_CLEARANCE_M - ROOF_M);
+  assert.equal(floorWith([roof([[0, -3], [20, -3], [20, 3], [0, 3]])]), 100);
+  // a roof over the tunnel's middle only, or over its end where no way leads on, covers no cut
+  assert.equal(floorWith([roof([[5, -3], [15, -3], [15, 3], [5, 3]])]), 100 - ROAD_CLEARANCE_M - ROOF_M);
+  assert.equal(floorWith([roof([[15, -3], [20, -3], [20, 3], [15, 3]])]), 100 - ROAD_CLEARANCE_M - ROOF_M);
+});
+
+test("a roof over stairs up out of a tunnel (a platform's) covers no cut", () => {
+  // an underpass 10 m long from a portal on level ground at 100, stairs up from its end under a platform's roof,
+  // and a path over its room's side there
+  const floorAt = (buildings: Building[]) => {
+    const tunnel = road("w1", [[0, 0], [10, 0]], { tunnel: true, layer: -1, kind: "footway", width: 3 });
+    const stairs = road("w2", [[10, 0], [20, 0]], { kind: "steps", width: 2 });
+    const path = road("w3", [[6, -3], [20, -3]], { kind: "footway", width: 2 });
+    setTunnelFloors({ ...features([road("w4", [[-20, 0], [0, 0]], { kind: "footway", width: 3 }), tunnel, stairs, path]), buildings }, () => 100);
+    return round(tunnel.floor)?.at(-1);
+  };
+  const outer: Point[] = [[5, -5], [25, -5], [25, 5], [5, 5]];
+  assert.equal(floorAt([{ osm: "w5", kind: "roof", part: false, hasParts: false, height: 4, minHeight: 0, shelter: "roof", polygon: { outer, holes: [] } }]), 100 - 3 - ROOF_M);
+});
+
 test("a tunnel's floor under a wavy hill does not rise with its waves, and is deep enough", () => {
   // a hill of 130 with waves of 2 m every 20 m; portals at 100 at e = 0 and 200
   const ground = (e: number) => (e <= 0 || e >= 200 ? 100 : 104 + 2 * Math.sin((e * Math.PI) / 20));
