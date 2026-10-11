@@ -81,6 +81,9 @@ a time so that this can change without changing its users.
 
 ## How the map is built
 
+A building or part wholly under the ground is left out: `location=underground`, or a negative `layer` with every
+`level` below 0 (a shopping centre's basement storey under a square).
+
 A building with parts is drawn by its parts. A part that starts above the ground (`min_height`,
 `building:min_level`) with no other part under it, such as the planetarium on the second floor of Särkänniemi's
 building, gets its building filled in under it as the outline, unless it is a balcony, roof, canopy or the like or

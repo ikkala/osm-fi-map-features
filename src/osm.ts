@@ -970,7 +970,9 @@ function addPolygonFeature(features: MapFeatures, bridgeOutlines: BridgeOutline[
   // many chimneys, tanks and towers are mapped as man_made=* alone
   const buildingOrPart = partKind ?? buildingKind ?? (tags.man_made !== undefined && STRUCTURES.has(tags.man_made) ? tags.man_made : undefined);
   if (buildingOrPart) {
-    features.buildings.push(building(osm, tags, buildingOrPart, partKind !== undefined, polygon));
+    if (!underground(tags)) {
+      features.buildings.push(building(osm, tags, buildingOrPart, partKind !== undefined, polygon));
+    }
     return;
   }
   const tagged = areaKind(tags);
@@ -1993,6 +1995,15 @@ function withoutStart(line: Point[], length: number): Point[] {
 function storeysOf(tags: Tags): number[] | undefined {
   const storeys = (tags.level ?? "").split(";").map((s) => Number.parseFloat(s)).filter(Number.isFinite);
   return storeys.length > 0 ? storeys : undefined;
+}
+
+/** Whether a building or part is wholly under the ground: location=underground, or on a layer and storeys all below 0 */
+function underground(tags: Tags): boolean {
+  if (tags.location === "underground") {
+    return true;
+  }
+  const storeys = storeysOf(tags);
+  return layering(tags).layer < 0 && storeys !== undefined && storeys.every((storey) => storey < 0);
 }
 
 function layering(tags: Tags): { layer: number; bridge: boolean; tunnel: boolean } {
