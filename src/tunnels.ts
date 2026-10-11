@@ -15,6 +15,8 @@ export const RAIL_CLEARANCE_M = 6;
 export const ROOF_M = 1;
 /** The elevation model has the water's surface: the water is taken this deep over a tunnel (m) */
 export const WATER_DEPTH_M = 3;
+/** Under water this much ground stays between the water's bed and the roof, so a coarser model of the ground keeps some there (m) */
+export const BED_M = 2;
 /** Ways for people only (as osm.ts's NOT_FOR_VEHICLES) */
 export const WALKWAYS = new Set(["footway", "pedestrian", "cycleway", "path", "track", "bridleway", "steps", "corridor"]);
 /** A tunnel's lines get a point at least this often (m) */
@@ -321,9 +323,11 @@ export function setTunnelFloors(
     waters.some(({ polygon, box }) => e >= box.minX && e <= box.maxX && n >= box.minY && n <= box.maxY && pointInPolygon([e, n], polygon));
   for (const [k, node] of nodes) {
     const around = [node.p, ...node.next.map(({ key: q }) => nodes.get(q)?.p).filter((q) => q !== undefined).map((q): Point => [(node.p[0] + q[0]) / 2, (node.p[1] + q[1]) / 2])];
-    const ground = around.map((p) => heightAt(...p)).filter((h) => h !== undefined);
+    // under water across the room's width too: a water's surface falls across it where it flows
+    const wet = [...around, ...acrossRoom(nodes, node)].filter(inWater);
+    const ground = [...around, ...wet].map((p) => heightAt(...p)).filter((h) => h !== undefined);
     if (ground.length > 0) {
-      const depth = node.depth * Math.min(1, (fromPortal.get(k) ?? Infinity) / PORTAL_EASE_M) + (inWater(node.p) ? WATER_DEPTH_M : 0);
+      const depth = node.depth * Math.min(1, (fromPortal.get(k) ?? Infinity) / PORTAL_EASE_M) + (wet.length > 0 ? WATER_DEPTH_M + BED_M : 0);
       node.floor = Math.min(node.floor, Math.min(...ground) - depth);
     }
   }
@@ -375,6 +379,27 @@ export function setTunnelFloors(
   };
   const ramps = rampOut(features.roads, inTunnels, portalFloor, heightAt) + rampOut(features.rails, inTunnels, portalFloor, heightAt);
   return { floors, ramps, walls };
+}
+
+/** The room's sides at a node and halfway to its neighbours, `half` either side of the line */
+function acrossRoom(nodes: Map<string, Node>, node: Node): Point[] {
+  const sides: Point[] = [];
+  for (const { key: q } of node.next) {
+    const other = nodes.get(q);
+    if (!other) {
+      continue;
+    }
+    const [de, dn] = [other.p[0] - node.p[0], other.p[1] - node.p[1]];
+    const length = Math.hypot(de, dn);
+    if (length === 0) {
+      continue;
+    }
+    const [ae, an] = [(-dn / length) * node.half, (de / length) * node.half];
+    for (const [e, n] of [node.p, [node.p[0] + de / 2, node.p[1] + dn / 2]]) {
+      sides.push([e + ae, n + an], [e - ae, n - an]);
+    }
+  }
+  return sides;
 }
 
 /** The tunnel's line from a portal in, as far as `length` or to the next junction or end */

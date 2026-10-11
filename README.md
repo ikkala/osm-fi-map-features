@@ -217,7 +217,7 @@ hill or a lake, gets its floor (`floor`, with a point every 10 m): straight betw
 lowest within 4 m outside, along the ways leading on and on past a short one, since at the portal the model has
 the top of its wall), a junction underground
 hanging between its branches' ends by distance, but at least room and a 1 m roof under the ground (3 m of
-room for people, 4.8 m for vehicles, 6 m for trains; reached 30 m in from a portal; under water areas 3 m more, since the model has the water's surface) and no
+room for people, 4.8 m for vehicles, 6 m for trains; reached 30 m in from a portal; under water areas 5 m more, the water's 3 m, since the model has its surface, and 2 m of its bed over the roof, wherever water is over the room's width) and no
 steeper than 7 %. The model smooths a portal's wall into a slope over the tunnel's end, so the ground over the
 room (in the tiles' heights too) is raised from the portal 6 m in to the ground there, and so is the ground under a
 way over that, across its width and as far along it as the model is lower (the cut in front of a portal is often
