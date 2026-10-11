@@ -47,3 +47,39 @@ export function raisePassages(buildings: Building[], ways: DeckWay[]): void {
     }
   }
 }
+
+/** The ground at a passage is up its slope when it is this much (m) over the building's base */
+const UP_SLOPE_M = 0.2;
+
+/**
+ * Sets the ground of the openings and rooms of the passages through buildings that are higher than the building's
+ * base (a building on a slope stands at most MAX_PLINTH_M over its lowest ground): an opening's to the ground at
+ * its middle, a room's to the highest at the middles of its sections, so the way has its room over it all through.
+ * Those already with a ground (on a deck, at a door up a slope) keep it. Returns how many openings and rooms.
+ */
+export function passagesUpSlopes(buildings: Building[], heightAt: (e: number, n: number) => number | undefined): number {
+  let count = 0;
+  const middle = ([l, r]: [Point, Point]) => heightAt((l[0] + r[0]) / 2, (l[1] + r[1]) / 2);
+  for (const b of buildings) {
+    const base = b.base;
+    if (base === undefined) {
+      continue;
+    }
+    for (const o of b.passages ?? []) {
+      const h = o.ground === undefined ? middle([o.from, o.to]) : undefined;
+      if (h !== undefined && h > base + UP_SLOPE_M) {
+        o.ground = h;
+        count++;
+      }
+    }
+    for (const room of b.passageRooms ?? []) {
+      const heights = room.ground === undefined ? room.sections.map(middle).filter((h) => h !== undefined) : [];
+      const h = heights.length > 0 ? Math.max(...heights) : undefined;
+      if (h !== undefined && h > base + UP_SLOPE_M) {
+        room.ground = h;
+        count++;
+      }
+    }
+  }
+  return count;
+}
