@@ -212,7 +212,7 @@ least 3.5 m and the lid's 0.5 m over the floor), and the ways over it become bri
 ends, where it leads on, and between them the lowest ground across the cut within 4 m of the way's edges: the model
 rounds the cut's sides off, and a way mapped on them would rise and fall with them. A tunnel beside it (within 2 m of
 the lid along most of it, such as a pavement beside a tramway) is in the same cut, under the same lid and on its floor. Once the bridges have their decks, a lid is fitted to the decks over it (they run from the ground at their ends): at
-the lowest deck crossing it, no higher than the cut's higher rim, and leaving at least 2.5 m of room over the floor for
+the lowest deck crossing it, no higher than the cut's higher rim where it crosses, and leaving at least 2.5 m of room over the floor for
 people, 3.5 m for vehicles and 4 m for trains. Any other tunnel, under a
 hill or a lake, gets its floor (`floor`, with a point every 10 m): straight between its portals' ground (the
 lowest within 4 m outside, along the ways leading on and on past a short one, since at the portal the model has

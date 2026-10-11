@@ -102,11 +102,6 @@ function direction(a: Point, c: Point): Point {
   return length > 0 ? [(c[0] - a[0]) / length, (c[1] - a[1]) / length] : [1, 0];
 }
 
-/** The way a line goes at its point i */
-function directionAt(line: Point[], i: number): Point {
-  return direction(line[Math.max(0, i - 1)], line[Math.min(line.length - 1, i + 1)]);
-}
-
 /** The lid's top at each point of a tunnel's line (the lower rim, at least clearance over the floor), or undefined if not in a cut */
 export function cutLid(line: Point[], heightAt: (e: number, n: number) => number | undefined): number[] | undefined {
   let samples = 0;
@@ -129,7 +124,8 @@ export function cutLid(line: Point[], heightAt: (e: number, n: number) => number
   }
   return line.map((p, i) => {
     const floor = heightAt(...p) ?? 0;
-    return Math.max(rims(p, directionAt(line, i), heightAt)[0], floor + CLEARANCE_M + LID_THICKNESS_M);
+    const along = direction(line[Math.max(0, i - 1)], line[Math.min(line.length - 1, i + 1)]);
+    return Math.max(rims(p, along, heightAt)[0], floor + CLEARANCE_M + LID_THICKNESS_M);
   });
 }
 
@@ -205,9 +201,9 @@ function besideCut(
 
 /**
  * Fits the lids of tunnels in cuts to the decks of the bridges over them, which run from the ground at their ends:
- * a lid at the lower rim or at the clearance over the floor stood over them or under them. A lid point under decks
- * goes to the lowest deck crossing the line beside it, no higher than the cut's higher rim there, and at least
- * LID_ROOM_M over the floor. Returns how many lids were moved.
+ * a lid at the lower rim or at the clearance over the floor stood over them or under them. A lid point goes to the
+ * lowest deck crossing the line beside it, a deck over the lid no higher than the cut's higher rim where it crosses,
+ * and at least LID_ROOM_M over the floor. Returns how many lids were moved.
  */
 export function fitLidsToDecks(ways: Way[], heightAt: (e: number, n: number) => number | undefined): number {
   const decks = ways.filter((w) => w.bridge && w.deck && w.line.length >= 2);
@@ -224,22 +220,20 @@ export function fitLidsToDecks(ways: Way[], heightAt: (e: number, n: number) => 
     for (let i = 0; i + 1 < way.line.length; i++) {
       for (const bridge of decks) {
         for (let k = 0; k + 1 < bridge.line.length; k++) {
-          const hit = crossing(bridge.line[k], bridge.line[k + 1], way.line[i], way.line[i + 1], width);
+          const [a, c] = [bridge.line[k], bridge.line[k + 1]];
+          const hit = crossing(a, c, way.line[i], way.line[i + 1], width);
           if (hit && bridge.deck) {
-            const h = bridge.deck[k] + (bridge.deck[k + 1] - bridge.deck[k]) * hit.at;
+            const deck = bridge.deck[k] + (bridge.deck[k + 1] - bridge.deck[k]) * hit.at;
+            const p: Point = [a[0] + (c[0] - a[0]) * hit.at, a[1] + (c[1] - a[1]) * hit.at];
+            const top = deckAt(way.line, lid, p);
+            const h = deck <= top ? deck : Math.min(deck, Math.max(top, rims(p, direction(way.line[i], way.line[i + 1]), heightAt)[1]));
             lowest[i] = Math.min(lowest[i], h);
             lowest[i + 1] = Math.min(lowest[i + 1], h);
           }
         }
       }
     }
-    const fitted = lid.map((h, j) => {
-      if (lowest[j] === Infinity) {
-        return h;
-      }
-      const higherRim = rims(way.line[j], directionAt(way.line, j), heightAt)[1];
-      return Math.max(Math.min(lowest[j], Math.max(h, higherRim)), floor[j] + room + LID_THICKNESS_M);
-    });
+    const fitted = lid.map((h, j) => (lowest[j] === Infinity ? h : Math.max(lowest[j], floor[j] + room + LID_THICKNESS_M)));
     if (fitted.some((h, i) => h !== lid[i])) {
       way.lid = fitted;
       count++;

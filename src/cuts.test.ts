@@ -89,8 +89,9 @@ test("fitLidsToDecks lowers a lid to the decks of the bridges over it, leaving r
 });
 
 test("fitLidsToDecks raises a lid at the lower rim to the decks over it, no higher than the higher rim", () => {
-  // the cut's bottom at 95 within 4 m of n = 0 and n = 20, its rims at 101 south of n = 0 and 102 elsewhere
-  const rims = (_e: number, n: number) => (Math.abs(n) <= 4 || Math.abs(n - 20) <= 4 ? 95 : n < 0 ? 101 : 102);
+  // the cut's bottom at 95 within 4 m of n = 0 and n = 20, its rims at 101 south of n = 0 and 102 elsewhere; west of
+  // the portals at e = 12 all at 95, so the rims are where the decks cross, not at the line's ends
+  const rims = (e: number, n: number) => (e < 12 || Math.abs(n) <= 4 || Math.abs(n - 20) <= 4 ? 95 : n < 0 ? 101 : 102);
   const tram = rail("w1", [[10, 0], [30, 0], [50, 0]], { kind: "light_rail", layer: -1, tunnel: true, lid: [101, 101, 101], floor: [95, 95, 95] });
   const railway = rail("w2", [[20, -10], [20, 10]], { bridge: true, deck: [101.6, 101.4] });
   const high = rail("w3", [[10, 20], [50, 20]], { kind: "light_rail", layer: -1, tunnel: true, lid: [101, 101], floor: [95, 95] });
