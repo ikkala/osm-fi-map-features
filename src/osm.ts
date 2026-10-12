@@ -973,7 +973,9 @@ function addPolygonFeature(features: MapFeatures, bridgeOutlines: BridgeOutline[
     features.buildings.push(building(osm, tags, buildingOrPart, partKind !== undefined, polygon));
     return;
   }
-  const kind = areaKind(tags);
+  const tagged = areaKind(tags);
+  // a river's bed that is dry most of the time is its stones
+  const kind = tagged === "water" && flowingWater(tags) && tags.intermittent === "yes" ? "rock" : tagged;
   if (kind) {
     addArea(features, osm, kind, polygon, { cover: areaCover(tags), leafType: woodsLeafType(tags), surface: tags.surface, flowing: kind === "water" && flowingWater(tags) });
   }

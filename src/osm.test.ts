@@ -118,6 +118,9 @@ test("parseOsm reads trees, shrubs and tree rows, and what grows in woods and sc
       { type: "way", id: 46, tags: { natural: "scrub", leaf_type: "broadleaved" }, geometry: square(200, 0, 50) },
       { type: "way", id: 47, tags: { leisure: "park" }, geometry: square(300, 0, 50) },
       { type: "way", id: 48, tags: { landuse: "forest", leaf_type: "mixed" }, geometry: square(400, 0, 50) },
+      // a river's bed dry most of the time is stones; a still water dry at times stays water
+      { type: "way", id: 49, tags: { natural: "water", water: "river", intermittent: "yes" }, geometry: square(500, 0, 50) },
+      { type: "way", id: 50, tags: { natural: "water", intermittent: "yes" }, geometry: square(600, 0, 50) },
     ],
     origin,
   );
@@ -133,6 +136,8 @@ test("parseOsm reads trees, shrubs and tree rows, and what grows in woods and sc
     ["forest", "shrubs", undefined],
     ["grass", undefined, undefined],
     ["forest", "trees", undefined],
+    ["rock", undefined, undefined],
+    ["water", undefined, undefined],
   ]);
 });
 

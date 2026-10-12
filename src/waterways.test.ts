@@ -32,10 +32,18 @@ test("waterway lines are read the way they are drawn; areas tagged as waterways,
       way(3, { waterway: "river", natural: "water" }, [[61.5, 23.76], [61.501, 23.76], [61.501, 23.761]]),
       way(4, { waterway: "canal" }, [[61.5, 23.76], [61.501, 23.76], [61.5, 23.76]]),
       way(5, { waterway: "ditch" }, [[61.5, 23.76], [61.501, 23.76]]),
+      way(6, { waterway: "river", intermittent: "yes" }, [[61.5, 23.762], [61.499, 23.762]]),
     ],
     origin,
   );
-  assert.deepEqual(lines.map((l) => [l.osm, l.kind, l.name, l.tunnel]), [["w1", "river", "Koski", false], ["w2", "stream", undefined, true]]);
+  assert.deepEqual(
+    lines.map((l) => [l.osm, l.kind, l.name, l.tunnel, l.dry]),
+    [
+      ["w1", "river", "Koski", false, undefined],
+      ["w2", "stream", undefined, true, undefined],
+      ["w6", "river", undefined, false, true],
+    ],
+  );
   // drawn southward: the first point north of the last
   assert.ok(lines[0].line[0][1] > lines[0].line[1][1]);
 });
@@ -104,14 +112,16 @@ test("waterways joined at a point share a network, the lowest id; streams have t
     line("w20", [[100, 0], [150, 0]], { tunnel: true }),
     line("w40", [[150, 0], [300, 0]]),
     line("w10", [[100, 9], [100, 0]], { kind: "stream" }),
+    line("w50", [[300, 0], [300, -9]], { dry: true }),
   ];
   const levels = setWaterLevels([river], lines, () => 100);
   const network = (osm: string) => levels.waterways.find((w) => w.osm === osm)?.network;
   assert.equal(network("w30"), "w20");
   assert.equal(network("w40"), "w20");
   assert.equal(network("w10"), "w10");
-  // the culvert has no water of its own
+  // the culvert has no water of its own, nor the dry one
   assert.equal(levels.waterways.some((w) => w.osm === "w20"), false);
+  assert.equal(levels.waterways.some((w) => w.osm === "w50"), false);
 });
 
 test("a waterway is cut at the tiles' edges, its levels and widths along it", () => {

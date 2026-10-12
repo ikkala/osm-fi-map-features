@@ -459,7 +459,8 @@ driveway, ...).
 ### Water
 
 Water areas are `natural=water`, `waterway=riverbank` and `landuse=reservoir` or `basin`; those of a river, canal or
-stream (`water=river`, `canal`, `stream`, `rapids`, ..., or `waterway=*` on the area) are `flowing`. The elevation
+stream (`water=river`, `canal`, `stream`, `rapids`, ..., or `waterway=*` on the area) are `flowing`; such an area dry
+most of the time (`intermittent=yes`, as a bypass channel below a dam's gates) is its bed of stones, `rock`. The elevation
 model has the water's surface, but where an area takes in its banks the surface rises up them, and it wavers by a
 few decimetres here and there. So the tiles' heights in water are the water's level instead (with an elevation
 model):
@@ -470,7 +471,8 @@ model):
   the way they flow, fetched with a query of their own): every 2 m along a waterway in the water the model's
   height (a still water's level in one) is taken, and these are made never to rise downstream, a run that would
   rise pooled at its median, so a dam's crest or a bank does not lift the water. A waterway flowing on from
-  another starts no higher than that one ends, also through a culvert. Each point of the water is as high as the
+  another starts no higher than that one ends, also through a culvert or a waterway dry most of the time
+  (`intermittent=yes`), which have no water of their own. Each point of the water is as high as the
   nearest point of its waterways, so it is level across and steps down where the river does: Tammerkoski falls
   from Näsijärvi's 95.4 m to 88.2, 81.3, 77.4 and Pyhäjärvi's 77.1 m at its dams. A flowing water with no waterway
   in it is set level, or left on its slope, as a still one.
