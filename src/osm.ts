@@ -1997,13 +1997,22 @@ function storeysOf(tags: Tags): number[] | undefined {
   return storeys.length > 0 ? storeys : undefined;
 }
 
-/** Whether a building or part is wholly under the ground: location=underground, or on a layer and storeys all below 0 */
+/**
+ * Whether a building or part is wholly under the ground: location=underground, or on a layer below 0 with its storeys
+ * all below 0 or an underground car park in it (but for an open roof over its ramp)
+ */
 function underground(tags: Tags): boolean {
   if (tags.location === "underground") {
     return true;
   }
+  if (layering(tags).layer >= 0) {
+    return false;
+  }
   const storeys = storeysOf(tags);
-  return layering(tags).layer < 0 && storeys !== undefined && storeys.every((storey) => storey < 0);
+  if (storeys !== undefined) {
+    return storeys.every((storey) => storey < 0);
+  }
+  return tags.parking === "underground" && tags.building !== "roof" && tags.building !== "carport";
 }
 
 function layering(tags: Tags): { layer: number; bridge: boolean; tunnel: boolean } {

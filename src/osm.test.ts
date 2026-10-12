@@ -78,10 +78,14 @@ test("parseOsm leaves out buildings and parts wholly under the ground", () => {
       { type: "way", id: 4, tags: { building: "garage", level: "-1" }, geometry: square(90, 0, 20) },
       { type: "way", id: 5, tags: { building: "retail", layer: "-1", level: "-1;0" }, geometry: square(120, 0, 20) },
       { type: "way", id: 6, tags: { leisure: "playground" }, geometry: square(5, 5, 10) },
+      { type: "way", id: 7, tags: { building: "garage", layer: "-1", parking: "underground" }, geometry: square(150, 0, 20) },
+      // the roof over its ramp, and a car park's entrance on the ground
+      { type: "way", id: 8, tags: { building: "roof", layer: "-1", parking: "underground" }, geometry: square(180, 0, 20) },
+      { type: "way", id: 9, tags: { building: "garage", layer: "0", parking: "underground" }, geometry: square(210, 0, 20) },
     ],
     origin,
   );
-  assert.deepEqual(features.buildings.map((b) => b.osm), ["w3", "w4", "w5"]);
+  assert.deepEqual(features.buildings.map((b) => b.osm), ["w3", "w4", "w5", "w8", "w9"]);
   assert.deepEqual(features.areas.map((a) => [a.osm, a.kind]), [["w6", "sand"]]);
 });
 

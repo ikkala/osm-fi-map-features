@@ -82,7 +82,8 @@ a time so that this can change without changing its users.
 ## How the map is built
 
 A building or part wholly under the ground is left out: `location=underground`, or a negative `layer` with every
-`level` below 0 (a shopping centre's basement storey under a square).
+`level` below 0 (a shopping centre's basement storey under a square) or, without a `level`, `parking=underground` (a
+car park under a yard), unless it is an open roof (`building=roof` or `carport`) over the ramp down.
 
 A building with parts is drawn by its parts. A part that starts above the ground (`min_height`,
 `building:min_level`) with no other part under it, such as the planetarium on the second floor of Särkänniemi's
