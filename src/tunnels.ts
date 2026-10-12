@@ -52,6 +52,8 @@ const MIN_RAISED_M = 3;
 const RAIL_WIDTH_M = 3;
 /** A way crossing a tunnel this near its free end (m), or beyond it, passes its portal, not over it */
 const OVER_PORTAL_M = 1;
+/** A tunnel at least this share under an open roof over its portal is a covered ramp */
+const COVERED_SHARE = 0.5;
 /** The model smooths a portal's wall into a slope over the tunnel's end: the ground over the room is raised to the ground this far in (m) */
 const PORTAL_WALL_M = 6;
 /** The portals' walls are looked up in squares this big (m) */
@@ -565,7 +567,8 @@ export function portalWallsAt(walls: readonly PortalWall[]): (e: number, n: numb
  * room and roof under the ground there. A way is over a tunnel where its width and the tunnel's room overlap,
  * looked at every meter along the tunnel but not at its free ends, nor beyond them (a way going on past a
  * portal from a short way out of it), nor under an open roof (a shelter's) over a portal of its (not stairs'
- * foot), where the tunnel is a covered cut with no ground over it. Ways at a tunnel's level or under it,
+ * foot) and over most of it, where the tunnel is a covered ramp with no ground over it. Ways at a tunnel's
+ * level or under it,
  * bridges, tunnels and the ways meeting it are not over it.
  */
 function underCrossings(features: MapFeatures, tunnels: Way[], nodes: Map<string, Node>, heightAt: (e: number, n: number) => number | undefined): [string, number][] {
@@ -607,8 +610,11 @@ function underCrossings(features: MapFeatures, tunnels: Way[], nodes: Map<string
       const node = nodes.get(pointKey(q));
       return node?.portal !== undefined && !node.stairs;
     });
-    const covers = roofs.filter((roof) => portals.some(({ q }) => endUnder(q, roof)));
-    const underRoof = (p: Point) => covers.some((roof) => inBox(p, roof) && pointInPolygon(p, roof.polygon));
+    const portalRoofs = roofs.filter((roof) => portals.some(({ q }) => endUnder(q, roof)));
+    const underPortalRoof = (p: Point) => portalRoofs.some((roof) => inBox(p, roof) && pointInPolygon(p, roof.polygon));
+    const along = portalRoofs.length > 0 ? densify(tunnel.line, 1) : [];
+    const covered = along.length > 0 && along.filter(underPortalRoof).length >= along.length * COVERED_SHARE;
+    const underRoof = (p: Point) => covered && underPortalRoof(p);
     // a way's point beyond a free end, or within OVER_PORTAL_M in from it, passes the portal
     const pastPortal = (p: Point, at: Point, margin: number) =>
       freeEnds.some(

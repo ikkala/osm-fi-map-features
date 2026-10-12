@@ -290,9 +290,9 @@ test("under a way crossing over it the floor is deep enough under that way, fall
 
 test("a way beside a tunnel under an open roof over its portal is not over it: the tunnel is a covered cut there", () => {
   // a ramp 20 m long from a portal on level ground at 100 into a garage, and a footway along it over its room's side
-  const floorWith = (roof: Building[]) => {
+  const floorWith = (roof: Building[], footwayEnd = 25) => {
     const tunnel = road("w1", [[0, 0], [20, 0]], { tunnel: true, layer: -1, kind: "service", width: 4 });
-    const footway = road("w3", [[-5, -4], [25, -4]], { kind: "footway", width: 2.5 });
+    const footway = road("w3", [[-5, -4], [footwayEnd, -4]], { kind: "footway", width: 2.5 });
     const map = { ...features([road("w2", [[-20, 0], [0, 0]], { kind: "service", width: 4 }), tunnel, footway]), buildings: roof };
     setTunnelFloors(map, () => 100);
     return round(tunnel.floor)?.[0];
@@ -300,7 +300,9 @@ test("a way beside a tunnel under an open roof over its portal is not over it: t
   const roof = (outer: Point[]): Building => ({ osm: "w4", kind: "roof", part: false, hasParts: false, height: 5, minHeight: 0, shelter: "roof", polygon: { outer, holes: [] } });
   assert.equal(floorWith([]), 100 - ROAD_CLEARANCE_M - ROOF_M);
   assert.equal(floorWith([roof([[0, -3], [20, -3], [20, 3], [0, 3]])]), 100);
-  // a roof over the tunnel's middle only, or over its end where no way leads on, covers no cut
+  // a roof over the tunnel's middle only, over its end where no way leads on, or over its portal but not most of
+  // it (the inside of a building going on), covers no ramp
+  assert.equal(floorWith([roof([[-2, -3], [8, -3], [8, 3], [-2, 3]])], 6), 100 - ROAD_CLEARANCE_M - ROOF_M);
   assert.equal(floorWith([roof([[5, -3], [15, -3], [15, 3], [5, 3]])]), 100 - ROAD_CLEARANCE_M - ROOF_M);
   assert.equal(floorWith([roof([[15, -3], [20, -3], [20, 3], [15, 3]])]), 100 - ROAD_CLEARANCE_M - ROOF_M);
 });
