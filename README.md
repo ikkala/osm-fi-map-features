@@ -2,7 +2,7 @@
 
 Map features for a 3D map of a Finnish city, in meters around an origin point and a square tile at a time:
 roads, rails, buildings (with 3D parts, roofs, windows, entrances and the businesses in them), trees, street
-lamps, crossings, traffic signals, gates, fences and walls, playground equipment, landmarks (lighthouses and other
+lamps, crossings, traffic signals, gates, fences and walls, playground equipment, bicycle parking, landmarks (lighthouses and other
 seamarks with their lights, masts, flagpoles, boulders, fountains, artworks, memorials, piers, dams, amusement
 rides, power lines and ski tracks), and ground areas from
 [OpenStreetMap](https://www.openstreetmap.org/), combined with Finnish open data:
@@ -56,7 +56,7 @@ for (const key of info.tiles) {
 Coordinates are meters east (first) and north (second) of the origin. Tile `x, y` covers east `x * size ..
 (x + 1) * size` and north `y * size .. (y + 1) * size`. Roads, rails and areas are cut at tile edges; a
 building belongs whole to the tile its centroid is in, a tree to the tile of its trunk, a lamp to the tile of
-its foot and a piece of playground equipment or a landmark to the tile of its middle; landmarks drawn as lines
+its foot and a piece of playground equipment, a bicycle parking or a landmark to the tile of its middle; landmarks drawn as lines
 (piers, dams, rides' courses, power lines, pistes) are cut at tile edges. The types are in
 `src/osm.ts` (`MapFeatures`, `Building`, ...), `src/landmarks.ts`, `src/seamarks.ts`, `src/rides.ts` and
 `src/tiles.ts` (`Tile`, `Heights`).
@@ -386,6 +386,11 @@ node lines up with the nearest swing within 6 m (frames in a row), and other nod
 2 m long) of the playground (`leisure=playground`) they stand in; nodes of one kind within 1.5 m of each other are
 one piece mapped twice. Around Tampere there are about 1 200 pieces in 560 playgrounds, half of them swings and a
 third sandpits; 130 swings stand in a row, and 370 other pieces line up with their playground's edge.
+
+Bicycle parking (`amenity=bicycle_parking` nodes and ways) comes from a query of its own (`src/bicycleParking.ts`)
+into the tiles' `bicycleParkings`, only when it was had: a node's point, or an area's middle and `outline` (a line,
+a row of stands, at its middle), with its `bicycle_parking` kind (stands, wall_loops, shed, ...), `capacity`,
+`covered` (`covered=yes`, a shed, building or lockers), `access` when not public and a `level` other than 0.
 
 Landmarks come from a query of their own (`src/landmarks.ts`); the tiles have their sections (`seamarks`,
 `landmarks`, `piers`, `dams`, `rides`, `powerLines`, `pistes`) only when it was had. Elements drawn as buildings

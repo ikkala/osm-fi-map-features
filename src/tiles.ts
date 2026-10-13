@@ -203,7 +203,7 @@ export function cutIntoTiles(features: MapFeatures, keys: TileKey[], size: numbe
   return [...tiles.values()];
 }
 
-const LANDMARK_SECTIONS = ["seamarks", "landmarks", "piers", "dams", "rides", "powerLines", "pistes"] as const;
+const LANDMARK_SECTIONS = ["seamarks", "landmarks", "piers", "dams", "rides", "powerLines", "pistes", "bicycleParkings"] as const;
 
 /**
  * The landmarks into the tiles, each section only where the features have it: points (and outlines) whole to the tile
@@ -243,6 +243,9 @@ function cutLandmarks(
   }
   for (const landmark of features.landmarks ?? []) {
     tileAt(landmark.point)?.landmarks?.push(landmark);
+  }
+  for (const parking of features.bicycleParkings ?? []) {
+    tileAt(parking.point)?.bicycleParkings?.push(parking);
   }
   for (const ride of features.rides ?? []) {
     const { line, heights } = ride;
