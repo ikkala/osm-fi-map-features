@@ -29,6 +29,8 @@ export interface Landmark {
   material?: string;
   /** A mast's or tower's tower:construction (lattice, freestanding, guyed_tube, ...), when OSM tells */
   construction?: string;
+  /** A landmark on a bridge: the deck's height (m above sea level) it stands on (see standOnDecks) */
+  base?: number;
 }
 
 export interface Pier {

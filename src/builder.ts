@@ -442,8 +442,11 @@ export class MapBuilder {
     const tilesRect = { minX: Math.min(...xs) * size, minY: Math.min(...ys) * size, maxX: (Math.max(...xs) + 1) * size, maxY: (Math.max(...ys) + 1) * size };
     const planted = plantForests(features, tilesRect);
     logger.log(`${planted} trees and shrubs planted in woods and scrub`);
-    const onDecks = standOnDecks(features.bridgeDecks, features.trees, features.lamps, features.playEquipment);
-    logger.log(`${onDecks.trees} trees, ${onDecks.lamps} more street lamps and ${onDecks.play} pieces of playground equipment on bridge decks`);
+    const onDecks = standOnDecks(features.bridgeDecks, features.trees, features.lamps, features.playEquipment, features.landmarks);
+    logger.log(
+      `${onDecks.trees} trees, ${onDecks.lamps} more street lamps, ${onDecks.play} pieces of playground equipment and ` +
+        `${onDecks.landmarks} landmarks on bridge decks`,
+    );
 
     // the water's surface level where the elevation model has it uneven, and the waterways through it
     let water: WaterLevels | undefined;

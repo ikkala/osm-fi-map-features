@@ -3,7 +3,7 @@
 // outline is triangulated in short pieces with the deck's heights so the area between the ways, and trees and
 // lamps on it, have a deck.
 import { crests, deckAt, pointAlong, rounded, upperHull } from "./bridges.ts";
-import { dedupe, distanceToSegment, nearestOnLine, orientedBox, pointInPolygon, pointInRing, ringArea, triangulate, type Point, type Polygon, type Ring } from "./geometry.ts";
+import { dedupe, distanceToSegment, nearestOnLine, nearestOnSegment, orientedBox, pointInPolygon, pointInRing, ringArea, triangulate, type Point, type Polygon, type Ring } from "./geometry.ts";
 import { bounds, crossing, type BridgeDeck, type BridgeOutline } from "./osm.ts";
 
 /** A road or railway: a bridge's (bridge, deck) or not */
@@ -42,6 +42,13 @@ const PIECE_M = 4;
 const STRAIGHT_M = 0.001;
 /** Triangles steeper than this (rise over run) are left out: slivers that would stand on edge */
 const MAX_DECK_SLOPE = 1;
+/** A landmark this near (m) a deck stands on it: a work on a bridge's side is mapped on its outline */
+const LANDMARK_NEAR_M = 1;
+/** A node's landmark moves at most this far (m) to where this much of the deck is all round it */
+const LANDMARK_MOVE_M = 2;
+const LANDMARK_ROOM_M = 1;
+/** The places looked at for it are this far (m) apart */
+const LANDMARK_STEP_M = 0.1;
 
 /**
  * Unifies the decks of the bridge ways on each outline into one straight deck, and has the ways leading on from
@@ -639,10 +646,81 @@ function barycentric(p: Point, a: Point, b: Point, c: Point): [number, number, n
   return [wa, wb, 1 - wa - wb];
 }
 
+/** The nearest point of the pieces of the decks to p within `within` (m): p itself on one */
+function nearestOnDecks(decks: IndexedDeck[], p: Point, within: number): { point: Point; distance: number } | undefined {
+  let best: { point: Point; distance: number } | undefined;
+  for (const { deck, box } of decks) {
+    if (p[0] < box.minX - within || p[0] > box.maxX + within || p[1] < box.minY - within || p[1] > box.maxY + within) {
+      continue;
+    }
+    const { triangles, vertices } = deck;
+    for (let i = 0; i + 2 < triangles.length; i += 3) {
+      const corners = [vertices[triangles[i]], vertices[triangles[i + 1]], vertices[triangles[i + 2]]];
+      const weights = barycentric(p, corners[0], corners[1], corners[2]);
+      if (weights && weights.every((w) => w >= -1e-6)) {
+        return { point: p, distance: 0 };
+      }
+      for (let k = 0; k < 3; k++) {
+        const q = nearestOnSegment(p, corners[k], corners[(k + 1) % 3]);
+        const distance = Math.hypot(q[0] - p[0], q[1] - p[1]);
+        if (distance <= within && (!best || distance < best.distance)) {
+          best = { point: q, distance };
+        }
+      }
+    }
+  }
+  return best;
+}
+
+const ROUND: Point[] = Array.from({ length: 8 }, (_, k) => [Math.cos((k * Math.PI) / 4), Math.sin((k * Math.PI) / 4)]);
+
+/**
+ * Where a node's landmark at p stands: the nearest place within LANDMARK_MOVE_M with LANDMARK_ROOM_M of the deck all
+ * round it (the middle of those as near, straight in from an edge), else `near`, a point of a deck
+ */
+function landmarkPlace(decks: IndexedDeck[], p: Point, near: Point): Point {
+  const roomy = (q: Point) =>
+    heightOnDecks(decks, q) !== undefined && ROUND.every(([x, y]) => heightOnDecks(decks, [q[0] + x * LANDMARK_ROOM_M, q[1] + y * LANDMARK_ROOM_M]) !== undefined);
+  if (roomy(p)) {
+    return p;
+  }
+  for (let ring = 1; ring * LANDMARK_STEP_M <= LANDMARK_MOVE_M + 1e-9; ring++) {
+    const r = ring * LANDMARK_STEP_M;
+    const count = Math.max(16, Math.ceil((2 * Math.PI * r) / LANDMARK_STEP_M));
+    let [sx, sy] = [0, 0];
+    let first: Point | undefined;
+    for (let k = 0; k < count; k++) {
+      const a = (2 * Math.PI * k) / count;
+      const q: Point = [p[0] + r * Math.cos(a), p[1] + r * Math.sin(a)];
+      if (roomy(q)) {
+        sx += Math.cos(a);
+        sy += Math.sin(a);
+        first ??= q;
+      }
+    }
+    if (first) {
+      const length = Math.hypot(sx, sy);
+      const middle: Point = length > 1e-9 ? [p[0] + (r * sx) / length, p[1] + (r * sy) / length] : first;
+      return roomy(middle) ? middle : first;
+    }
+  }
+  return near;
+}
+
 type Standing = { point: Point; base?: number }[];
 
-/** Stands trees, lamps and playground equipment without a base yet on the bridge decks they are on. Returns how many of each. */
-export function standOnDecks(decks: BridgeDeck[], trees: Standing, lamps: Standing, play: Standing): { trees: number; lamps: number; play: number } {
+/**
+ * Stands trees, lamps and playground equipment without a base yet on the bridge decks they are on, and landmarks on
+ * those they are on or within LANDMARK_NEAR_M of: a node's moved onto the deck (landmarkPlace), one with an outline
+ * only when its point is on it. Returns how many of each.
+ */
+export function standOnDecks(
+  decks: BridgeDeck[],
+  trees: Standing,
+  lamps: Standing,
+  play: Standing,
+  landmarks: { point: Point; base?: number; outline?: Ring }[] = [],
+): { trees: number; lamps: number; play: number; landmarks: number } {
   const index = indexDecks(decks);
   const stand = (list: Standing) => {
     let count = 0;
@@ -655,5 +733,22 @@ export function standOnDecks(decks: BridgeDeck[], trees: Standing, lamps: Standi
     }
     return count;
   };
-  return { trees: stand(trees), lamps: stand(lamps), play: stand(play) };
+  let onDecks = 0;
+  for (const landmark of landmarks) {
+    const near = landmark.base === undefined ? nearestOnDecks(index, landmark.point, LANDMARK_NEAR_M) : undefined;
+    if (!near || (landmark.outline && near.distance > 0)) {
+      continue;
+    }
+    const p = landmark.point;
+    const reach = LANDMARK_MOVE_M + LANDMARK_ROOM_M;
+    const around = index.filter(({ box }) => p[0] >= box.minX - reach && p[0] <= box.maxX + reach && p[1] >= box.minY - reach && p[1] <= box.maxY + reach);
+    const place = landmark.outline ? p : landmarkPlace(around, p, near.point);
+    const height = heightOnDecks(around, place);
+    if (height !== undefined) {
+      landmark.point = place;
+      landmark.base = height;
+      onDecks++;
+    }
+  }
+  return { trees: stand(trees), lamps: stand(lamps), play: stand(play), landmarks: onDecks };
 }
