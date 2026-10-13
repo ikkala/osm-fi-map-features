@@ -7,6 +7,7 @@ import { leaveOutOnDecks, openBarriers } from "./barriers.ts";
 import { MAX_PLINTH_M, setBuildingBases } from "./bases.ts";
 import { setBridgeDecks } from "./bridges.ts";
 import { setOutlineDecks, standOnDecks } from "./decks.ts";
+import { bicycleParkingQuery, parseBicycleParking } from "./bicycleParking.ts";
 import { businessQuery, parseBusinesses, placeBusinesses } from "./businesses.ts";
 import { coverCutTunnels, fitLidsToDecks } from "./cuts.ts";
 import { ELEVATION_ATTRIBUTION, fetchElevation, sampleElevation, toTm35fin, type ElevationGrid } from "./elevation.ts";
@@ -370,6 +371,14 @@ export class MapBuilder {
       );
     } catch (err) {
       logger.warn(`warning: no landmarks: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    try {
+      const { response: parkingResponse, cached: parkingCached } = await fetchOverpass(bicycleParkingQuery(fetchBox), { url: overpassUrl, cache, refresh });
+      features.bicycleParkings = parseBicycleParking(parkingResponse.elements, origin);
+      const capacity = features.bicycleParkings.reduce((sum, p) => sum + (p.capacity ?? 0), 0);
+      logger.log(`${features.bicycleParkings.length} bicycle parkings (${parkingCached ? "cached" : "fetched"}), ${capacity} places where OSM tells`);
+    } catch (err) {
+      logger.warn(`warning: no bicycle parking: ${err instanceof Error ? err.message : String(err)}`);
     }
     if (heightAt) {
       const lids = [...features.roads, ...features.rails].flatMap((w) => (w.lid ? [{ line: w.line, lid: w.lid }] : []));

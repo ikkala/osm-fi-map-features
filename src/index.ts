@@ -1,4 +1,5 @@
 export { MapBuilder, DEFAULT_OVERPASS_URL, OSM_ATTRIBUTION, type Logger, type MapInfo, type MapOptions } from "./builder.ts";
+export type { BicycleParking } from "./bicycleParking.ts";
 export { BUILDING_REGISTER_ATTRIBUTION } from "./buildingRegister.ts";
 export { fileCache, memoryCache, type SourceCache } from "./cache.ts";
 export { ELEVATION_ATTRIBUTION } from "./elevation.ts";

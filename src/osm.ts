@@ -1,4 +1,5 @@
 // Fetches OpenStreetMap data from Overpass and turns it into map features in meters east / north of the origin.
+import type { BicycleParking } from "./bicycleParking.ts";
 import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
 import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
@@ -441,6 +442,8 @@ export interface MapFeatures {
   rides?: Ride[];
   powerLines?: PowerLine[];
   pistes?: Piste[];
+  /** Bicycle parking, of a query of its own (bicycleParking.ts), when it was had */
+  bicycleParkings?: BicycleParking[];
 }
 
 /**
