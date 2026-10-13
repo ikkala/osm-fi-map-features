@@ -308,7 +308,8 @@ piece's cuts joined again, since a cut ring would run back over a gap in the out
 decks side by side, joined in the middle); a triangle steeper than 45° (a sliver whose corners are at different
 heights) is left out. Trees, street lamps and playground equipment on the deck stand on it (`base`), and so do
 landmarks on it or within 1 m of it (a work on the bridge's side is mapped on its outline): a node's is moved in, at
-most 2 m, to where it has 1 m of the deck all round it.
+most 2 m, to where it has 1 m of the deck all round it and keeps 1 m clear of the roads for vehicles and the railways
+(3 m wide) on the deck; one with no such place, as by a bridge that carries only its tracks, is left out.
 
 Railways and tramways that are not bridges or tunnels get a track bed (`bed`): the elevation model has
 platform edges, underpass roofs and the like under the tracks, a metre up and down every few metres, so the bed is

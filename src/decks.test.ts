@@ -80,29 +80,46 @@ test("trees, lamps and playground equipment on a deck stand on it; lamps on a wa
   const trees: { point: Point; base?: number }[] = [{ point: [50, 8] }, { point: [50, 20] }];
   const lamps: { point: Point; base?: number }[] = [{ point: [50, -8] }, { point: [60, 0], base: 101 }];
   const play: { point: Point; base?: number }[] = [{ point: [40, 6] }, { point: [40, -20] }];
-  assert.deepEqual(standOnDecks(decks, trees, lamps, play), { trees: 1, lamps: 1, play: 1, landmarks: 0 });
+  assert.deepEqual(standOnDecks(decks, trees, lamps, play), { trees: 1, lamps: 1, play: 1, landmarks: 0, aside: 0 });
   assert.deepEqual(trees.map((t) => t.base && round(t.base)), [100, undefined]);
   assert.deepEqual(lamps.map((l) => l.base && round(l.base)), [100, 101]);
   assert.deepEqual(play.map((p) => p.base && round(p.base)), [100, undefined]);
 });
 
-test("landmarks on a deck or by its edge stand on it, a node's moved in to where it has room", () => {
+test("landmarks on a deck or by its edge stand on it, a node's moved in to where it has room clear of the road", () => {
   const { road, footway } = ways();
   const { decks } = setOutlineDecks([outline], [road, footway]);
+  const street = { ...road, kind: "secondary", width: 7 };
+  const path = { ...footway, kind: "footway", width: 3 };
   const landmarks: { point: Point; base?: number; outline?: Point[] }[] = [
     // a node on the outline, just off the deck's edge: moved straight in
     { point: [50, 10.04] },
-    { point: [50, 0] },
+    // by the footway, clear of the road
+    { point: [50, 6] },
     { point: [50, 11.5] },
     // an outline's point off the deck stays on the ground
     { point: [50, 10.5], outline: [[49, 10.2], [51, 10.2], [51, 11], [49, 11]] },
+    // on the road, with no place clear of it within reach: left out
+    { point: [50, 1] },
   ];
-  assert.equal(standOnDecks(decks, [], [], [], landmarks).landmarks, 2);
-  const [edge, middle, off, area] = landmarks;
+  assert.deepEqual(standOnDecks(decks, [], [], [], landmarks, [street, path]), { trees: 0, lamps: 0, play: 0, landmarks: 2, aside: 1 });
+  assert.equal(landmarks.length, 4);
+  const [edge, beside, off, area] = landmarks;
   assert.ok(Math.abs(edge.point[0] - 50) < 0.05 && edge.point[1] <= 9 && edge.point[1] > 8.5, `moved to ${edge.point.join(", ")}`);
-  assert.deepEqual([edge.base && round(edge.base), middle.base && round(middle.base)], [100, 100]);
-  assert.deepEqual(middle.point, [50, 0]);
+  assert.deepEqual([edge.base && round(edge.base), beside.base && round(beside.base)], [100, 100]);
+  assert.deepEqual(beside.point, [50, 6]);
   assert.deepEqual([off.point, off.base, area.base], [[50, 11.5], undefined, undefined]);
+});
+
+test("a landmark by a deck with no room on it clear of its track is on the bridge's side, left out", () => {
+  // a bridge 4.8 m wide with a track along its middle, whose room is 1.5 m either side
+  const narrow: BridgeOutline = { osm: "w9", polygon: { outer: [[-1, -2.4], [101, -2.4], [101, 2.4], [-1, 2.4]], holes: [] } };
+  const track: DeckLine = { bridge: true, line: [[0, 0], [100, 0]], deck: [100, 100] };
+  const { decks } = setOutlineDecks([narrow], [track]);
+  const landmarks: { point: Point; base?: number }[] = [{ point: [50, 2.45] }, { point: [50, 30] }];
+  const counts = standOnDecks(decks, [], [], [], landmarks, [], [track]);
+  assert.deepEqual([counts.landmarks, counts.aside], [0, 1]);
+  assert.deepEqual(landmarks, [{ point: [50, 30] }]);
 });
 
 test("an outline with a notch (two decks side by side) gets no triangles over the gap", () => {

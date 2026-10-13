@@ -463,10 +463,10 @@ export class MapBuilder {
     const tilesRect = { minX: Math.min(...xs) * size, minY: Math.min(...ys) * size, maxX: (Math.max(...xs) + 1) * size, maxY: (Math.max(...ys) + 1) * size };
     const planted = plantForests(features, tilesRect);
     logger.log(`${planted} trees and shrubs planted in woods and scrub`);
-    const onDecks = standOnDecks(features.bridgeDecks, features.trees, features.lamps, features.playEquipment, features.landmarks);
+    const onDecks = standOnDecks(features.bridgeDecks, features.trees, features.lamps, features.playEquipment, features.landmarks, features.roads, features.rails);
     logger.log(
       `${onDecks.trees} trees, ${onDecks.lamps} more street lamps, ${onDecks.play} pieces of playground equipment and ` +
-        `${onDecks.landmarks} landmarks on bridge decks`,
+        `${onDecks.landmarks} landmarks on bridge decks, ${onDecks.aside} landmarks with no room there clear of their ways left out`,
     );
 
     // the water's surface level where the elevation model has it uneven, and the waterways through it
