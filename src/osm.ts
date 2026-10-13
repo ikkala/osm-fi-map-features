@@ -72,6 +72,10 @@ export interface Road {
   motorVehicle?: string;
   /** service=* value of a service road, e.g. parking_aisle or driveway */
   service?: string;
+  /** Roads for vehicles: the height a vehicle may have (maxheight=*, m), when OSM tells */
+  maxHeight?: number;
+  /** Tunnels: the room over the floor (m) where lower than its kind's, from maxheight=* (see tunnels.ts) */
+  room?: number;
   /** Roads for vehicles: whether buses may drive on it, from bus=* or psv=*, when OSM tells (e.g. designated on a bus lane closed to others) */
   bus?: string;
   /** Steps: how many (step_count=*), and whether they climb along line or go down it (incline=*), when OSM tells */
@@ -817,7 +821,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
           ...layering(road),
           ...optionalName(road),
           ...oneway(road),
-          ...(walkway ? (road.footway ? { footway: road.footway } : {}) : { ...sidewalks(road), ...motorAccess(road) }),
+          ...(walkway ? (road.footway ? { footway: road.footway } : {}) : { ...sidewalks(road), ...motorAccess(road), ...maxHeight(road) }),
           ...access(road),
           ...(road.highway === "steps" ? stepping(road) : {}),
           ...surfaceOf(road),
@@ -2065,6 +2069,12 @@ export function motorAccess(tags: Tags): { motorVehicle?: string; service?: stri
     ...(bus && { bus }),
     ...(tags.highway === "service" && tags.service && { service: tags.service }),
   };
+}
+
+/** A road's maxheight=* in meters, when OSM tells one */
+function maxHeight(tags: Tags): { maxHeight?: number } {
+  const height = meters(tags.maxheight);
+  return height === undefined ? {} : { maxHeight: height };
 }
 
 /** A road's sidewalks from sidewalk=*, sidewalk:both=* or sidewalk:left=* and sidewalk:right=* */

@@ -210,6 +210,18 @@ of it is inside buildings.
 A railway (not in a tunnel or on a bridge) running into a building, such as a depot whose doors OSM does not map,
 opens its walls 4.5 m wide, and a building lower than 6 m becomes 6 m tall, without a room.
 
+The model's 2 m grid smooths a retaining wall (`barrier=retaining_wall`) into a slope several meters wide, on
+which a path along the wall's foot would lean and wobble. So beside a retaining wall the ground (everywhere it is
+used, the tiles' heights too) steps at the wall: on its low side, as found in the model a few meters out, it is
+lowered to the slope's foot, and on the high side raised to its top, each as far out as the slope reaches (where
+the ground stops falling or climbing 0.2 m a meter for two meters on, within 8 m), where the model has the sides at
+least 0.5 m apart. Where a side does not level off so (a bank going on up or down past the wall) the wall steps nothing.
+Toward a wall's free end (not one another retaining wall goes on from) the step eases in over 4 m.
+
+A road tunnel for vehicles gets a room (`room`) lower than a road's 4.8 m where `maxheight` is lower, at least
+2.2 m: the tallest `maxheight` among the vehicles' tunnels joined to it at their points, so a car park's aisles behind
+its entrances' signs, and tunnels sharing a hall, share it; so does a walkway's tunnel meeting one or beside it.
+
 Other tunnels get heights from the elevation model, which has the bare ground over them. A tunnel (`layer` -1 or above)
 whose ground rises nowhere more than 3 m over its ends runs at the ground under something built over it, which the
 model leaves out: a railway anywhere (the tracks under Tampere's Kansi and its arena), a road or path when at least
@@ -232,7 +244,7 @@ hill or a lake, gets its floor (`floor`, with a point every 10 m): straight betw
 lowest within 4 m outside, along the ways leading on and on past a short one, since at the portal the model has
 the top of its wall), a junction underground
 hanging between its branches' ends by distance, but at least room and a 1 m roof under the ground (3 m of
-room for people, 4.8 m for vehicles, 6 m for trains; reached 30 m in from a portal; under water areas 5 m more, the water's 3 m, since the model has its surface, and 2 m of its bed over the roof, wherever water is over the room's width) and no
+room for people, 4.8 m for vehicles or lower by `maxheight`, 6 m for trains; reached 30 m in from a portal; under water areas 5 m more, the water's 3 m, since the model has its surface, and 2 m of its bed over the roof, wherever water is over the room's width) and no
 steeper than 7 %. The model smooths a portal's wall into a slope over the tunnel's end, so the ground over the
 room (in the tiles' heights too) is raised from the portal 6 m in to the ground there, and so is the ground under a
 way over that, across its width and as far along it as the model is lower (the cut in front of a portal is often

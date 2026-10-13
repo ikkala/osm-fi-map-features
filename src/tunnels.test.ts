@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { Point, Polygon } from "./geometry.ts";
 import type { Building, MapFeatures, Rail, Road } from "./osm.ts";
 import { defined } from "./testing.ts";
-import { BED_M, densify, portalWallsAt, RAIL_CLEARANCE_M, raiseToWalls, ROAD_CLEARANCE_M, ROOF_M, setTunnelFloors, uncoverAtGrade, WATER_DEPTH_M } from "./tunnels.ts";
+import { BED_M, densify, portalWallsAt, RAIL_CLEARANCE_M, raiseToWalls, ROAD_CLEARANCE_M, roomHeight, ROOF_M, setTunnelFloors, setTunnelRooms, uncoverAtGrade, WATER_DEPTH_M } from "./tunnels.ts";
 
 function road(osm: string, line: Point[], extra: Partial<Road> = {}): Road {
   return { osm, kind: "primary", width: 8, layer: 0, bridge: false, tunnel: false, line, ...extra };
@@ -31,6 +31,37 @@ test("a tunnel's floor goes straight from portal to portal when the ground over 
   const ramps = map.roads.filter((r) => r.floor && !r.tunnel).map((r) => [r.line, round(r.floor)]);
   assert.deepEqual(ramps, [[[[-2, 0], [0, 0]], [100, 100]], [[[200, 0], [202, 0]], [90, 90]]]);
   assert.deepEqual(round(tunnel.floor), tunnel.line.map(([e]) => Math.round((100 - e / 20) * 10) / 10));
+});
+
+test("vehicles' tunnels meeting at their points get a room as tall as their tallest maxheight, within reason, and walkways' tunnels by them", () => {
+  const entrance = road("w1", [[0, 0], [10, 0]], { kind: "service", tunnel: true, maxHeight: 2.3 });
+  const aisle = road("w2", [[10, 0], [30, 0]], { kind: "service", tunnel: true });
+  const other = road("w3", [[30, 0], [30, 20]], { kind: "service", tunnel: true, maxHeight: 2.5 });
+  const walkway = road("w4", [[30, 20], [40, 20]], { kind: "footway", width: 2.5, tunnel: true });
+  const beside = road("w9", [[0, 3], [10, 3]], { kind: "footway", width: 2.5, tunnel: true });
+  const apart = road("w10", [[0, 50], [10, 50]], { kind: "footway", width: 2.5, tunnel: true });
+  const tall = road("w5", [[100, 0], [110, 0]], { tunnel: true, maxHeight: 6 });
+  const low = road("w6", [[200, 0], [210, 0]], { tunnel: true, maxHeight: 1 });
+  const street = road("w7", [[0, 0], [-10, 0]], { kind: "service" });
+  assert.equal(setTunnelRooms([entrance, aisle, other, walkway, beside, apart, tall, low, street]), 6);
+  assert.deepEqual(
+    [entrance, aisle, other, walkway, beside, apart, tall, low, street].map(roomHeight),
+    [2.5, 2.5, 2.5, 2.5, 2.5, 3, ROAD_CLEARANCE_M, 2.2, ROAD_CLEARANCE_M],
+  );
+  assert.equal(roomHeight({ osm: "w8", kind: "rail", layer: -1, bridge: false, tunnel: true, line: [] }), RAIL_CLEARANCE_M);
+});
+
+test("a low tunnel under a low hill stays at its portals' level, where a road's full room would sink it", () => {
+  // portals at 100, the ground over the tunnel 104
+  const ground = (e: number) => (e <= 0 || e >= 200 ? 100 : 104);
+  const floors = (extra: Partial<Road>) => {
+    const tunnel = road("w1", [[0, 0], [200, 0]], { tunnel: true, layer: -1, kind: "service", ...extra });
+    setTunnelRooms([tunnel]);
+    setTunnelFloors(features([road("w2", [[-50, 0], [0, 0]]), tunnel, road("w3", [[200, 0], [250, 0]])]), ground);
+    return defined(tunnel.floor);
+  };
+  assert.equal(Math.round(Math.min(...floors({ maxHeight: 2.3 })) * 10) / 10, 100);
+  assert.ok(Math.min(...floors({})) < 104 - ROAD_CLEARANCE_M - ROOF_M + 0.1);
 });
 
 test("a corridor on from a tunnel's end rises out of it as stairs do, and does not lift its floor to the ground", () => {
