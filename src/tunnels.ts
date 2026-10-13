@@ -11,6 +11,8 @@ import { bounds, openPassages, type MapFeatures, type Rail, type Road } from "./
 export const WALK_CLEARANCE_M = 3;
 export const ROAD_CLEARANCE_M = 4.8;
 export const RAIL_CLEARANCE_M = 6;
+/** A road's room is as low as its maxheight=*, but no lower than this (m): lower is a mistake in the data */
+const MIN_ROAD_CLEARANCE_M = 2.2;
 /** The roof over the room, under the ground (m) */
 export const ROOF_M = 1;
 /** The elevation model has the water's surface: the water is taken this deep over a tunnel (m) */
@@ -154,7 +156,7 @@ export function uncoverAtGrade(features: MapFeatures, heightAt: (e: number, n: n
       passages.push({
         line: way.line,
         width: road ? way.width : RAIL_WIDTH_M,
-        height: road ? (WALKWAYS.has(way.kind) ? WALK_CLEARANCE_M : ROAD_CLEARANCE_M) : RAIL_CLEARANCE_M,
+        height: roomHeight(way),
         railway: !road,
       });
     }
@@ -219,7 +221,7 @@ export function setTunnelFloors(
   const nodes = new Map<string, Node>();
   for (const way of tunnels) {
     way.line = densify(way.line, FLOOR_STEP_M);
-    const depth = ROOF_M + ("width" in way ? (WALKWAYS.has(way.kind) ? WALK_CLEARANCE_M : ROAD_CLEARANCE_M) : RAIL_CLEARANCE_M);
+    const depth = ROOF_M + roomHeight(way);
     const half = ("width" in way ? way.width : RAIL_WIDTH_M) / 2 + ROOM_SIDE_M;
     const storeys = levels.get(way);
     way.line.forEach((p, i) => {
@@ -386,6 +388,65 @@ export function setTunnelFloors(
   };
   const ramps = rampOut(features.roads, inTunnels, portalFloor, heightAt) + rampOut(features.rails, inTunnels, portalFloor, heightAt);
   return { floors, ramps, walls };
+}
+
+/** The room over a tunnel's floor (m): for people, trains, or vehicles (lower where `setTunnelRooms` set it) */
+export function roomHeight(way: Way): number {
+  if (!("width" in way)) {
+    return RAIL_CLEARANCE_M;
+  }
+  return way.room ?? (WALKWAYS.has(way.kind) ? WALK_CLEARANCE_M : ROAD_CLEARANCE_M);
+}
+
+/**
+ * Gives the vehicles' tunnels that meet at their points a room as tall as the tallest maxheight=* among them,
+ * when it is lower than a road's: the signs at a car park's entrances tell the room inside, and tunnels sharing a
+ * hall share its height; so do walkways' tunnels meeting them or beside them, when lower than theirs. Returns how
+ * many tunnels got a room.
+ */
+export function setTunnelRooms(roads: Road[]): number {
+  const tunnels = roads.filter((r) => r.tunnel && !WALKWAYS.has(r.kind) && r.line.length >= 2);
+  const parent = tunnels.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const byKey = new Map<string, number>();
+  tunnels.forEach((way, i) => {
+    for (const p of way.line) {
+      const other = byKey.get(pointKey(p));
+      if (other === undefined) {
+        byKey.set(pointKey(p), i);
+      } else {
+        parent[find(i)] = find(other);
+      }
+    }
+  });
+  const tallest = new Map<number, number>();
+  tunnels.forEach((way, i) => {
+    if (way.maxHeight !== undefined) {
+      tallest.set(find(i), Math.max(tallest.get(find(i)) ?? 0, way.maxHeight));
+    }
+  });
+  const lowered: Road[] = [];
+  tunnels.forEach((way, i) => {
+    const height = tallest.get(find(i));
+    if (height !== undefined && height < ROAD_CLEARANCE_M) {
+      way.room = Math.max(MIN_ROAD_CLEARANCE_M, height);
+      lowered.push(way);
+    }
+  });
+  // a walkway's tunnel meeting one of them, or beside it in one hall, is no taller
+  let walkways = 0;
+  for (const way of roads.filter((r) => r.tunnel && WALKWAYS.has(r.kind) && r.line.length >= 2)) {
+    const keys = new Set(way.line.map(pointKey));
+    const touching = lowered.filter(
+      (t) => t.line.some((p) => keys.has(pointKey(p))) || linesWithin(way.line, t.line, way.width / 2 + t.width / 2 + ROOM_SIDE_M * 2),
+    );
+    const room = Math.max(...touching.map((t) => t.room ?? ROAD_CLEARANCE_M));
+    if (touching.length > 0 && room < WALK_CLEARANCE_M) {
+      way.room = room;
+      walkways++;
+    }
+  }
+  return lowered.length + walkways;
 }
 
 /** The room's sides at a node and halfway to its neighbours, `half` either side of the line */

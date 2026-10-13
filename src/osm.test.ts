@@ -89,6 +89,18 @@ test("parseOsm leaves out buildings and parts wholly under the ground", () => {
   assert.deepEqual(features.areas.map((a) => [a.osm, a.kind]), [["w6", "sand"]]);
 });
 
+test("parseOsm reads a road's maxheight in meters, not a walkway's", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 1, tags: { highway: "service", tunnel: "yes", maxheight: "2.3" }, geometry: [at(0, 0), at(20, 0)] },
+      { type: "way", id: 2, tags: { highway: "service", maxheight: "default" }, geometry: [at(0, 10), at(20, 10)] },
+      { type: "way", id: 3, tags: { highway: "footway", maxheight: "2" }, geometry: [at(0, 20), at(20, 20)] },
+    ],
+    origin,
+  );
+  assert.deepEqual(features.roads.map((r) => [r.osm, r.maxHeight]), [["w1", 2.3], ["w2", undefined], ["w3", undefined]]);
+});
+
 test("parseOsm tells who may drive on a road: everyone, buses and taxis only, and buses alone", () => {
   const { features } = parseOsm(
     [
