@@ -86,6 +86,24 @@ test("fences open where ways cross them and at their gates, but not for bridges 
   assert.ok(map.barriers.every((b) => b.osm === "w4"));
 });
 
+test("a wall opens at a tunnel's portal in it, as wide as the tunnel's room, not where a tunnel passes deep under it", () => {
+  // a tunnel ending 1 m south of the wall (its portal), another passing under it, joined to a third tunnel
+  const map = features(
+    [
+      road("w1", "footway", [[10, 1], [10, 30]], { width: 2.5, tunnel: true }),
+      road("w2", "service", [[40, -30], [40, 30]], { width: 4, tunnel: true }),
+      road("w3", "service", [[40, 30], [60, 30]], { width: 4, tunnel: true }),
+    ],
+    [{ osm: "w4", kind: "retaining_wall", height: 1, line: [[0, 0], [100, 0]] }],
+  );
+  assert.equal(openBarriers(map), 1);
+  // the footway's 2.5 m, its room 1 m wider on both sides, and a 0.4 m margin: 10 -+ 2.45
+  assert.deepEqual(
+    map.barriers.map((b) => b.line.map(([e]) => Math.round(e * 10) / 10)),
+    [[0, 7.6], [12.5, 100]],
+  );
+});
+
 test("leaveOutOnDecks leaves out a barrier's stretch on a bridge's deck or a tunnel's lid, over the ground", () => {
   // a railing along a bridge 4 m over the ground between e = 20 and 40, and on along the ground beyond
   const bridge = road("w1", "primary", [[20, 0], [40, 0]], { bridge: true, deck: [104, 104] });
