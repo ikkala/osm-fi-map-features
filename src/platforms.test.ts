@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { areaKind, parseOsm, type Area, type OverpassResponse } from "./osm.ts";
+import { areaKind, parseOsm, type Area, type OverpassResponse, type Rail } from "./osm.ts";
 import { setPlatformTops } from "./platforms.ts";
 import { LocalProjection } from "./projection.ts";
 
@@ -52,4 +52,17 @@ test("a platform's top is the ground's median inside it: the ridge the elevation
   const unknown: Area = { osm: "w3", kind: "platform", polygon: platform.polygon };
   assert.equal(setPlatformTops([unknown], () => undefined), 0);
   assert.equal(unknown.top, undefined);
+});
+
+test("a tram stop's platform stands over the lowest bed of the tramway beside it, not over one passing under it", () => {
+  const stop: Area = { osm: "w1", kind: "platform", polygon: { outer: [[0, 1.5], [30, 1.5], [30, 4], [0, 4]], holes: [] } };
+  const station: Area = { osm: "w2", kind: "platform", polygon: { outer: [[0, 101.5], [30, 101.5], [30, 104], [0, 104]], holes: [] } };
+  // rising 1 m along the stop, on to 102 well past it
+  const tram: Rail = { osm: "w3", kind: "light_rail", layer: 0, bridge: false, tunnel: false, line: [[-20, 0], [0, 0], [30, 0], [100, 0]], bed: [100, 100, 101, 102] };
+  // out of a tunnel under the station's platform, 6 m under it
+  const under: Rail = { osm: "w4", kind: "light_rail", layer: 0, bridge: false, tunnel: false, line: [[0, 102], [30, 102]], bed: [94, 94] };
+  const ground = (_e: number, n: number) => (n < 50 ? 100.2 : 100);
+  assert.equal(setPlatformTops([stop, station], ground, [tram, under]), 2);
+  assert.equal(stop.top, 100.4);
+  assert.equal(station.top, 100);
 });

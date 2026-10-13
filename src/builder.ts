@@ -253,7 +253,7 @@ export class MapBuilder {
       logger.log(`${cuts} ways lowered into cuts under ${over.size} bridges too low over them (their ends may be too low): ${[...over].join(", ")}`);
       // after the decks: the railways end at their bridges' and approaches' heights
       logger.log(`${setTrackBeds(features.rails, heightAt)} railway lines get smoothed track beds`);
-      logger.log(`${setPlatformTops(features.areas, heightAt)} railway platforms get their top`);
+      logger.log(`${setPlatformTops(features.areas, heightAt, features.rails)} railway platforms get their top`);
     } else {
       logger.log("no MML API key: the tiles get no ground heights");
     }

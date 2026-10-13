@@ -34,10 +34,10 @@ test("lines meeting end to end share their height there, and a bed ends at a bri
   assert.deepEqual(bridge.bed, undefined);
 });
 
-test("trams, tunnels and bridges get no bed, and straight level stretches keep only their ends", () => {
-  const tram = rail("w1", [[0, 0], [100, 0]], { kind: "tram" });
+test("tunnels and bridges get no bed, trams do, and straight level stretches keep only their ends", () => {
+  const tram = rail("w1", [[0, 0], [100, 0]], { kind: "light_rail" });
   const tunnel = rail("w2", [[0, 10], [100, 10]], { tunnel: true, layer: -1 });
   const level = rail("w3", [[0, 20], [100, 20]]);
-  assert.equal(setTrackBeds([tram, tunnel, level], () => 100), 1);
-  assert.deepEqual([tram.bed, tunnel.bed, level.bed, level.line.length], [undefined, undefined, [100, 100], 2]);
+  assert.equal(setTrackBeds([tram, tunnel, level], () => 100), 2);
+  assert.deepEqual([tram.bed, tunnel.bed, level.bed, level.line.length], [[100, 100], undefined, [100, 100], 2]);
 });

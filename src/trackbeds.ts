@@ -5,8 +5,8 @@ import { densify } from "./tunnels.ts";
 import type { Point } from "./geometry.ts";
 import type { Rail } from "./osm.ts";
 
-/** railway=* kinds that get beds; trams run in the streets, at the ground */
-const BED_KINDS = new Set(["rail", "narrow_gauge", "preserved", "subway"]);
+/** railway=* kinds that get beds, trams too */
+const BED_KINDS = new Set(["rail", "narrow_gauge", "preserved", "subway", "tram", "light_rail"]);
 /** The ground is averaged over this long a stretch, centred on each point (m) */
 const BED_WINDOW_M = 30;
 /** The ground along a line is sampled this often (m) */

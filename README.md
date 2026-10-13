@@ -296,14 +296,17 @@ piece's cuts joined again, since a cut ring would run back over a gap in the out
 decks side by side, joined in the middle); a triangle steeper than 45° (a sliver whose corners are at different
 heights) is left out. Trees, street lamps and playground equipment on the deck stand on it (`base`).
 
-Railways (not tramways) that are not bridges or tunnels get a track bed (`bed`): the elevation model has
+Railways and tramways that are not bridges or tunnels get a track bed (`bed`): the elevation model has
 platform edges, underpass roofs and the like under the tracks, a metre up and down every few metres, so the bed is
 the ground averaged over 30 m along the line, never more than 0.5 m under the ground right under it. Where lines
 meet, their beds end at the same height: the ground averaged within 10 m, or the deck of a bridge ending there.
 
 Railway platforms (`railway=platform`, ways and multipolygons, their holes kept) are areas of kind `platform`
 with a `top`: a platform is level, while the elevation model has it as a ridge smoothed at its edges, so its top is
-the ground's median inside its outline, sampled every 2 m.
+the ground's median inside its outline, sampled every 2 m. A tram stop's platform (a tramway passing within 3 m of
+its outline) is 0.4 m over the lowest bed of the tramways beside it instead, so that a tram's floor clears it all
+along; only a bed whose top would be within 2 m of the ground's median counts, as further the tramway passes under or
+over the platform.
 
 Neither OSM nor the register has windows, so ordinary buildings get guessed ones: a row per storey (from
 `building:levels` or the register's storeys, else about every 3 m) and spaced by the kind of building. Houses get
