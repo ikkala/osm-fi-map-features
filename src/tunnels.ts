@@ -47,7 +47,7 @@ const UNDER_BUILDINGS_SHARE = 0.5;
 const AT_GRADE_RISE_M = 3;
 const AT_GRADE_STEP_M = 2;
 /** A way's room reaches this far beyond it on both sides (m) */
-const ROOM_SIDE_M = 1;
+export const ROOM_SIDE_M = 1;
 /** A building raised over such a tunnel is at least this tall (m) */
 const MIN_RAISED_M = 3;
 /** A railway's width, for the openings in the walls of buildings over it (as cuts.ts's) */

@@ -1,9 +1,10 @@
 // Fences, walls and hedges are cut open where ways cross them at grade and at their gates: in OSM a fence
-// often runs on over a path with no opening of its own.
-import { distanceToSegment, type Point } from "./geometry.ts";
+// often runs on over a path with no opening of its own. A wall is cut open at a tunnel's portal in it too.
+import { distanceToSegment, pointKey, type Point } from "./geometry.ts";
 import { deckAt } from "./bridges.ts";
 import { LID_EDGE_M } from "./cuts.ts";
 import { bounds, crossing, type Barrier, type Gate, type MapFeatures } from "./osm.ts";
+import { ROOM_SIDE_M } from "./tunnels.ts";
 
 /** An opening is this much (m) wider than the way through it */
 const OPENING_MARGIN_M = 0.4;
@@ -15,6 +16,8 @@ const OVER_GROUND_M = 1;
 const DECK_EDGE_M = 0.5;
 /** A barrier is looked at this often (m) */
 const SAMPLE_M = 1;
+/** A barrier crossing a tunnel's line this near its end (m), in or out of it, is the wall its portal is in */
+const PORTAL_M = 3;
 /** Pieces of a barrier shorter than this (m) are left out */
 const MIN_PIECE_M = 0.3;
 
@@ -23,9 +26,11 @@ const MIN_PIECE_M = 0.3;
  * streets.ts), replacing each with its pieces. Returns how many openings were cut.
  */
 export function openBarriers(features: MapFeatures): number {
-  const ways = [...features.roads.map((r) => ({ line: r.line, width: r.width, over: r.bridge || r.tunnel })), ...features.rails.map((r) => ({ line: r.line, width: RAIL_WIDTH_M, over: r.bridge || r.tunnel }))]
-    .filter((w) => !w.over && w.line.length >= 2)
-    .map((w) => ({ ...w, box: bounds(w.line) }));
+  const ways = [
+    ...[...features.roads.map((r) => ({ line: r.line, width: r.width, over: r.bridge || r.tunnel })), ...features.rails.map((r) => ({ line: r.line, width: RAIL_WIDTH_M, over: r.bridge || r.tunnel }))]
+      .filter((w) => !w.over && w.line.length >= 2),
+    ...portals(features),
+  ].map((w) => ({ ...w, box: bounds(w.line) }));
   let openings = 0;
   const pieces: Barrier[] = [];
   for (const barrier of features.barriers) {
@@ -61,6 +66,31 @@ export function openBarriers(features: MapFeatures): number {
   features.barriers = pieces;
   return openings;
 }
+/** The tunnels' lines from PORTAL_M out of their ends that no other tunnel goes on from to PORTAL_M in, as wide as their rooms */
+function portals(features: MapFeatures): { line: Point[]; width: number }[] {
+  const tunnels = [...features.roads, ...features.rails].filter((w) => w.tunnel && !w.lid && w.line.length >= 2);
+  const points = new Map<string, number>();
+  for (const way of tunnels) {
+    for (const p of new Set(way.line.map(pointKey))) {
+      points.set(p, (points.get(p) ?? 0) + 1);
+    }
+  }
+  const result: { line: Point[]; width: number }[] = [];
+  for (const way of tunnels) {
+    const width = ("width" in way ? way.width : RAIL_WIDTH_M) + ROOM_SIDE_M * 2;
+    for (const line of [way.line, [...way.line].reverse()]) {
+      const lengths = cumulative(line);
+      const [end, next] = [line[0], line[1]];
+      const length = Math.hypot(next[0] - end[0], next[1] - end[1]);
+      if ((points.get(pointKey(end)) ?? 0) < 2 && length > 0) {
+        const out: Point = [end[0] - ((next[0] - end[0]) / length) * PORTAL_M, end[1] - ((next[1] - end[1]) / length) * PORTAL_M];
+        result.push({ line: [out, ...between(line, lengths, 0, Math.min(PORTAL_M, lengths[lengths.length - 1]))], width });
+      }
+    }
+  }
+  return result;
+}
+
 /** Railway tracks are this wide (m) where they go through a fence */
 const RAIL_WIDTH_M = 3;
 
