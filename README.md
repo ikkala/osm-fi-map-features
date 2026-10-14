@@ -315,6 +315,15 @@ Railways and tramways that are not bridges or tunnels get a track bed (`bed`): t
 platform edges, underpass roofs and the like under the tracks, a metre up and down every few metres, so the bed is
 the ground averaged over 30 m along the line, never more than 0.5 m under the ground right under it. Where lines
 meet, their beds end at the same height: the ground averaged within 10 m, or the deck of a bridge ending there.
+A line keeps only the points its bed bends at (5 cm off straight, a tramway 2 cm), and a tramway those other ways
+have (a junction, a level crossing).
+Tramways meeting end to end, two at a point (a way split at a crossing), get their bed as one line, so the ground
+averaged around that point (a cut beside a bridge's end) does not pull it down. A tramway's bed then bends no
+tighter than a 300 m vertical curve, over a crest or through a dip, and goes into the ground for that, deeper than
+0.5 m where it must; under the deck of a bridge that is no tramway (whose outline may reach over its ways beside
+it) it leaves 4 m (a tram's height, its rails and a margin) and the deck's 1 m, unless the ground there would be
+more than 3 m over that or the curves cannot pass under it before the line's ends. A tramway branching off
+another's middle (at a switch) ends at that one's bed there.
 
 Railway platforms (`railway=platform`, ways and multipolygons, their holes kept) are areas of kind `platform`
 with a `top`: a platform is level, while the elevation model has it as a ridge smoothed at its edges, so its top is
