@@ -241,6 +241,52 @@ test("a way on the ground ending on a ramp meets it in turn", () => {
   assert.equal(stairs.deck[stairs.deck.length - 1], 98);
 });
 
+test("an outline over two bridges and the way on the ground between them has no deck over that way, and follows its ramps", () => {
+  const first: DeckLine = { bridge: true, line: [[0, 0], [30, 0]], deck: [105, 105] };
+  const second: DeckLine = { bridge: true, line: [[70, 0], [100, 0]], deck: [102, 102] };
+  const between: DeckLine = { bridge: false, line: [[30, 0], [70, 0]] };
+  const lines = [first, second, between];
+  const { decks } = setOutlineDecks([outline], lines, () => 103);
+  // a ramp down from the first bridge, the way on the ground, and a short ramp up to the second
+  assert.equal(lines.length, 5);
+  const ramp = between;
+  const level = lines[3];
+  assert.ok(ramp.deck && !level.deck);
+  const middles = triangles(decks).map(([a, b, c]): Point => [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3]);
+  const { line } = level;
+  const [from, to] = [line[0][0], line[line.length - 1][0]];
+  // none over the way on the ground, a piece's length off its ends
+  assert.ok(!middles.some(([e]) => e > from + 4 && e < to - 4), `a triangle over the ground between ${from} and ${to}`);
+  // over the bridges whole, and at the ramp's height beside it
+  assert.ok(middles.some(([e]) => e < 2) && middles.some(([e]) => e > 98));
+  for (const deck of decks) {
+    deck.vertices.forEach((p, k) => {
+      if (p[0] > 32 && p[0] < from - 1) {
+        assert.ok(Math.abs(deck.heights[k] - deckAt(ramp.line, ramp.deck ?? [], p)) < 0.01, `${deck.heights[k]} at ${p.join(", ")}`);
+      }
+    });
+  }
+});
+
+test("an outline over two bridges has no deck over the way on the ground past their approaches either", () => {
+  const first: DeckLine = { bridge: true, line: [[0, 0], [30, 0]], deck: [105, 105] };
+  const second: DeckLine = { bridge: true, line: [[70, 0], [100, 0]], deck: [102, 102] };
+  // approaches down to the ground and up from it, split off the way between before
+  const down: DeckLine = { bridge: false, line: [[30, 0], [40, 0]], deck: [104, 103] };
+  const level: DeckLine = { bridge: false, line: [[40, 0], [60, 0]] };
+  const up: DeckLine = { bridge: false, line: [[60, 0], [70, 0]], deck: [103, 103] };
+  const { decks } = setOutlineDecks([outline], [first, second, down, level, up], () => 103);
+  const middles = triangles(decks).map(([a, b, c]): Point => [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3]);
+  assert.ok(!middles.some(([e]) => e > 44 && e < 56), "a triangle over the ground between the approaches");
+  for (const deck of decks) {
+    deck.vertices.forEach((p, k) => {
+      if (p[0] > 32 && p[0] < 39) {
+        assert.ok(Math.abs(deck.heights[k] - deckAt(down.line, down.deck ?? [], p)) < 0.01, `${deck.heights[k]} at ${p.join(", ")}`);
+      }
+    });
+  }
+});
+
 test("a way on a sloping outline reaching a little past it goes on at the same slope", () => {
   const road: DeckLine = { bridge: true, line: [[0, 0], [100, 0]], deck: [100, 110] };
   const footway: DeckLine = { bridge: true, line: [[0, 5], [104, 5]], deck: [100, 110.4] };

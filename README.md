@@ -303,7 +303,10 @@ ways leading on from them meet the deck: an approach's deck is tilted to it, and
 split off it, up to the deck (a deck) or down to it (a floor, in a cut), no steeper than 8 % for people, 6 % for
 vehicles and 3 % for trains. The outline is then cut across the bridge into
 pieces 4 m long, as triangles with the height of the nearest way's deck at each corner (`bridgeDecks`), so the
-deck can be drawn between the ways too. The outline's triangles are cut rather than the outline itself, and each
+deck can be drawn between the ways too. Past the ends of the ways on it, the nearest is taken of the ways leading on
+too, and on from those end to end (past approaches): a corner nearest a ramp or an approach has its deck's height,
+and a triangle nearest a way on the ground is left out, since an outline may also cover the embankment between two
+bridges (Vackerinsilta in Tampere). The outline's triangles are cut rather than the outline itself, and each
 piece's cuts joined again, since a cut ring would run back over a gap in the outline (Näsinsillat in Tampere is two
 decks side by side, joined in the middle); a triangle steeper than 45° (a sliver whose corners are at different
 heights) is left out. Trees, street lamps and playground equipment on the deck stand on it (`base`), and so do

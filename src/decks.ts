@@ -57,8 +57,9 @@ const RAIL_WIDTH_M = 3;
  * Unifies the decks of the bridge ways on each outline into one straight deck, and has the ways leading on from
  * them meet it: a way with a deck (an approach) is tilted to it, and a way on the ground gets a ramp split off it
  * (a deck up to it, or a floor in a cut down to it) no steeper than gradeOf, pushed onto lines. heightAt takes
- * meters east / north; without it the ways on the ground are left as they are. Returns the outlines' deck pieces
- * and how many ways were on them.
+ * meters east / north; without it the ways on the ground are left as they are. Past the ends of the ways on an
+ * outline its deck follows the ways leading on, and leaves out where they are on the ground. Returns the outlines'
+ * deck pieces and how many ways were on them.
  */
 export function setOutlineDecks<T extends DeckLine>(
   outlines: BridgeOutline[],
@@ -88,6 +89,7 @@ export function setOutlineDecks<T extends DeckLine>(
   }
   // the ends of the ways leading on, and the deck heights they are to meet
   const meets = new Map<T, { start?: number; end?: number }>();
+  const shaped: { outline: BridgeOutline; members: T[]; angle: number }[] = [];
   for (const { outline, members } of outlined) {
     const angle = waysAngle(members, outline.polygon) ?? orientedBox(outline.polygon.outer).angle;
     const u: Point = [Math.cos(angle), Math.sin(angle)];
@@ -129,34 +131,7 @@ export function setOutlineDecks<T extends DeckLine>(
         }
       }
     }
-
-    // the pieces, with the deck of the nearest way at their corners
-    const heightAt = (p: Point) => {
-      let best = { distance: Infinity, height: 0 };
-      for (const m of members) {
-        const deck = m.deck;
-        if (deck) {
-          const { distance } = nearestOnLine(m.line, p);
-          if (distance < best.distance) {
-            best = { distance, height: deckAt(m.line, deck, p) };
-          }
-        }
-      }
-      return best.height;
-    };
-    for (const piece of acrossPieces(outline.polygon, angle, PIECE_M)) {
-      const heights = piece.vertices.map(heightAt);
-      const triangles: number[] = [];
-      for (let i = 0; i + 2 < piece.triangles.length; i += 3) {
-        const corners = [piece.triangles[i], piece.triangles[i + 1], piece.triangles[i + 2]];
-        if (slope(corners.map((k) => [...piece.vertices[k], heights[k]])) <= MAX_DECK_SLOPE) {
-          triangles.push(...corners);
-        }
-      }
-      if (triangles.length > 0) {
-        decks.push({ osm: outline.osm, ...(outline.name !== undefined && { name: outline.name }), vertices: piece.vertices, triangles, heights });
-      }
-    }
+    shaped.push({ outline, members, angle });
   }
   // the ways leading on meet the decks, and the ways on the ground ending on their ramps meet those in turn
   const done = new Set<T>(on);
@@ -188,7 +163,81 @@ export function setOutlineDecks<T extends DeckLine>(
       }
     }
   }
+
+  // the pieces, with the deck of the nearest way at their corners; past the ends of the ways on the outline, that of
+  // the ways leading on, and none over those on the ground (an outline also over the embankment between two bridges)
+  for (const { outline, members, angle } of shaped) {
+    const onward = leadingOn(lines, members, on, bounds(outline.polygon.outer));
+    const decked = [...members, ...onward.filter((o) => o.deck)];
+    const bare = onward.filter((o) => !o.deck);
+    const deckOf = (p: Point) => {
+      const member = nearestOf(members, p);
+      const way = member?.past ? nearestOf(decked, p) : member;
+      return way?.way.deck ? deckAt(way.way.line, way.way.deck, p) : 0;
+    };
+    const overGround = (p: Point) => {
+      const way = nearestOf(members, p)?.past ? nearestOf([...decked, ...bare], p)?.way : undefined;
+      return way !== undefined && bare.includes(way);
+    };
+    for (const piece of acrossPieces(outline.polygon, angle, PIECE_M)) {
+      const heights = piece.vertices.map(deckOf);
+      const triangles: number[] = [];
+      for (let i = 0; i + 2 < piece.triangles.length; i += 3) {
+        const corners = [piece.triangles[i], piece.triangles[i + 1], piece.triangles[i + 2]];
+        const [a, b, c] = corners.map((k) => piece.vertices[k]);
+        const middle: Point = [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3];
+        if (slope(corners.map((k) => [...piece.vertices[k], heights[k]])) <= MAX_DECK_SLOPE && !overGround(middle)) {
+          triangles.push(...corners);
+        }
+      }
+      if (triangles.length > 0) {
+        decks.push({ osm: outline.osm, ...(outline.name !== undefined && { name: outline.name }), vertices: piece.vertices, triangles, heights });
+      }
+    }
+  }
   return { decks, ways: on.size };
+}
+
+/**
+ * The ways leading on from the ways on an outline, over its box: those ending on them, and on from those end to end
+ * (past an approach or a ramp split off before), not those on outlines or tunnels under lids
+ */
+function leadingOn<T extends DeckLine>(lines: T[], members: T[], on: Set<T>, box: ReturnType<typeof bounds>): T[] {
+  const near = lines.filter((l) => {
+    if (on.has(l) || l.lid || l.line.length < 2) {
+      return false;
+    }
+    const b = bounds(l.line);
+    return b.maxX >= box.minX - TOUCH_M && b.minX <= box.maxX + TOUCH_M && b.maxY >= box.minY - TOUCH_M && b.minY <= box.maxY + TOUCH_M;
+  });
+  const ends = (l: T): Point[] => [l.line[0], l.line[l.line.length - 1]];
+  const onward = near.filter((l) => ends(l).some((p) => members.some((m) => nearestOnLine(m.line, p).distance <= TOUCH_M)));
+  for (let i = 0; i < onward.length; i++) {
+    const from = ends(onward[i]);
+    for (const l of near) {
+      if (!onward.includes(l) && ends(l).some((p) => from.some((q) => Math.hypot(p[0] - q[0], p[1] - q[1]) <= TOUCH_M))) {
+        onward.push(l);
+      }
+    }
+  }
+  return onward;
+}
+
+/** The nearest of the ways to p, and whether p is past one of its ends (off it, nearest to an end) */
+function nearestOf<T extends DeckLine>(ways: T[], p: Point): { way: T; past: boolean } | undefined {
+  let best: { way: T; distance: number; point: Point } | undefined;
+  for (const way of ways) {
+    const { point, distance } = nearestOnLine(way.line, p);
+    if (!best || distance < best.distance) {
+      best = { way, distance, point };
+    }
+  }
+  if (!best) {
+    return undefined;
+  }
+  const { way, distance, point } = best;
+  const at = (q: Point) => Math.hypot(q[0] - point[0], q[1] - point[1]) < 1e-9;
+  return { way, past: distance > 1e-9 && (at(way.line[0]) || at(way.line[way.line.length - 1])) };
 }
 
 /** Whether two lines cross away from where one ends on the other (a junction) */
