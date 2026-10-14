@@ -44,6 +44,9 @@ const builder = new MapBuilder({
   // treeRegisters: [TAMPERE_TREE_REGISTER],
   // and the 3D building parts to take roof heights from (ROOF_TOP_SOURCES by default)
   // roofTops: [TAMPERE_ROOF_TOPS],
+  // and a correction of the elevation model's heights where the ground has changed since it was scanned (a building
+  // site's heap levelled): everything that takes heights from the model takes the corrected ones
+  // groundCorrection: ([e, n], height) => height,
 });
 const info = await builder.info(); // tiles, OSM timestamp, attributions
 for (const key of info.tiles) {

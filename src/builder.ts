@@ -70,6 +70,8 @@ export interface MapOptions {
   treeRegisters?: TreeRegisterSource[];
   /** The 3D building parts to take measured roof tops from, of those that cover the area; ROOF_TOP_SOURCES by default */
   roofTops?: RoofTopSource[];
+  /** Corrects the elevation model's height (m) at a point (m), where the ground has changed since it was scanned */
+  groundCorrection?: (point: Point, height: number) => number;
   /** Progress and warnings; console by default */
   logger?: Logger;
 }
@@ -138,7 +140,7 @@ export class MapBuilder {
     const { grid, toTm, steps, wallsAt } = built.ground;
     const at = latticeProjection(tile, this.#options.tileSizeM, TM_LATTICE_M, toTm);
     const water = built.water;
-    const model = stepAtWalls((e: number, n: number) => sampleElevation(grid, ...at(e, n)), steps);
+    const model = stepAtWalls((e: number, n: number) => this.#corrected(e, n, sampleElevation(grid, ...at(e, n))), steps);
     const ground = wallsAt ? raiseToWalls(model, wallsAt) : model;
     const { heights, missing } = tileHeights(tile, this.#options.tileSizeM, HEIGHT_STEP_M, (e, n) => water?.levelAt([e, n]) ?? ground(e, n));
     if (missing > 0) {
@@ -146,6 +148,11 @@ export class MapBuilder {
     }
     tile.heights = heights;
     return tile;
+  }
+
+  #corrected(e: number, n: number, height: number | undefined): number | undefined {
+    const correction = this.#options.groundCorrection;
+    return height === undefined || !correction ? height : correction([e, n], height);
   }
 
   #build(): Promise<Built> {
@@ -218,7 +225,7 @@ export class MapBuilder {
       );
       logger.log(`elevation model ${grid.cols} x ${grid.rows} cells of ${grid.cellSize} m (${elevationCached ? "cached" : "fetched"})`);
       const toTm = (e: number, n: number) => toTm35fin(toGeo([e, n]));
-      const modelAt = (e: number, n: number) => sampleElevation(grid, ...toTm(e, n));
+      const modelAt = (e: number, n: number) => this.#corrected(e, n, sampleElevation(grid, ...toTm(e, n)));
       // the model smooths retaining walls into slopes: the ground steps at them again
       const steps = groundSteps(features.barriers, modelAt);
       const stepping = steps.filter((s) => s.footOut > 0 || s.topIn > 0);
