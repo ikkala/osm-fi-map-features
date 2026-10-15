@@ -34,6 +34,7 @@ import { passagesUpSlopes, raisePassages } from "./raisedPassages.ts";
 import { portalWallsAt, raiseToWalls, setTunnelFloors, setTunnelRooms, uncoverAtGrade } from "./tunnels.ts";
 import { fetchTreeRegister, overlaps, TREE_REGISTERS, type RegisterTree, type TreeRegisterSource } from "./treeRegister.ts";
 import { assignWindows } from "./windows.ts";
+import { applyOsmEdits, type OsmEdit } from "./edits.ts";
 import { cutWaterways, parseWaterways, setWaterLevels, waterwayQuery, type WaterLevels } from "./waterways.ts";
 
 export const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
@@ -70,6 +71,8 @@ export interface MapOptions {
   treeRegisters?: TreeRegisterSource[];
   /** The 3D building parts to take measured roof tops from, of those that cover the area; ROOF_TOP_SOURCES by default */
   roofTops?: RoofTopSource[];
+  /** Local edits of the OSM data, not uploaded (yet): applied to what is fetched, new elements to the map's features only */
+  edits?: OsmEdit[];
   /** Corrects the elevation model's height (m) at a point (m), where the ground has changed since it was scanned */
   groundCorrection?: (point: Point, height: number) => number;
   /** Progress and warnings; console by default */
@@ -185,7 +188,24 @@ export class MapBuilder {
     };
 
     logger.log(`${keys.length} tiles of ${size} m: x ${Math.min(...xs)} .. ${Math.max(...xs)}, y ${Math.min(...ys)} .. ${Math.max(...ys)}`);
-    const { response, cached } = await fetchOverpass(overpassQuery(fetchBox), { url: overpassUrl, cache, refresh });
+    const edits = this.#options.edits ?? [];
+    const overpass = async (query: string, addNew = false) => {
+      const fetched = await fetchOverpass(query, { url: overpassUrl, cache, refresh });
+      if (edits.length === 0) {
+        return fetched;
+      }
+      const applied = applyOsmEdits(fetched.response.elements, edits, addNew);
+      if (addNew) {
+        const created = edits.filter((edit) => edit.action === "create").length;
+        const deleted = edits.filter((edit) => edit.action === "delete").length;
+        logger.log(
+          `${edits.length} local edits of the OSM data: ${edits.length - created - deleted} modified, ${created} new, ${deleted} deleted` +
+            (applied.missing > 0 ? `; ${applied.missing} of the modified or deleted not in the fetched data` : ""),
+        );
+      }
+      return { ...fetched, response: { ...fetched.response, elements: applied.elements } };
+    };
+    const { response, cached } = await overpass(overpassQuery(fetchBox), true);
     const osmTimestamp = response.osm3s?.timestamp_osm_base;
     logger.log(`${response.elements.length} OSM elements (${cached ? "cached, refresh to fetch again" : "fetched"}), data from ${osmTimestamp ?? "?"}`);
 
@@ -336,7 +356,7 @@ export class MapBuilder {
     logger.log(`${windowed} of ${features.buildings.filter((b) => !b.hasParts).length} buildings get windows`);
     // OSM entrances, and guessed doors for buildings with windows but none
     try {
-      const { response: entranceResponse, cached: entrancesCached } = await fetchOverpass(entranceQuery(fetchBox), { url: overpassUrl, cache, refresh });
+      const { response: entranceResponse, cached: entrancesCached } = await overpass(entranceQuery(fetchBox));
       const entrances = parseEntrances(entranceResponse.elements, origin);
       const placed = assignEntrances(features.buildings, entrances);
       const guessed = guessEntrances(features.buildings, features.roads);
@@ -349,7 +369,7 @@ export class MapBuilder {
     }
     // businesses after the entrances they show at
     try {
-      const { response: businessResponse, cached: businessesCached } = await fetchOverpass(businessQuery(fetchBox), { url: overpassUrl, cache, refresh });
+      const { response: businessResponse, cached: businessesCached } = await overpass(businessQuery(fetchBox));
       const businesses = parseBusinesses(businessResponse.elements, origin);
       const placed = placeBusinesses(features.buildings, businesses, features.roads);
       logger.log(
@@ -360,7 +380,7 @@ export class MapBuilder {
       logger.warn(`warning: no businesses: ${err instanceof Error ? err.message : String(err)}`);
     }
     try {
-      const { response: playResponse, cached: playCached } = await fetchOverpass(playgroundQuery(fetchBox), { url: overpassUrl, cache, refresh });
+      const { response: playResponse, cached: playCached } = await overpass(playgroundQuery(fetchBox));
       const placed = placePlayEquipment(parsePlayEquipment(playResponse.elements, origin), playgrounds);
       features.playEquipment = placed.equipment;
       logger.log(
@@ -371,7 +391,7 @@ export class MapBuilder {
       logger.warn(`warning: no playground equipment: ${err instanceof Error ? err.message : String(err)}`);
     }
     try {
-      const { response: landmarkResponse, cached: landmarksCached } = await fetchOverpass(landmarkQuery(fetchBox), { url: overpassUrl, cache, refresh });
+      const { response: landmarkResponse, cached: landmarksCached } = await overpass(landmarkQuery(fetchBox));
       const found = parseLandmarks(landmarkResponse.elements, origin);
       Object.assign(features, found);
       const areas = features.areas.length;
@@ -387,7 +407,7 @@ export class MapBuilder {
       logger.warn(`warning: no landmarks: ${err instanceof Error ? err.message : String(err)}`);
     }
     try {
-      const { response: parkingResponse, cached: parkingCached } = await fetchOverpass(bicycleParkingQuery(fetchBox), { url: overpassUrl, cache, refresh });
+      const { response: parkingResponse, cached: parkingCached } = await overpass(bicycleParkingQuery(fetchBox));
       features.bicycleParkings = parseBicycleParking(parkingResponse.elements, origin);
       const capacity = features.bicycleParkings.reduce((sum, p) => sum + (p.capacity ?? 0), 0);
       logger.log(`${features.bicycleParkings.length} bicycle parkings (${parkingCached ? "cached" : "fetched"}), ${capacity} places where OSM tells`);
@@ -487,7 +507,7 @@ export class MapBuilder {
     let water: WaterLevels | undefined;
     if (heightAt) {
       try {
-        const { response: waterResponse, cached: waterCached } = await fetchOverpass(waterwayQuery(fetchBox), { url: overpassUrl, cache, refresh });
+        const { response: waterResponse, cached: waterCached } = await overpass(waterwayQuery(fetchBox));
         const lines = parseWaterways(waterResponse.elements, origin);
         water = setWaterLevels(features.areas, lines, heightAt);
         logger.log(

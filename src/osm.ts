@@ -642,7 +642,7 @@ interface LatLon {
 
 type Tags = Record<string, string>;
 
-type OsmElement =
+export type OsmElement =
   | { type: "node"; id: number; tags?: Tags; lat?: number; lon?: number }
   | { type: "way"; id: number; tags?: Tags; geometry?: LatLon[]; center?: LatLon }
   | { type: "relation"; id: number; tags?: Tags; members?: { type: string; role: string; geometry?: LatLon[] }[]; center?: LatLon };

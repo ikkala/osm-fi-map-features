@@ -47,6 +47,8 @@ const builder = new MapBuilder({
   // and a correction of the elevation model's heights where the ground has changed since it was scanned (a building
   // site's heap levelled): everything that takes heights from the model takes the corrected ones
   // groundCorrection: ([e, n], height) => height,
+  // and local edits of the OSM data not uploaded yet, OSM XML as an editor such as JOSM saves it (see below)
+  // edits: parseOsmEdits(await readFile("edits.osm", "utf8")),
 });
 const info = await builder.info(); // tiles, OSM timestamp, attributions
 for (const key of info.tiles) {
@@ -74,6 +76,12 @@ and the map is only combined from them when it is built. `fileCache(dir)` keeps 
 register's `name`), `tampere-roof-tops-*.json` (a layer of 3D building parts by its `name`), and
 `mml-roof-colours-<e>_<n>.json` (the colours worked out from the orthophoto by outline, a file per square of the
 photo, so maps of different places keep theirs; the images are not kept).
+
+`edits` (`parseOsmEdits` of an OSM XML file) shows edits of the OSM data in the map before they are uploaded: the
+elements the file marks `action="modify"` take its tags (and its geometry when the file has a way's nodes; a way whose
+node moved is edited too), those marked `action="delete"` are left out, and new ones (negative ids) are added to the
+map's features (not to its entrances, businesses or landmarks). Edits of relations are not supported. Once uploaded,
+the edits are in the fetched data anyway and the file can go.
 
 The Overpass server is `https://overpass-api.de/api/interpreter` unless `overpassUrl` is given; mind its
 [usage policy](https://wiki.openstreetmap.org/wiki/Overpass_API#Public_Overpass_API_instances).
