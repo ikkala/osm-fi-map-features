@@ -144,7 +144,7 @@ register's storeys over OSM's would do harm; a few look like errors in OSM (Kank
 there. Storeys are 3 m, but old buildings have taller ones: a building whose height is counted from its storeys
 (`building:levels` or the register's) gets 3.6 m storeys when built before 1920 and 3.2 m before 1946, e.g. the
 walls of Tampereen ensimmäinen postitalo by Finlayson (1867, one storey under a hipped roof) are 3.6 m tall, not 3.
-The year (`year`) is `start_date` in OSM, else the register's completion date (`valmistumispaivamaara`; the
+The year (`year`) is `start_date` in OSM (a span such as `1904..1920` by its first year), else the register's completion date (`valmistumispaivamaara`; the
 earliest of the points in an outline). The register has 29 February 1904 on outbuildings and holiday homes and 1
 January 1900 on some others whose date is not known, both left out as unknown, and a few dates before 1700 are errors. A
 `building:part` without a year gets the year of the building it is in, but keeps 3 m storeys, so that the parts
