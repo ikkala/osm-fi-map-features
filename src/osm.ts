@@ -642,7 +642,7 @@ interface LatLon {
 
 type Tags = Record<string, string>;
 
-type OsmElement =
+export type OsmElement =
   | { type: "node"; id: number; tags?: Tags; lat?: number; lon?: number }
   | { type: "way"; id: number; tags?: Tags; geometry?: LatLon[]; center?: LatLon }
   | { type: "relation"; id: number; tags?: Tags; members?: { type: string; role: string; geometry?: LatLon[] }[]; center?: LatLon };
@@ -2117,9 +2117,9 @@ export function meters(value: string | undefined): number | undefined {
   return match[2] === "ft" || match[2] === "'" ? amount * 0.3048 : amount;
 }
 
-/** The year of a start_date such as "1965", "1965-05-01" or "1960s"; undefined for "C19", "~1900", ... */
+/** The year of a start_date such as "1965", "1965-05-01", "1960s" or "1904..1920" (its first); undefined for "C19", "~1900", ... */
 function startYear(value: string | undefined): number | undefined {
-  const match = value?.match(/^(\d{4})(?:$|-|s$)/);
+  const match = value?.match(/^(\d{4})(?:$|-|s$|\.\.\d{4}$)/);
   return match ? Number(match[1]) : undefined;
 }
 
