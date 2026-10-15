@@ -53,13 +53,13 @@ const FILE = `<?xml version='1.0' encoding='UTF-8'?>
 test("parseOsmEdits takes the changed and new elements, and the ways whose nodes moved", () => {
   const edits = parseOsmEdits(FILE);
   const summary = edits.map((edit) => `${edit.action} ${edit.element.type}/${edit.element.id}`);
-  assert.deepEqual(summary, ["modify node/4", "create node/-1", "create node/-2", "create node/-3", "modify way/10", "delete way/12", "modify way/13", "create way/-5", "modify way/14"]);
-  const office = edits[4].element;
+  assert.deepEqual(summary, ["modify node/4", "modify way/10", "delete way/12", "modify way/13", "create way/-5", "modify way/14"]);
+  const office = edits[1].element;
   assert.equal(office.type, "way");
   assert.deepEqual(office.tags, { building: "office", "building:levels": "2", name: "A & B" });
   assert.equal(office.type === "way" ? office.geometry?.length : undefined, 4);
   // nodes not in the file: the way keeps the geometry it has
-  const partial = edits[8].element;
+  const partial = edits[5].element;
   assert.equal(partial.type === "way" ? partial.geometry : "not a way", undefined);
 });
 
@@ -83,7 +83,7 @@ test("applyOsmEdits changes, leaves out and adds elements", () => {
   // way 13 is not in the data
   assert.equal(missing, 1);
   const ids = elements.map((e) => `${e.type}/${e.id}`);
-  assert.deepEqual(ids, ["way/10", "way/14", "node/4", "node/5", "node/-1", "node/-2", "node/-3", "way/-5"]);
+  assert.deepEqual(ids, ["way/10", "way/14", "node/4", "node/5", "way/-5"]);
   const office = elements[0];
   assert.deepEqual(office.tags, { building: "office", "building:levels": "2", name: "A & B" });
   assert.equal(office.type === "way" ? office.geometry?.[1].lon : undefined, 23.701);

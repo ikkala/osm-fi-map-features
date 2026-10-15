@@ -73,8 +73,8 @@ function actionOf(element: XmlElement, id: number): EditAction | undefined {
 }
 
 /**
- * The edits in an OSM XML file: its elements with an action and its new ones (negative ids). A way whose node was
- * moved is edited too, as its geometry changes. Relations are not supported: an edited one is an error, and so is a
+ * The edits in an OSM XML file: its elements with an action and its new ones (negative ids), but untagged nodes,
+ * which are vertices of ways: a way whose node was moved is edited, as its geometry changes. Relations are not supported: an edited one is an error, and so is a
  * new way without all its nodes.
  */
 export function parseOsmEdits(xml: string): OsmEdit[] {
@@ -93,10 +93,11 @@ export function parseOsmEdits(xml: string): OsmEdit[] {
       positions.set(String(id), { lat, lon });
     }
     const action = actionOf(node, id);
-    if (action !== undefined) {
-      if (action !== "delete") {
-        moved.add(String(id));
-      }
+    if (action !== undefined && action !== "delete") {
+      moved.add(String(id));
+    }
+    // an untagged node is a way's vertex, whose ways carry its change
+    if (action !== undefined && (action === "delete" || Object.keys(node.tags).length > 0)) {
       edits.push({ action, element: { type: "node", id, tags: node.tags, ...(placed && { lat, lon }) } });
     }
   }
