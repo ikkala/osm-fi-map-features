@@ -6,6 +6,17 @@ export { ELEVATION_ATTRIBUTION } from "./elevation.ts";
 export { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE, type MeasuredDefaults } from "./measuredDefaults.ts";
 export { FAR_CLASSES, farTile, type FarBox, type FarClass, type FarOptions, type FarTile } from "./far.ts";
 export {
+  compassOf,
+  lakeParts,
+  streetNameKey,
+  streetParts,
+  type Compass,
+  type FeatureMatch,
+  type FeaturePart,
+  type PartArea,
+  type PartRoad,
+} from "./featureParts.ts";
+export {
   estimateMotorTraffic,
   FLOW_REACH_M,
   pullFlows,

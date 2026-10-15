@@ -562,6 +562,25 @@ viewer high up, where their full features would be far too many:
   the long side's direction, length and width) with the building's base, heights and colours. Outlines with parts
   and buildings smaller than 40 m² are left out; a block with a courtyard is a full box.
 
+### Parts of streets and lakes
+
+A point on a long street or a wide lake is hard to find by the feature's name alone. `featureParts.ts` tells where
+on it the point is, for a user with places of their own (a name and a point each) to match to the map when it uses
+them:
+
+- `streetParts(roads, name, near)`: the street of that name passing within 50 m of `near` (names compared with
+  `streetNameKey`: letter case, the kind of dash and spaces aside), with the roads of the name joined to it end to
+  line within 60 m (across a roundabout, between carriageways), and its two ends: the points of its roads farthest
+  apart, each with its compass direction from the other (`"e"`, `"sw"`, ...). A street with its ends under 200 m
+  apart has none.
+- `lakeParts(areas, near)`: the still water (`water`, not `flowing`) `near` is in, or the nearest within 50 m, with
+  the pieces of it that share its `osm` (a large lake cut into tiles), and its shores: for each of the eight
+  directions, the outline's point farthest that way, the main directions first and one within 100 m of a shore before
+  it left out. A lake under 150 m across has none.
+
+Each gives the pieces it matched, so that a user reading the map a tile at a time can tell whether the feature goes
+on into tiles not read yet, and read them too. `undefined` means there is no such street or water near the point.
+
 ## Measured in Tampere
 
 Some constants could only be measured from one city's open data, Tampere's. They are kept together in
@@ -599,6 +618,9 @@ The data it builds is not:
   ODbL however briefly they exist, whether they are stored or worked out when they are used, and `flows.ts` is the
   way they are made. Credit the counts' source too. The counts themselves are not changed by it and stay under
   their own terms.
+- Places matched to the map's streets and lakes (`streetParts`, `lakeParts`), and the parts found for them, are
+  likewise a Derivative Database under the ODbL, stored or not, and `featureParts.ts` is the way they are made. The
+  places themselves stay under their own terms.
 
 `MapInfo.attributions` lists the credits for the data a build used.
 
