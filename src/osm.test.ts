@@ -101,6 +101,18 @@ test("parseOsm reads a road's maxheight in meters, not a walkway's", () => {
   assert.deepEqual(features.roads.map((r) => [r.osm, r.maxHeight]), [["w1", 2.3], ["w2", undefined], ["w3", undefined]]);
 });
 
+test("parseOsm reads the way trains usually go on a track", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 1, tags: { railway: "rail", "railway:preferred_direction": "forward" }, geometry: [at(0, 0), at(20, 0)] },
+      { type: "way", id: 2, tags: { railway: "rail", "railway:preferred_direction": "backward" }, geometry: [at(0, 5), at(20, 5)] },
+      { type: "way", id: 3, tags: { railway: "rail", "railway:preferred_direction": "both" }, geometry: [at(0, 10), at(20, 10)] },
+    ],
+    origin,
+  );
+  assert.deepEqual(features.rails.map((r) => [r.osm, r.preferredDirection]), [["w1", 1], ["w2", -1], ["w3", undefined]]);
+});
+
 test("parseOsm tells who may drive on a road: everyone, buses and taxis only, and buses alone", () => {
   const { features } = parseOsm(
     [
