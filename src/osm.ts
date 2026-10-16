@@ -96,6 +96,8 @@ export interface Rail {
   bridge: boolean;
   tunnel: boolean;
   line: Point[];
+  /** The way trains usually go on one track of a double track (railway:preferred_direction=*): 1 along line, -1 against it */
+  preferredDirection?: 1 | -1;
   /** Bridges: deck height (meters above sea level) at every point of line, when heights are known */
   deck?: number[];
   /** A tunnel in a cut in the elevation model: its lid's top (m above sea level) at every point of line */
@@ -851,7 +853,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
         }
       }
       if (tags.railway && RAIL_KINDS.has(tags.railway)) {
-        const rail: Rail = { osm, kind: tags.railway, ...layering(tags), line: points };
+        const rail: Rail = { osm, kind: tags.railway, ...layering(tags), line: points, ...preferredDirection(tags) };
         const storeys = storeysOf(tags);
         if (storeys) {
           levels.set(rail, storeys);
@@ -2049,6 +2051,12 @@ function oneway(tags: Tags): { oneway?: 1 | -1 } {
     return { oneway: 1 };
   }
   return {};
+}
+
+/** The way traffic usually goes on a track (railway:preferred_direction=*); unset when both ways */
+function preferredDirection(tags: Tags): { preferredDirection?: 1 | -1 } {
+  const value = tags["railway:preferred_direction"];
+  return value === "forward" ? { preferredDirection: 1 } : value === "backward" ? { preferredDirection: -1 } : {};
 }
 
 /** Who may walk and cycle on a way: foot=*, bicycle=* and segregated=* */
