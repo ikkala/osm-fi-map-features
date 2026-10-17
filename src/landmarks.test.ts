@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Point } from "./geometry.ts";
-import { DAM_WIDTH_M, landmarkQuery, parseLandmarks, PIER_WIDTH_M } from "./landmarks.ts";
-import type { Area, MapFeatures, OverpassResponse } from "./osm.ts";
+import { DAM_WIDTH_M, landmarkQuery, moveLandmarksOffWays, parseLandmarks, PIER_WIDTH_M, type Landmark, type LandmarkKind } from "./landmarks.ts";
+import type { Area, MapFeatures, OverpassResponse, Rail, Road } from "./osm.ts";
 import { LocalProjection } from "./projection.ts";
 import { setCourseHeights, withoutCourseWater, type Ride } from "./rides.ts";
 import { defined } from "./testing.ts";
@@ -203,6 +203,38 @@ test("the water areas along a water ride's course are left to it", () => {
   ];
   assert.deepEqual(withoutCourseWater(areas, [flume, track]).map((a) => a.osm), ["b", "c", "d"]);
   assert.equal(withoutCourseWater(areas, [{ ...flume, tunnel: true }]).length, 4);
+});
+
+test("a node's landmark on a road for vehicles or a railway moves to the nearest place clear of them, or is left out", () => {
+  const road = (osm: string, kind: string, width: number, n: number, bridge = false): Road => ({ osm, kind, width, layer: 0, bridge, tunnel: false, line: [[0, n], [100, n]] });
+  const rail = (osm: string, n: number): Rail => ({ osm, kind: "tram", layer: 0, bridge: false, tunnel: false, line: [[0, n], [100, n]] });
+  // a street 8 m wide with a tramway 8.5 m off: room for a landmark between them from n = -6.5 to -4.5
+  const roads = [road("w1", "secondary", 8, 0), road("w2", "footway", 2.5, 50), road("w3", "secondary", 8, 70, true), road("w4", "secondary", 8, -100)];
+  // a tramway 6.4 m off a street leaves no room between them
+  const rails = [rail("w5", -8.5), rail("w6", -106.4)];
+  const at = (osm: string, kind: LandmarkKind, point: Point): Landmark => ({ osm, kind, point });
+  const landmarks = [
+    // on a platform's edge by the street
+    at("n1", "artwork", [20, -2.27]),
+    at("n2", "flagpole", [20, 6]),
+    at("n3", "memorial", [50, 50]),
+    at("n4", "artwork", [50, 70]),
+    { ...at("n5", "artwork", [60, 1]), base: 100 },
+    { ...at("w7", "fountain", [70, 0]), outline: square(68, -2, 4).slice(0, 4) },
+    at("n8", "power_pole", [80, 0]),
+    at("n9", "flagpole", [50, -102]),
+  ];
+  assert.deepEqual(moveLandmarksOffWays(landmarks, roads, rails), { moved: 1, aside: 1 });
+  assert.deepEqual(
+    landmarks.map((l) => l.osm),
+    ["n1", "n2", "n3", "n4", "n5", "w7", "n8"],
+  );
+  const [e, n] = landmarks[0].point;
+  assert.ok(Math.abs(e - 20) < 0.05 && n <= -4.5 && n > -4.6, `moved to ${e}, ${n}`);
+  assert.deepEqual(
+    landmarks.slice(1).map((l) => l.point),
+    [[20, 6], [50, 50], [50, 70], [60, 1], [70, 0], [80, 0]],
+  );
 });
 
 test("landmarks into the tiles: points to their tile, lines cut with their heights, outlines to their middle's tile", () => {

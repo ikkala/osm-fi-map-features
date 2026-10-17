@@ -438,7 +438,10 @@ Landmarks come from a query of their own (`src/landmarks.ts`); the tiles have th
   `artwork_type`), memorials and monuments (`historic=memorial` with `memorial=*`, `historic=monument`) and power
   towers and poles, each with its `name`, `height` and `material`, and a way's outline; a fountain that is an
   artwork is a fountain. Around Tampere about 900 flagpoles (none with a height), 200 masts, 230 power supports and
-  180 fountains, artworks and memorials.
+  180 fountains, artworks and memorials. A node's landmark on the ground keeps 0.5 m clear of the roads for vehicles
+  and the railways (3 m wide) on the ground: OSM maps a work at a stop on the platform's edge by the street, and a
+  road's width is often its kind's. One reaching onto them is moved to the nearest place clear of them, at most 6 m,
+  and left out where there is none; power supports stay where their lines have them.
 - `piers` (`man_made=pier`): a closed way's outline, or an open way's line with its `width` (2 m unless
   tagged), whether it is `floating`, and its `surface` (or `material`). `dams`: `waterway=dam`, `weir` and
   `lock_gate` ways, an outline or a line 3 m thick unless tagged.

@@ -1,8 +1,8 @@
 // What stands in the landscape apart from buildings and ways, from a query of its own: lighthouses, lights, beacons
 // and buoys (seamarks.ts), masts, flagpoles, boulders, fountains, artworks and memorials, power lines with their
 // towers and poles, piers, dams and weirs, amusement rides (rides.ts) and ski and skating tracks.
-import { dedupe, ringArea, ringCentroid, type Point, type Ring } from "./geometry.ts";
-import { meters, type GeoBox, type OverpassResponse } from "./osm.ts";
+import { dedupe, distanceToSegment, nearestPlace, RectGrid, ringArea, ringCentroid, type Point, type Ring } from "./geometry.ts";
+import { bounds, meters, NOT_FOR_VEHICLES, type GeoBox, type OverpassResponse, type Rail, type Road } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { COURSE_KINDS, RIDE_KINDS, setCourseHeights, type Ride } from "./rides.ts";
 import { parseSeamark, type Seamark } from "./seamarks.ts";
@@ -102,6 +102,14 @@ export const PIER_WIDTH_M = 2;
 export const DAM_WIDTH_M = 3;
 /** Pistes that are no longer or not yet there */
 const NOT_PISTES = new Set(["construction", "proposed", "abandoned", "disused", "no"]);
+/** A landmark keeps this much room (m) round its point clear of the roads for vehicles and the railways (this wide, m) */
+const ROOM_M = 0.5;
+const RAIL_WIDTH_M = 3;
+/** A landmark on one moves at most this far (m) off it, to places looked at this far (m) apart */
+const OFF_WAY_M = 6;
+const OFF_WAY_STEP_M = 0.05;
+/** Landmarks that stand where their line has its vertex */
+const ON_LINES = new Set<LandmarkKind>(["power_tower", "power_pole"]);
 
 export function landmarkQuery(box: GeoBox): string {
   const selectors = [
@@ -143,6 +151,50 @@ export function parseLandmarks(elements: OverpassResponse["elements"], origin: G
   }
   setCourseHeights(result.rides);
   return result;
+}
+
+/**
+ * Moves a node's landmark on the ground (no base) whose room reaches onto a road for vehicles or a railway on the
+ * ground, within its width, to the nearest place clear of them within OFF_WAY_M: OSM maps a work at a stop on the
+ * platform's edge by the street, and a road's width is often its kind's. One with no such place is left out; power
+ * supports stay where their lines have them. Returns how many were moved and left out.
+ */
+export function moveLandmarksOffWays(landmarks: Landmark[], roads: Road[], rails: Rail[]): { moved: number; aside: number } {
+  const free = new Set(landmarks.filter((l) => l.base === undefined && !l.outline && !ON_LINES.has(l.kind)));
+  const ways = [
+    ...roads.filter((r) => !r.tunnel && !r.bridge && !NOT_FOR_VEHICLES.has(r.kind)).map((r) => ({ line: r.line, half: r.width / 2 })),
+    ...rails.filter((r) => !r.tunnel && !r.bridge).map((r) => ({ line: r.line, half: RAIL_WIDTH_M / 2 })),
+  ];
+  if (free.size === 0 || ways.length === 0) {
+    return { moved: 0, aside: 0 };
+  }
+  const over = bounds([...free].map((l) => l.point));
+  const reach = OFF_WAY_M + ROOM_M;
+  const grid = new RectGrid<{ a: Point; b: Point; half: number }>(25, { minX: over.minX - reach, minY: over.minY - reach, maxX: over.maxX + reach, maxY: over.maxY + reach });
+  for (const { line, half } of ways) {
+    for (let i = 0; i + 1 < line.length; i++) {
+      const [a, b] = [line[i], line[i + 1]];
+      const r = half + ROOM_M;
+      grid.add({ minX: Math.min(a[0], b[0]) - r, minY: Math.min(a[1], b[1]) - r, maxX: Math.max(a[0], b[0]) + r, maxY: Math.max(a[1], b[1]) + r }, { a, b, half });
+    }
+  }
+  const clear = (p: Point) => (grid.at(p).every((s) => distanceToSegment(p, s.a, s.b) >= s.half + ROOM_M) ? p : undefined);
+  let [moved, aside] = [0, 0];
+  const kept = landmarks.filter((landmark) => {
+    if (!free.has(landmark) || clear(landmark.point)) {
+      return true;
+    }
+    const place = nearestPlace(landmark.point, OFF_WAY_M, OFF_WAY_STEP_M, clear);
+    if (!place) {
+      aside++;
+      return false;
+    }
+    landmark.point = place;
+    moved++;
+    return true;
+  });
+  landmarks.splice(0, landmarks.length, ...kept);
+  return { moved, aside };
 }
 
 /** A node's point, or a way's middle with its outline (closed) or line (open) */

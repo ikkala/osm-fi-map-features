@@ -3,7 +3,7 @@
 // outline is triangulated in short pieces with the deck's heights so the area between the ways, and trees and
 // lamps on it, have a deck.
 import { crests, deckAt, pointAlong, rounded, upperHull } from "./bridges.ts";
-import { dedupe, distanceToSegment, nearestOnLine, nearestOnSegment, orientedBox, pointInPolygon, pointInRing, ringArea, triangulate, type Point, type Polygon, type Ring } from "./geometry.ts";
+import { dedupe, distanceToSegment, nearestOnLine, nearestOnSegment, nearestPlace, orientedBox, pointInPolygon, pointInRing, ringArea, triangulate, type Point, type Polygon, type Ring } from "./geometry.ts";
 import { bounds, crossing, NOT_FOR_VEHICLES, type BridgeDeck, type BridgeOutline } from "./osm.ts";
 
 /** A road or railway: a bridge's (bridge, deck) or not */
@@ -753,28 +753,9 @@ function landmarkPlace(decks: IndexedDeck[], ways: ClearWay[], p: Point, near: P
       ROUND.every(([x, y]) => heightOnDecks(decks, [q[0] + x * LANDMARK_ROOM_M, q[1] + y * LANDMARK_ROOM_M]) !== undefined);
     return ok ? { point: q, height } : undefined;
   };
-  const here = roomy(p);
-  if (here) {
-    return here;
-  }
-  for (let ring = 1; ring * LANDMARK_STEP_M <= LANDMARK_MOVE_M + 1e-9; ring++) {
-    const r = ring * LANDMARK_STEP_M;
-    const count = Math.max(16, Math.ceil((2 * Math.PI * r) / LANDMARK_STEP_M));
-    let [sx, sy] = [0, 0];
-    let first: { point: Point; height: number } | undefined;
-    for (let k = 0; k < count; k++) {
-      const a = (2 * Math.PI * k) / count;
-      const place = roomy([p[0] + r * Math.cos(a), p[1] + r * Math.sin(a)]);
-      if (place) {
-        sx += Math.cos(a);
-        sy += Math.sin(a);
-        first ??= place;
-      }
-    }
-    if (first) {
-      const length = Math.hypot(sx, sy);
-      return (length > 1e-9 ? roomy([p[0] + (r * sx) / length, p[1] + (r * sy) / length]) : undefined) ?? first;
-    }
+  const place = nearestPlace(p, LANDMARK_MOVE_M, LANDMARK_STEP_M, roomy);
+  if (place) {
+    return place;
   }
   const height = heightOnDecks(decks, near);
   return height !== undefined && clear(near, height) ? { point: near, height } : undefined;

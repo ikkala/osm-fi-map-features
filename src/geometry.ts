@@ -491,3 +491,34 @@ export function distanceToSegment(p: Point, a: Point, b: Point): number {
   const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / lengthSquared));
   return Math.sqrt(squaredDistance(p, [a[0] + t * dx, a[1] + t * dy]));
 }
+
+/**
+ * What `place` makes of the nearest place to p within `reach` (m) where it makes anything: p itself, else on rings
+ * `step` apart, the nearest ring's place toward the middle of its places when that one has any, else its first
+ */
+export function nearestPlace<T>(p: Point, reach: number, step: number, place: (q: Point) => T | undefined): T | undefined {
+  const here = place(p);
+  if (here !== undefined) {
+    return here;
+  }
+  for (let ring = 1; ring * step <= reach + 1e-9; ring++) {
+    const r = ring * step;
+    const count = Math.max(16, Math.ceil((2 * Math.PI * r) / step));
+    let [sx, sy] = [0, 0];
+    let first: T | undefined;
+    for (let k = 0; k < count; k++) {
+      const a = (2 * Math.PI * k) / count;
+      const found = place([p[0] + r * Math.cos(a), p[1] + r * Math.sin(a)]);
+      if (found !== undefined) {
+        sx += Math.cos(a);
+        sy += Math.sin(a);
+        first ??= found;
+      }
+    }
+    if (first !== undefined) {
+      const length = Math.hypot(sx, sy);
+      return (length > 1e-9 ? place([p[0] + (r * sx) / length, p[1] + (r * sy) / length]) : undefined) ?? first;
+    }
+  }
+  return undefined;
+}

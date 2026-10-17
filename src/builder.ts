@@ -16,7 +16,7 @@ import { estimateCycling, estimateFootfall } from "./footfall.ts";
 import { mergeTrees, moveTreesOffWays, plantForests } from "./forests.ts";
 import { pointKey, simplifyLine, type Point } from "./geometry.ts";
 import { placeLamps } from "./lamps.ts";
-import { landmarkQuery, parseLandmarks } from "./landmarks.ts";
+import { landmarkQuery, moveLandmarksOffWays, parseLandmarks } from "./landmarks.ts";
 import { withoutCourseWater } from "./rides.ts";
 import { parsePlayEquipment, placePlayEquipment, playgroundQuery } from "./playgrounds.ts";
 import { fetchRoofColours, ORTHO_ATTRIBUTION } from "./ortho.ts";
@@ -502,6 +502,8 @@ export class MapBuilder {
       `${onDecks.trees} trees, ${onDecks.lamps} more street lamps, ${onDecks.play} pieces of playground equipment and ` +
         `${onDecks.landmarks} landmarks on bridge decks, ${onDecks.aside} landmarks with no room there clear of their ways left out`,
     );
+    const offWays = moveLandmarksOffWays(features.landmarks ?? [], features.roads, features.rails);
+    logger.log(`${offWays.moved} landmarks on roads for vehicles and railways moved off them, ${offWays.aside} with no room beside them left out`);
 
     // the water's surface level where the elevation model has it uneven, and the waterways through it
     let water: WaterLevels | undefined;
