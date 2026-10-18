@@ -134,6 +134,18 @@ test("parseOsm tells who may drive on a road: everyone, buses and taxis only, an
   );
 });
 
+test("parseOsm tells a road's bus bays: on which side of its line, or both", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 1, tags: { highway: "residential", bus_bay: "right" }, geometry: [at(0, 0), at(20, 0)] },
+      { type: "way", id: 2, tags: { highway: "residential", bus_bay: "both" }, geometry: [at(0, 10), at(20, 10)] },
+      { type: "way", id: 3, tags: { highway: "residential", bus_bay: "no" }, geometry: [at(0, 20), at(20, 20)] },
+    ],
+    origin,
+  );
+  assert.deepEqual(features.roads.map((r) => [r.osm, r.busBay]), [["w1", "right"], ["w2", "both"], ["w3", undefined]]);
+});
+
 test("cutIntoTiles cuts roads and areas at tile edges and keeps buildings whole", () => {
   const { features } = parseOsm(response.elements, origin);
   const keys = tilesCovering({ minX: -100, minY: -100, maxX: 100, maxY: 100 }, 100);

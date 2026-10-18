@@ -507,8 +507,9 @@ hundred to a few thousand people cycling.
 
 Roads for vehicles have `motorVehicle`, the most specific of `motorcar=*`, `motor_vehicle=*`, `vehicle=*` and
 `access=*` (who may drive on it: no, private, destination, ...), `bus`, from `bus=*` or else `psv=*` (whether buses may:
-designated on a bus lane or a bus station's way closed to others), and service roads their `service=*` (parking_aisle,
-driveway, ...).
+designated on a bus lane or a bus station's way closed to others), `busBay`, from `bus_bay=*` (left, right or both:
+on which side of the line, going along it, a bus bay lies beside the road), and service roads their `service=*`
+(parking_aisle, driveway, ...).
 
 ### Water
 

@@ -79,6 +79,8 @@ export interface Road {
   room?: number;
   /** Roads for vehicles: whether buses may drive on it, from bus=* or psv=*, when OSM tells (e.g. designated on a bus lane closed to others) */
   bus?: string;
+  /** Roads for vehicles: on which side of line, going along it, a bus bay lies beside the road (bus_bay=*), when OSM tells */
+  busBay?: "left" | "right" | "both";
   /** Steps: how many (step_count=*), and whether they climb along line or go down it (incline=*), when OSM tells */
   stepCount?: number;
   incline?: "up" | "down";
@@ -2070,15 +2072,17 @@ export function access(tags: Tags): { foot?: string; bicycle?: string; segregate
 
 /**
  * Who may drive on a road (the most specific of motor_vehicle=*, motorcar=*, vehicle=*, access=*), whether buses may
- * (bus=*, else psv=*) and its service=*
+ * (bus=*, else psv=*), its service=* and its bus bays (bus_bay=*)
  */
-export function motorAccess(tags: Tags): { motorVehicle?: string; service?: string; bus?: string } {
+export function motorAccess(tags: Tags): { motorVehicle?: string; service?: string; bus?: string; busBay?: "left" | "right" | "both" } {
   const value = tags.motorcar ?? tags.motor_vehicle ?? tags.vehicle ?? tags.access;
   const bus = tags.bus ?? tags.psv;
+  const bay = tags.bus_bay;
   return {
     ...(value && { motorVehicle: value }),
     ...(bus && { bus }),
     ...(tags.highway === "service" && tags.service && { service: tags.service }),
+    ...((bay === "left" || bay === "right" || bay === "both") && { busBay: bay }),
   };
 }
 
