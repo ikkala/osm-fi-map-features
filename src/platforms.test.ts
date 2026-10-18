@@ -57,12 +57,27 @@ test("a platform's top is the ground's median inside it: the ridge the elevation
 test("a tram stop's platform stands over the lowest bed of the tramway beside it, not over one passing under it", () => {
   const stop: Area = { osm: "w1", kind: "platform", polygon: { outer: [[0, 1.5], [30, 1.5], [30, 4], [0, 4]], holes: [] } };
   const station: Area = { osm: "w2", kind: "platform", polygon: { outer: [[0, 101.5], [30, 101.5], [30, 104], [0, 104]], holes: [] } };
-  // rising 1 m along the stop, on to 102 well past it
-  const tram: Rail = { osm: "w3", kind: "light_rail", layer: 0, bridge: false, tunnel: false, line: [[-20, 0], [0, 0], [30, 0], [100, 0]], bed: [100, 100, 101, 102] };
+  // level along the stop, rising to 102 well past it
+  const tram: Rail = { osm: "w3", kind: "light_rail", layer: 0, bridge: false, tunnel: false, line: [[-20, 0], [30, 0], [100, 0]], bed: [100, 100, 102] };
   // out of a tunnel under the station's platform, 6 m under it
   const under: Rail = { osm: "w4", kind: "light_rail", layer: 0, bridge: false, tunnel: false, line: [[0, 102], [30, 102]], bed: [94, 94] };
   const ground = (_e: number, n: number) => (n < 50 ? 100.2 : 100);
   assert.equal(setPlatformTops([stop, station], ground, [tram, under]), 2);
   assert.equal(stop.top, 100.4);
+  assert.equal(stop.slope, undefined);
   assert.equal(station.top, 100);
+  assert.equal(station.slope, undefined);
+});
+
+test("a tram stop's platform rises with the tramway beside it, as a street on a hill does, level across", () => {
+  const stop: Area = { osm: "w1", kind: "platform", polygon: { outer: [[0, 1.5], [30, 1.5], [30, 4], [0, 4]], holes: [] } };
+  // rising 1 m along the stop eastward
+  const tram: Rail = { osm: "w3", kind: "light_rail", layer: 0, bridge: false, tunnel: false, line: [[-20, 0], [0, 0], [30, 0], [100, 0]], bed: [100, 100, 101, 101] };
+  assert.equal(setPlatformTops([stop], () => 100.5, [tram]), 1);
+  const slope = stop.slope;
+  assert.ok(slope);
+  // along its middle line from end to end, 0.4 m over the bed abeam: 100.4 m at the west end, 101.4 m at the east
+  assert.deepEqual(slope.ends.map((p) => p.map((v) => Math.round(v * 100) / 100)), [[0, 2.75], [30, 2.75]]);
+  assert.ok(Math.abs(slope.tops[0] - 100.4) < 0.1 && Math.abs(slope.tops[1] - 101.4) < 0.1, String(slope.tops));
+  assert.equal(stop.top, slope.tops[0]);
 });

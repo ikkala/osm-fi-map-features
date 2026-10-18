@@ -344,7 +344,10 @@ with a `top`: a platform is level, while the elevation model has it as a ridge s
 the ground's median inside its outline, sampled every 2 m. A tram stop's platform (a tramway passing within 3 m of
 its outline) is 0.4 m over the lowest bed of the tramways beside it instead, so that a tram's floor clears it all
 along; only a bed whose top would be within 2 m of the ground's median counts, as further the tramway passes under or
-over the platform.
+over the platform. Where those beds rise 0.1 m or more along the platform, as a street on a hill does, the platform
+rises with them, level across: fitted to a straight line along its long side, `slope.tops` are 0.4 m over that line
+at the two ends of the side's middle line through its centroid, `slope.ends`, its top along that line between them,
+and `top` the lower one (a level top at the lowest bed left one end of a stop 1 to 2 m under the street).
 
 Neither OSM nor the register has windows, so ordinary buildings get guessed ones: a row per storey (from
 `building:levels` or the register's storeys, else about every 3 m) and spaced by the kind of building. Houses get

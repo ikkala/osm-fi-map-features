@@ -277,6 +277,9 @@ export interface Area {
   leafType?: "needleleaved" | "broadleaved";
   /** A platform's top, meters above sea level (see platforms.ts) */
   top?: number;
+  /** A tram stop's platform rising with the tramway beside it: its top (m above sea level) at the two ends of its long
+   * side's middle line, and along that line between them, level across; top is the lower one (see platforms.ts) */
+  slope?: { ends: [Point, Point]; tops: [number, number] };
   /** surface=* (artificial_turf, sand, asphalt, paving_stones, ...), when OSM tells */
   surface?: string;
   /** Water that flows: a river, canal or stream mapped as an area, not a lake or pond */
