@@ -2,6 +2,7 @@
 // walls down to the lowest ground (a plinth or basement on the downhill side).
 import { pointInPolygon, ringCentroid, type Point, type Polygon, type Ring } from "./geometry.ts";
 import { bounds, LEVEL_HEIGHT_M, type Area, type Building, type Entrance } from "./osm.ts";
+import { platformTopAt } from "./platforms.ts";
 
 /** A building stands at most this far above its lowest ground (m), so it does not tower on a steep slope */
 export const MAX_PLINTH_M = 6;
@@ -143,12 +144,12 @@ function raiseOverWays(b: Building, ways: { line: Point[] }[], heightAt: (e: num
   b.height = Math.max(b.height, high + ROOM_UNDER_ROOF_M + ROOF_THICKNESS_M - base);
 }
 
-/** The highest top of the platforms under a building (its outline sampled), or -Infinity */
+/** The highest top of the platforms under a building (its outline sampled), a rising one's where it is, or -Infinity */
 function platformUnder(b: Building, platforms: Area[]): number {
   const box = bounds(b.polygon.outer);
   let top = -Infinity;
   for (const platform of platforms) {
-    if (platform.top === undefined || platform.top <= top) {
+    if (platform.top === undefined) {
       continue;
     }
     const p = bounds(platform.polygon.outer);
@@ -156,8 +157,10 @@ function platformUnder(b: Building, platforms: Area[]): number {
       continue;
     }
     const samples = [ringCentroid(b.polygon.outer), ...alongRing(b.polygon.outer)];
-    if (samples.some((s) => pointInPolygon(s, platform.polygon))) {
-      top = platform.top;
+    for (const s of samples) {
+      if (pointInPolygon(s, platform.polygon)) {
+        top = Math.max(top, platformTopAt(platform, s) ?? -Infinity);
+      }
     }
   }
   return top;

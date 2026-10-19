@@ -81,3 +81,18 @@ test("a tram stop's platform rises with the tramway beside it, as a street on a 
   assert.ok(Math.abs(slope.tops[0] - 100.4) < 0.1 && Math.abs(slope.tops[1] - 101.4) < 0.1, String(slope.tops));
   assert.equal(stop.top, slope.tops[0]);
 });
+
+test("a rising tram stop's platform is nowhere more than 0.4 m over the bed beside it, where that sags", () => {
+  const stop: Area = { osm: "w1", kind: "platform", polygon: { outer: [[0, 1.5], [40, 1.5], [40, 4], [0, 4]], holes: [] } };
+  // rising 1 m along it, sagging 0.3 m in its middle
+  const tram: Rail = { osm: "w3", kind: "light_rail", layer: 0, bridge: false, tunnel: false, line: [[0, 0], [20, 0], [40, 0]], bed: [100, 100.2, 101] };
+  assert.equal(setPlatformTops([stop], () => 100.5, [tram]), 1);
+  const slope = stop.slope;
+  assert.ok(slope);
+  const [[e0], [e1]] = slope.ends;
+  const topAt = (e: number) => slope.tops[0] + ((slope.tops[1] - slope.tops[0]) * (e - e0)) / (e1 - e0);
+  for (let e = 0; e <= 40; e += 2) {
+    const bed = e <= 20 ? 100 + 0.01 * e : 100.2 + 0.04 * (e - 20);
+    assert.ok(topAt(e) <= bed + 0.4 + 1e-9, `${e}: ${topAt(e)} over ${bed}`);
+  }
+});

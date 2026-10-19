@@ -61,6 +61,19 @@ export function setPlatformTops(areas: Area[], heightAt: (e: number, n: number) 
   return count;
 }
 
+/** A platform's top at p: a rising one's along its slope, as far as p is along the line between its ends */
+export function platformTopAt(area: Area, p: Point): number | undefined {
+  const slope = area.slope;
+  if (!slope) {
+    return area.top;
+  }
+  const [[e1, n1], [e2, n2]] = slope.ends;
+  const [de, dn] = [e2 - e1, n2 - n1];
+  const length2 = de * de + dn * dn;
+  const t = length2 > 0 ? ((p[0] - e1) * de + (p[1] - n1) * dn) / length2 : 0;
+  return slope.tops[0] + (slope.tops[1] - slope.tops[0]) * t;
+}
+
 /** The bed (h) of the tramways within TRAM_NEAR_M of the platform's outline at points (p) SAMPLE_M apart along them,
  * of the heights keep(h) is true for */
 function bedsBeside(area: Area, trams: Rail[], keep: (h: number) => boolean): { p: Point; h: number }[] {
@@ -91,9 +104,9 @@ function bedsBeside(area: Area, trams: Rail[], keep: (h: number) => boolean): { 
 }
 
 /**
- * How the beds beside a platform rise along it, fitted to a straight line along its long side: the two ends of the
- * side's middle line through the platform's centroid and the bed abeam each; undefined where they rise less than
- * RISE_MIN_M over its length
+ * How the beds beside a platform rise along it, fitted to a straight line along its long side, under all of them: the
+ * two ends of the side's middle line through the platform's centroid and the line's height abeam each; undefined
+ * where they rise less than RISE_MIN_M over its length
  */
 function rising(area: Area, beds: { p: Point; h: number }[]): { ends: [Point, Point]; beds: [number, number] } | undefined {
   const { angle, length } = orientedBox(area.polygon.outer);
@@ -113,7 +126,11 @@ function rising(area: Area, beds: { p: Point; h: number }[]): { ends: [Point, Po
     return undefined;
   }
   const half = length / 2;
-  const bedAt = (s: number) => meanH + grade * (s - meanS);
+  // lowered as far as the line is over any of the beds, so that the platform is nowhere higher over one, and its
+  // lower end no higher than over the lowest of them (where a street's rails at a junction lie lower than the bed)
+  const fit = (s: number) => meanH + grade * (s - meanS);
+  const over = Math.max(...beds.map(({ h }, i) => fit(along[i]) - h), Math.min(fit(-half), fit(half)) - Math.min(...beds.map(({ h }) => h)));
+  const bedAt = (s: number) => fit(s) - over;
   return {
     ends: [
       [ce - dx * half, cn - dy * half],

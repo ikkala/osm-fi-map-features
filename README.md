@@ -161,7 +161,8 @@ walls reach down to `low`, the lowest ground along its outline and its courtyard
 Without an elevation model buildings stand at their lowest ground. A building over a tunnel in a cut (see below)
 stands at least at the top of the tunnel's lid, since it really stands on the deck over the cut, and so does an open
 roof over a lid (a platform's roof), which otherwise stands on its lowest ground; an open roof over a railway
-platform stands on the platform's top (see below), though it reaches out over the tracks. A building or part raised off
+platform stands on the platform's top (see below; a rising platform's highest under it), though it reaches out over
+the tracks. A building or part raised off
 the ground (`min_height`) with nothing under it, such as a canopy on a building that stands at its door down the
 slope, counts its `min_height` from its own highest ground, so the rising ground does not come up to it; its top
 stays, unless that would leave it thinner than a storey (or than it was).
@@ -345,9 +346,11 @@ the ground's median inside its outline, sampled every 2 m. A tram stop's platfor
 its outline) is 0.4 m over the lowest bed of the tramways beside it instead, so that a tram's floor clears it all
 along; only a bed whose top would be within 2 m of the ground's median counts, as further the tramway passes under or
 over the platform. Where those beds rise 0.1 m or more along the platform, as a street on a hill does, the platform
-rises with them, level across: fitted to a straight line along its long side, `slope.tops` are 0.4 m over that line
-at the two ends of the side's middle line through its centroid, `slope.ends`, its top along that line between them,
-and `top` the lower one (a level top at the lowest bed left one end of a stop 1 to 2 m under the street).
+rises with them, level across: fitted to a straight line along its long side, lowered so that it is nowhere over any
+of the beds and its lower end no higher than over the lowest of them (where a street's rails at a junction lie lower
+than the bed), `slope.tops` are 0.4 m over that line at the two ends of the side's middle line through its centroid,
+`slope.ends`, its top along that line between them, and `top` the lower one (a level top at the lowest bed left one
+end of a stop 1 to 2 m under the street).
 
 Neither OSM nor the register has windows, so ordinary buildings get guessed ones: a row per storey (from
 `building:levels` or the register's storeys, else about every 3 m) and spaced by the kind of building. Houses get

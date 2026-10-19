@@ -110,6 +110,20 @@ test("setBuildingBases stands a canopy reaching over a platform on the platform'
   assert.deepEqual([canopy.base, elsewhere.base], [96, undefined]);
 });
 
+test("setBuildingBases stands a canopy over a rising platform on its highest top under the canopy", () => {
+  // the platform rising from 96 at n = -20 to 97 at n = 30: 96.6 under the canopy's north edge (n = 10)
+  const platform: Area = {
+    osm: "r7",
+    kind: "platform",
+    top: 96,
+    slope: { ends: [[5, -20], [5, 30]], tops: [96, 97] },
+    polygon: { outer: [[2, -20], [8, -20], [8, 30], [2, 30]], holes: [] },
+  };
+  const canopy = square(0, 10, { kind: "roof", shelter: "roof" });
+  setBuildingBases([canopy], heightAt, [], [], [platform]);
+  assert.ok(Math.abs((canopy.base ?? 0) - 96.6) < 1e-9, String(canopy.base));
+});
+
 test("setBuildingBases counts the minHeight of a raised part with nothing under it from its own highest ground", () => {
   // the building stands at its door down the slope (101), the ground rising 0.5 m for every meter east
   const outline = square(0, 30, { hasParts: true, entrances: [{ at: [2, 0], kind: "main" }] });
