@@ -63,11 +63,36 @@ test("parseOsmEdits takes the changed and new elements, and the ways whose nodes
   assert.equal(partial.type === "way" ? partial.geometry : "not a way", undefined);
 });
 
-test("parseOsmEdits rejects edited relations and new ways without their nodes", () => {
+test("parseOsmEdits rejects new relations and new ways without their nodes", () => {
   assert.throws(() => parseOsmEdits(`<osm><relation id='-1'><tag k='type' v='multipolygon'/></relation></osm>`), /relations/);
   assert.throws(() => parseOsmEdits(`<osm><way id='-1'><nd ref='-7'/><nd ref='-8'/></way></osm>`), /lacks/);
   // unchanged relations are fine
   assert.deepEqual(parseOsmEdits(`<osm><relation id='5' version='1'><tag k='type' v='route'/></relation></osm>`), []);
+});
+
+test("parseOsmEdits reads the tags of modified relations and deleted ones", () => {
+  const edits = parseOsmEdits(`<osm>
+    <relation id='7' action='modify'><member type='way' ref='3' role='outer'/><tag k='type' v='multipolygon'/><tag k='building' v='office'/></relation>
+    <relation id='8' action='delete'><tag k='type' v='multipolygon'/></relation>
+  </osm>`);
+  assert.deepEqual(edits, [
+    { action: "modify", element: { type: "relation", id: 7, tags: { type: "multipolygon", building: "office" } } },
+    { action: "delete", element: { type: "relation", id: 8, tags: { type: "multipolygon" } } },
+  ]);
+});
+
+test("applyOsmEdits gives a modified relation its tags and keeps its members", () => {
+  const members = [{ type: "way", role: "outer", geometry: [{ lat: 0, lon: 0 }, { lat: 1, lon: 0 }, { lat: 1, lon: 1 }] }];
+  const fetched: OsmElement[] = [
+    { type: "relation", id: 7, tags: { type: "multipolygon", building: "retail", "building:levels": "6;5" }, members },
+    { type: "relation", id: 8, tags: { type: "multipolygon", building: "shed" }, members },
+  ];
+  const { elements, missing } = applyOsmEdits(fetched, [
+    { action: "modify", element: { type: "relation", id: 7, tags: { type: "multipolygon", building: "retail", "building:levels": "5" } } },
+    { action: "delete", element: { type: "relation", id: 8, tags: {} } },
+  ], true);
+  assert.equal(missing, 0);
+  assert.deepEqual(elements, [{ type: "relation", id: 7, tags: { type: "multipolygon", building: "retail", "building:levels": "5" }, members }]);
 });
 
 test("applyOsmEdits changes, leaves out and adds elements", () => {

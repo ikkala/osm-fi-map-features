@@ -80,7 +80,8 @@ photo, so maps of different places keep theirs; the images are not kept).
 `edits` (`parseOsmEdits` of an OSM XML file) shows edits of the OSM data in the map before they are uploaded: the
 elements the file marks `action="modify"` take its tags (and its geometry when the file has a way's nodes; a way whose
 node moved is edited too), those marked `action="delete"` are left out, and new ones (negative ids) are added to the
-map's features (not to its entrances, businesses or landmarks). Edits of relations are not supported. Once uploaded,
+map's features (not to its entrances, businesses or landmarks). A relation's edit changes only its tags (its members
+are kept) or leaves it out; new relations are not supported. Once uploaded,
 the edits are in the fetched data anyway and the file can go.
 
 The Overpass server is `https://overpass-api.de/api/interpreter` unless `overpassUrl` is given; mind its

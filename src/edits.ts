@@ -74,8 +74,8 @@ function actionOf(element: XmlElement, id: number): EditAction | undefined {
 
 /**
  * The edits in an OSM XML file: its elements with an action and its new ones (negative ids), but untagged nodes,
- * which are vertices of ways: a way whose node was moved is edited, as its geometry changes. Relations are not supported: an edited one is an error, and so is a
- * new way without all its nodes.
+ * which are vertices of ways: a way whose node was moved is edited, as its geometry changes. A relation's edit changes
+ * its tags or leaves it out; a new relation is an error, and so is a new way without all its nodes.
  */
 export function parseOsmEdits(xml: string): OsmEdit[] {
   const edits: OsmEdit[] = [];
@@ -119,8 +119,13 @@ export function parseOsmEdits(xml: string): OsmEdit[] {
   }
   for (const relation of elementsOf(xml, "relation")) {
     const id = Number(relation.attributes.get("id"));
-    if (Number.isInteger(id) && actionOf(relation, id) !== undefined) {
-      throw new Error(`relation ${id}: edits of relations are not supported`);
+    const action = Number.isInteger(id) ? actionOf(relation, id) : undefined;
+    if (action === "create") {
+      throw new Error(`relation ${id}: new relations are not supported`);
+    }
+    // a relation's members are kept: only its tags change
+    if (action !== undefined) {
+      edits.push({ action, element: { type: "relation", id, tags: relation.tags } });
     }
   }
   return edits;
@@ -155,6 +160,8 @@ export function applyOsmEdits(elements: OsmElement[], edits: OsmEdit[], addNew: 
     }
     if (element.type === "node" && changed.type === "node") {
       result.push({ ...element, tags: changed.tags, lat: changed.lat ?? element.lat, lon: changed.lon ?? element.lon });
+    } else if (element.type === "relation" && changed.type === "relation") {
+      result.push({ ...element, tags: changed.tags });
     } else if (element.type === "way" && changed.type === "way") {
       const geometry = changed.geometry && (element.geometry || !element.center) ? changed.geometry : element.geometry;
       const moved = changed.geometry && element.center ? centre(changed.geometry) : element.center;
