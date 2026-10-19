@@ -18,6 +18,8 @@ export interface MeasuredDefaults {
   pitchedRoofsBefore: number;
   /** A roof whose top is at most this far over the eaves (m) is flat: its parapets, machine rooms and the like */
   flatRoofRiseM: number;
+  /** Storey heights (m) of buildings built before these years, earliest first; later ones have LEVEL_HEIGHT_M */
+  oldStoreys: { before: number; storey: number }[];
 }
 
 export const FINNISH_DEFAULTS_MEASURED_IN_TAMPERE: MeasuredDefaults = {
@@ -53,4 +55,7 @@ export const FINNISH_DEFAULTS_MEASURED_IN_TAMPERE: MeasuredDefaults = {
   // the city's 3D building parts: how far their tops rise over the storeys, by the decade they were built in
   pitchedRoofsBefore: 1960,
   flatRoofRiseM: 3,
+  // the city's building register and 3D building parts: storeys fitted by era (scripts/measureStoreys.ts); too few
+  // buildings from before 1920 to tell them from later ones
+  oldStoreys: [{ before: 1946, storey: 3.5 }],
 };

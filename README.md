@@ -143,8 +143,9 @@ height, so the register would not make such buildings taller. The large differen
 of a tall building that fall into a low wing drawn as its own outline (Rongankatu 7: 1 vs 11), so taking the
 register's storeys over OSM's would do harm; a few look like errors in OSM (Kankurinkatu 4–8: 4 vs 6), better fixed
 there. Storeys are 3 m, but old buildings have taller ones: a building whose height is counted from its storeys
-(`building:levels` or the register's) gets 3.6 m storeys when built before 1920 and 3.2 m before 1946, e.g. the
-walls of Tampereen ensimmäinen postitalo by Finlayson (1867, one storey under a hipped roof) are 3.6 m tall, not 3.
+(`building:levels` or the register's) gets taller storeys when built in an era of `oldStoreys` (measured defaults,
+below): 3.5 m before 1946, e.g. the walls of Tampereen ensimmäinen postitalo by Finlayson (1867, one storey under a
+hipped roof) are 3.5 m tall, not 3.
 A building keeps OSM's `start_date` as tagged (`startDate`), also when it names no single year: a decade (`1890s`), a
 century (`C19`, `early C19`, `mid C19`, `late C19`), a span (`1904..1920`), `before 1900` or `after 1900`.
 `startDates.ts` answers from it whether the building was built before a year, or that it cannot tell (`C20` before
@@ -623,6 +624,15 @@ city, until there is data of another city's own to measure them from:
   (machine rooms on flat roofs)
 - `chimneyHeight` and `chimneyMaterial`: an untagged chimney 12 times as tall as its base is wide (at most 100 m)
   and brick, from the city's chimneys
+- `oldStoreys`: 3.5 m storeys before 1946, 3 m since, from the city's building register and 3D building parts:
+  `npm run measure-storeys -- <cache dir> [<year> ...]` (`scripts/measureStoreys.ts`, `src/storeyHeights.ts`) reads
+  a map's cached sources and fits, for the buildings whose storeys (OSM's, else the register's), year (OSM's, else the
+  register's) and roof top over the ground are known (houses, halls, sheds and churches left out, one register point
+  in the outline), the median height of each storey count from 2 up to a line: the rise of the roof and the plinth
+  plus the storeys times the storey's height, with a 90 % interval by resampling the buildings. Measured on Tampere's
+  sources of October 2026 (6,100 buildings): 3.46 m (90 %: 3.13–3.72) from 1920 to 1945 (490 buildings), 3.06 m
+  (2.97–3.16) from 1946 to 1959 and 2.95 m (2.92–2.98) since 1960; from before 1920 only 67 buildings, too few
+  (2.92–7.29), so they take the next era's
 
 ## Licences
 

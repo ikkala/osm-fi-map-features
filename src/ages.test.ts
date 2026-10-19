@@ -10,9 +10,9 @@ function square(x: number, size: number, extra: Partial<Building> = {}): Buildin
 }
 
 test("storeyHeight is taller before the Second World War", () => {
-  assert.deepEqual([1867, 1919, 1920, 1945, 1946, 2020, undefined].map((year) => storeyHeight({ year })), [3.6, 3.6, 3.2, 3.2, 3, 3, 3]);
+  assert.deepEqual([1867, 1919, 1920, 1945, 1946, 2020, undefined].map((year) => storeyHeight({ year })), [3.5, 3.5, 3.5, 3.5, 3, 3, 3]);
   // a start_date that tells the era, and ones that do not: then a storey is not taller
-  assert.deepEqual(["1890s", "C19", "1925..1940", "C20", "1904..1920", "~1900"].map((startDate) => storeyHeight({ startDate })), [3.6, 3.6, 3.2, 3, 3, 3]);
+  assert.deepEqual(["1890s", "C19", "1925..1940", "1904..1920", "C20", "1940..1950", "~1900"].map((startDate) => storeyHeight({ startDate })), [3.5, 3.5, 3.5, 3.5, 3, 3, 3]);
 });
 
 test("applyAges makes old storeys taller, under the roof, but not a part's", () => {
@@ -23,7 +23,7 @@ test("applyAges makes old storeys taller, under the roof, but not a part's", () 
   const outline = square(60, 20, { hasParts: true, year: 1930 });
   const part = square(62, 5, { part: true, height: 6, heightFromLevels: true, year: 1930 });
   assert.equal(applyAges([old, tagged, modern, outline, part]), 1);
-  assert.equal(old.height.toFixed(2), (3 + 2 * 3.6).toFixed(2));
+  assert.equal(old.height.toFixed(2), (3 + 2 * 3.5).toFixed(2));
   assert.equal(old.heightFromLevels, undefined);
   assert.deepEqual([tagged.height, modern.height], [9, 9]);
   // parts keep their storeys, so that they meet

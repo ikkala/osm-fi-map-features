@@ -20,7 +20,8 @@
     "build": "tsc -p tsconfig.build.json",
     "prepare": "npm run build",
     "test": "node --test \"src/**/*.test.ts\"",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "measure-storeys": "node scripts/measureStoreys.ts"
   },
   "dependencies": {
     "earcut": "^3.2.3",

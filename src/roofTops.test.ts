@@ -59,9 +59,9 @@ test("applyRoofTops gives an old building whose top is well over its eaves a hip
   const match = applyRoofTops([school], [part(-1, -1, 38, 31, 25.7)]);
   assert.deepEqual(match, { heights: 1, roofs: 1, uncovered: 0, rejected: 0 });
   assert.equal(tenth(school.height), 25.7);
-  // the walls are its 4 storeys of 3.6 m, the ridge along its long side
+  // the walls are its 4 storeys of 3.5 m, the ridge along its long side
   assert.equal(school.roofShape, "hipped");
-  assert.equal(tenth(school.roofHeight), 11.3);
+  assert.equal(tenth(school.roofHeight), 11.7);
   assert.equal(school.roofAngle, 0);
   assert.equal(school.roofHeightEstimated, true);
 });

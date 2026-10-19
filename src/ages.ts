@@ -1,16 +1,11 @@
 // Older buildings have taller storeys, so a height counted from storeys is raised for them.
+import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
 import { LEVEL_HEIGHT_M, type Building } from "./osm.ts";
 import { eraOf, type Built } from "./startDates.ts";
 
-/** Storey heights (m) of buildings built before these years; later ones have LEVEL_HEIGHT_M */
-const OLD_STOREYS: { before: number; storey: number }[] = [
-  { before: 1920, storey: 3.6 },
-  { before: 1946, storey: 3.2 },
-];
-
 /** The height of a storey in a building, by when it was built, when that tells its era */
 export function storeyHeight(built: Built): number {
-  return eraOf(built, OLD_STOREYS)?.storey ?? LEVEL_HEIGHT_M;
+  return eraOf(built, FINNISH_DEFAULTS_MEASURED_IN_TAMPERE.oldStoreys)?.storey ?? LEVEL_HEIGHT_M;
 }
 
 /**
