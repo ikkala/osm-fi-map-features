@@ -8,6 +8,7 @@ import type { Ride } from "./rides.ts";
 import type { Seamark } from "./seamarks.ts";
 import { field, isObject, items, optionalNumber, optionalString } from "./json.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
+import { exactYear } from "./startDates.ts";
 import {
   dedupe,
   distanceToRing,
@@ -138,8 +139,10 @@ export interface Building {
   levels?: number;
   /** Its main use in the building register */
   use?: BuildingUse;
-  /** The year it was built: start_date, or the completion year in a building register */
+  /** The year it was built, when known: start_date naming a year, or a building register's completion year that it allows */
   year?: number;
+  /** start_date as tagged (see startDates.ts), also when it names no single year ("C20", "1890s") */
+  startDate?: string;
   /** How the walls' windows are drawn (see WindowStyle); no windows when unset */
   windows?: WindowStyle;
   /** Tagged as no ordinary building (see isSpecial): a tower, a chimney, a church, a monument, ... */
@@ -1201,7 +1204,8 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
     height = levelsTall + (roofHeight ?? (roofLevels ?? 0) * LEVEL_HEIGHT_M);
   }
   const minLevel = number(tags["building:min_level"]);
-  const year = startYear(tags.start_date);
+  const startDate = tags.start_date?.trim() || undefined;
+  const year = exactYear(startDate);
   const minHeight = meters(tags.min_height) ?? (minLevel !== undefined ? minLevel * LEVEL_HEIGHT_M : 0);
   if (height <= minHeight) {
     height = minHeight + LEVEL_HEIGHT_M;
@@ -1236,6 +1240,7 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
     ...(tags["roof:material"] && { roofMaterial: tags["roof:material"] }),
     ...wallMaterial(tags, chimney),
     ...(year !== undefined && { year }),
+    ...(startDate !== undefined && { startDate }),
     ...(shelter && { shelter }),
     ...(LATTICES.has(tags["tower:construction"] ?? "") && { lattice: true }),
     ...(isSpecial(tags) && { special: true }),
@@ -1793,7 +1798,7 @@ export function partOutlines(buildings: Building[]): Map<Building, Building> {
 
 /**
  * Gives parts what their building outline has and they do not: the wall material and colour, the register's
- * frame material, the roof material and the year (mappers tag these on the outline). Returns how many parts got any.
+ * frame material, the roof material and the year or start_date (mappers tag these on the outline). Returns how many parts got any.
  */
 export function inheritFromOutlines(buildings: Building[]): number {
   let count = 0;
@@ -1818,8 +1823,13 @@ export function inheritFromOutlines(buildings: Building[]): number {
       part.roofMaterial = outline.roofMaterial;
       got = true;
     }
-    if (part.year === undefined && outline.year !== undefined) {
-      part.year = outline.year;
+    if (part.year === undefined && part.startDate === undefined && (outline.year !== undefined || outline.startDate !== undefined)) {
+      if (outline.year !== undefined) {
+        part.year = outline.year;
+      }
+      if (outline.startDate !== undefined) {
+        part.startDate = outline.startDate;
+      }
       got = true;
     }
     if (got) {
@@ -2133,10 +2143,6 @@ export function meters(value: string | undefined): number | undefined {
 }
 
 /** The year of a start_date such as "1965", "1965-05-01", "1960s" or "1904..1920" (its first); undefined for "C19", "~1900", ... */
-function startYear(value: string | undefined): number | undefined {
-  const match = value?.match(/^(\d{4})(?:$|-|s$|\.\.\d{4}$)/);
-  return match ? Number(match[1]) : undefined;
-}
 
 /** Parses a plain number such as "3" or "2.5"; lists like "3;4" use the first value. */
 function number(value: string | undefined): number | undefined {

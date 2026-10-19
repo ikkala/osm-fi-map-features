@@ -3,6 +3,7 @@
 // them their heights, and old ones a hipped roof up to the top.
 import { createHash } from "node:crypto";
 import { storeyHeight } from "./ages.ts";
+import { builtBefore } from "./startDates.ts";
 import type { CacheOptions } from "./cache.ts";
 import { orientedBox, pointInPolygon, ringArea, type Point, type Polygon } from "./geometry.ts";
 import { field, items, optionalNumber, optionalString } from "./json.ts";
@@ -176,7 +177,7 @@ export function applyRoofTops(buildings: Building[], parts: MeasuredPart[]): Roo
     const top = median(fitting);
     const box = orientedBox(b.polygon.outer);
     const maxRise = (box.width / 2) * Math.tan(MAX_PITCH);
-    const rise = b.levels === undefined ? undefined : top - b.levels * storeyHeight(b.year);
+    const rise = b.levels === undefined ? undefined : top - b.levels * storeyHeight(b);
     if (b.roofShape && b.roofHeightEstimated) {
       if (rise !== undefined && rise > maxRise + SLACK_M) {
         result.rejected++;
@@ -185,7 +186,7 @@ export function applyRoofTops(buildings: Building[], parts: MeasuredPart[]): Roo
       // the storeys tell the eaves too roughly to make a guessed roof lower: up to the rise, at most half of the height
       b.roofHeight = Math.min(Math.max(b.roofHeight ?? 0, Math.min(rise ?? 0, maxRise)), top / 2);
     } else if (rise !== undefined && rise > FINNISH_DEFAULTS_MEASURED_IN_TAMPERE.flatRoofRiseM && !b.roofShape) {
-      const old = b.year !== undefined && b.year < FINNISH_DEFAULTS_MEASURED_IN_TAMPERE.pitchedRoofsBefore;
+      const old = builtBefore(b, FINNISH_DEFAULTS_MEASURED_IN_TAMPERE.pitchedRoofsBefore) === true;
       const rectangular = b.polygon.holes.length === 0 && Math.abs(ringArea(b.polygon.outer)) >= GUESS_MIN_FILL * box.length * box.width;
       if (!b.roofShapeEstimated || !old || !rectangular || rise > maxRise + SLACK_M) {
         result.rejected++;

@@ -72,6 +72,16 @@ test("applyRegister replaces estimated heights and sets materials from the point
   assert.equal(empty.heightEstimated, true);
 });
 
+test("applyRegister gives a building with a start_date only a completion year it allows", () => {
+  const century = square(0, 10, { startDate: "C20" });
+  const decade = square(20, 10, { startDate: "1890s" });
+  const unread = square(40, 10, { startDate: "~1900" });
+  const at = (e: number, year: number): RegisterBuilding => ({ longitude: e, latitude: 5, year });
+  applyRegister([century, decade, unread], [at(5, 1954), at(25, 1954), at(45, 1954)], (r) => [r.longitude, r.latitude]);
+  assert.deepEqual([century.year, decade.year, unread.year], [1954, undefined, 1954]);
+  assert.deepEqual([century.startDate, decade.startDate], ["C20", "1890s"]);
+});
+
 test("applyRegister sets the most common frame material, also where no facade is known and OSM has a material", () => {
   const house = square(0, 10);
   const tagged = square(20, 10, { material: "plaster" });

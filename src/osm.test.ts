@@ -54,9 +54,10 @@ test("parseOsm reads roads, buildings and multipolygon areas in meters", () => {
   const [house, part, shed] = features.buildings;
   assert.deepEqual([house.height, house.hasParts, house.levels], [4 * 3 + 2, true, 4]);
   assert.deepEqual([part.part, part.height, part.levels], [true, 12, undefined]);
-  // a height counted from building:levels, and the year of start_date when it has one
+  // a height counted from building:levels, the year of start_date when it names one, and start_date as tagged
   assert.deepEqual([house.heightFromLevels, part.heightFromLevels, shed.heightFromLevels], [true, undefined, undefined]);
-  assert.deepEqual([house.year, part.year, shed.year], [1890, 1904, undefined]);
+  assert.deepEqual([house.year, part.year, shed.year], [1890, undefined, undefined]);
+  assert.deepEqual([house.startDate, part.startDate, shed.startDate], ["1890-05", "1904..1920", "C19"]);
   // a shed gets a guessed gabled roof on top of its storey
   assert.deepEqual([shed.roofShape, shed.hasParts], ["gabled", false]);
   assert.equal(shed.height.toFixed(2), (3 + 2.5 * Math.tan((27 * Math.PI) / 180)).toFixed(2));
@@ -741,6 +742,17 @@ test("parts take the frame and roof material of their outline", () => {
   const tagged: Building = { ...part, osm: "w3", roofMaterial: "glass", polygon: { outer: [[12, 12], [15, 12], [15, 15], [12, 15]], holes: [] } };
   assert.equal(inheritFromOutlines([outline, part, tagged]), 2);
   assert.deepEqual([part.frameMaterial, part.roofMaterial, tagged.frameMaterial, tagged.roofMaterial], ["brick", "copper", "brick", "glass"]);
+});
+
+test("parts take their outline's year or start_date unless they have either", () => {
+  const outline: Building = {
+    osm: "w1", kind: "yes", part: false, hasParts: true, height: 20, minHeight: 0, startDate: "C19",
+    polygon: { outer: [[0, 0], [20, 0], [20, 20], [0, 20]], holes: [] },
+  };
+  const part: Building = { ...outline, osm: "w2", part: true, hasParts: false, startDate: undefined, polygon: { outer: [[5, 5], [10, 5], [10, 10], [5, 10]], holes: [] } };
+  const dated: Building = { ...part, osm: "w3", year: 1971, polygon: { outer: [[12, 12], [15, 12], [15, 15], [12, 15]], holes: [] } };
+  inheritFromOutlines([outline, part, dated]);
+  assert.deepEqual([part.year, part.startDate, dated.year, dated.startDate], [undefined, "C19", 1971, undefined]);
 });
 
 test("wall colour comes from building:colour or colour", () => {

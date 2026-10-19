@@ -145,10 +145,15 @@ register's storeys over OSM's would do harm; a few look like errors in OSM (Kank
 there. Storeys are 3 m, but old buildings have taller ones: a building whose height is counted from its storeys
 (`building:levels` or the register's) gets 3.6 m storeys when built before 1920 and 3.2 m before 1946, e.g. the
 walls of Tampereen ensimmäinen postitalo by Finlayson (1867, one storey under a hipped roof) are 3.6 m tall, not 3.
-The year (`year`) is `start_date` in OSM (a span such as `1904..1920` by its first year), else the register's completion date (`valmistumispaivamaara`; the
-earliest of the points in an outline). The register has 29 February 1904 on outbuildings and holiday homes and 1
+A building keeps OSM's `start_date` as tagged (`startDate`), also when it names no single year: a decade (`1890s`), a
+century (`C19`, `early C19`, `mid C19`, `late C19`), a span (`1904..1920`), `before 1900` or `after 1900`.
+`startDates.ts` answers from it whether the building was built before a year, or that it cannot tell (`C20` before
+1920; a century's years counted from 1 or from 0, its thirds overlapping by a year; `~1900` tells nothing), and so
+which era it is from (`eraOf`), which the rules on storeys and roofs ask. The year (`year`) is the one `start_date`
+names, else the register's completion date (`valmistumispaivamaara`; the earliest of the points in an outline that
+`start_date` allows). The register has 29 February 1904 on outbuildings and holiday homes and 1
 January 1900 on some others whose date is not known, both left out as unknown, and a few dates before 1700 are errors. A
-`building:part` without a year gets the year of the building it is in, but keeps 3 m storeys, so that the parts
+`building:part` without a year or `start_date` gets those of the building it is in, but keeps 3 m storeys, so that the parts
 meet (a part higher up starts at a `building:min_level` counted at 3 m). It likewise gets the building's wall
 material and colour, which mappers often tag on the outline only (Jyväskylä's Vesilinna: a brick outline, its
 tower part untagged). A register point in a part goes to the outline around it, as the register describes the

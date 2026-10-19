@@ -6,6 +6,7 @@ import { bounds, LEVEL_HEIGHT_M, partOutlines, type Building, type BuildingUse, 
 import { pointInPolygon, type Point } from "./geometry.ts";
 import { field, items, optionalNumber, optionalString } from "./json.ts";
 import { inGeoBox } from "./projection.ts";
+import { allows } from "./startDates.ts";
 
 export const BUILDING_REGISTER_ATTRIBUTION = "Building register © Finnish Environment Institute SYKE, Ryhti (CC BY 4.0)";
 
@@ -203,7 +204,12 @@ export function applyRegister(buildings: Building[], register: RegisterBuilding[
     if (use) {
       b.use = use;
     }
-    const years = rs.map((r) => r.year).filter((y) => y !== undefined);
+    // a completion year start_date does not allow is the register's error, or another building's
+    const { startDate } = b;
+    const years = rs
+      .map((r) => r.year)
+      .filter((y) => y !== undefined)
+      .filter((y) => startDate === undefined || allows(startDate, y));
     if (b.year === undefined && years.length > 0) {
       b.year = Math.min(...years);
     }

@@ -347,7 +347,7 @@ export class MapBuilder {
     // percentile of the points in an outline minus the ground; mind trees and newer buildings).
     // after the register, which has most buildings' years
     const aged = applyAges(features.buildings);
-    const dated = features.buildings.filter((b) => b.year !== undefined && !b.hasParts).length;
+    const dated = features.buildings.filter((b) => (b.year !== undefined || b.startDate !== undefined) && !b.hasParts).length;
     logger.log(`${dated} buildings have a year, ${aged} old ones with storeys taller than ${LEVEL_HEIGHT_M} m`);
     const estimated = features.buildings.filter((b) => b.heightEstimated && !b.hasParts).length;
     logger.log(`${estimated} buildings have a height estimated from their type and floor area`);

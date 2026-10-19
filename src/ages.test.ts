@@ -10,7 +10,9 @@ function square(x: number, size: number, extra: Partial<Building> = {}): Buildin
 }
 
 test("storeyHeight is taller before the Second World War", () => {
-  assert.deepEqual([1867, 1919, 1920, 1945, 1946, 2020, undefined].map(storeyHeight), [3.6, 3.6, 3.2, 3.2, 3, 3, 3]);
+  assert.deepEqual([1867, 1919, 1920, 1945, 1946, 2020, undefined].map((year) => storeyHeight({ year })), [3.6, 3.6, 3.2, 3.2, 3, 3, 3]);
+  // a start_date that tells the era, and ones that do not: then a storey is not taller
+  assert.deepEqual(["1890s", "C19", "1925..1940", "C20", "1904..1920", "~1900"].map((startDate) => storeyHeight({ startDate })), [3.6, 3.6, 3.2, 3, 3, 3]);
 });
 
 test("applyAges makes old storeys taller, under the roof, but not a part's", () => {

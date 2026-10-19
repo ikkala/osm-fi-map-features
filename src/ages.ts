@@ -1,5 +1,6 @@
 // Older buildings have taller storeys, so a height counted from storeys is raised for them.
 import { LEVEL_HEIGHT_M, type Building } from "./osm.ts";
+import { eraOf, type Built } from "./startDates.ts";
 
 /** Storey heights (m) of buildings built before these years; later ones have LEVEL_HEIGHT_M */
 const OLD_STOREYS: { before: number; storey: number }[] = [
@@ -7,9 +8,9 @@ const OLD_STOREYS: { before: number; storey: number }[] = [
   { before: 1946, storey: 3.2 },
 ];
 
-/** The height of a storey in a building built in a year */
-export function storeyHeight(year: number | undefined): number {
-  return OLD_STOREYS.find(({ before }) => year !== undefined && year < before)?.storey ?? LEVEL_HEIGHT_M;
+/** The height of a storey in a building, by when it was built, when that tells its era */
+export function storeyHeight(built: Built): number {
+  return eraOf(built, OLD_STOREYS)?.storey ?? LEVEL_HEIGHT_M;
 }
 
 /**
@@ -19,7 +20,7 @@ export function storeyHeight(year: number | undefined): number {
 export function applyAges(buildings: Building[]): number {
   let taller = 0;
   for (const b of buildings) {
-    const storey = storeyHeight(b.year);
+    const storey = storeyHeight(b);
     if (b.heightFromLevels && !b.part && !b.hasParts && storey !== LEVEL_HEIGHT_M) {
       const roof = b.roofHeight ?? 0;
       b.height = roof + ((b.height - roof) * storey) / LEVEL_HEIGHT_M;

@@ -27,6 +27,7 @@ export {
   type RoadFlows,
 } from "./flows.ts";
 export { triangulate, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
+export { allows, builtBefore, eraOf, exactYear, type Built } from "./startDates.ts";
 export {
   DAM_WIDTH_M,
   PIER_WIDTH_M,
