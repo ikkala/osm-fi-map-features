@@ -59,5 +59,7 @@ test("eraOf is the era it was built in, when what is known tells which", () => {
   assert.equal(eraOf({ startDate: "1910..1930" }, eras), undefined);
   assert.equal(eraOf({ startDate: "C20" }, eras), undefined);
   assert.equal(eraOf({ year: 2005 }, eras), undefined);
+  // an era without an end takes what is known to be after the others
+  assert.equal(eraOf({ startDate: "after 1990" }, [...eras, { before: Infinity }])?.before, Infinity);
   assert.equal(eraOf({}, eras), undefined);
 });

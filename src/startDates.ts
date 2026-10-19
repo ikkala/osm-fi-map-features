@@ -66,7 +66,7 @@ export function builtBefore(built: Built, year: number): boolean | undefined {
   if (!b) {
     return undefined;
   }
-  return b[1] < year ? true : b[0] >= year ? false : undefined;
+  return b[1] < year || year === Infinity ? true : b[0] >= year ? false : undefined;
 }
 
 /**
