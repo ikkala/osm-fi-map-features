@@ -180,6 +180,11 @@ churches, and `building=yes` / `residential` of at most 150 m² and two storeys,
 outline is nearly a rectangle. The ridge runs along the outline's long side unless `roof:orientation=across`; a
 skillion roof slopes down to `roof:direction`. The roof's height is `roof:height` or `roof:levels`, else a 27°
 slope (10° for skillion, at most 6 m): on top of the storeys, or within a tagged `height`, taking at most half of it.
+A roof may also be drawn by its ridge lines (Simple 3D Buildings' roof lines, `roof:ridge=yes` ways, on a
+`roof:shape=many` building or part with a `roof:height`; `src/roofRidges.ts`): a ridge running across the outline
+from side to side, its ends within half a meter of it, splits it into slopes rising from the eaves at the outline to
+the ridge, given as triangles (`roofFaces`, each point's share of the roof's height), so a ridge may bend as a curving
+wing's does; another ridge may split a slope again, and one that does not reach both sides is left out.
 Outlines under 1 m wide get no roof, except steps (`building:part=steps`), whose skillion roof is the slope they climb;
 they also tell how many steps they have (`step_count`). Such a part shows the steps themselves, so a way of steps
 (`highway=steps`) inside it (`src/stairs.ts`), up to 0.3 m out of its outline, is left out of the map.

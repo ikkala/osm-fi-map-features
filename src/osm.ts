@@ -9,6 +9,7 @@ import type { Seamark } from "./seamarks.ts";
 import { field, isObject, items, optionalNumber, optionalString } from "./json.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { exactYear } from "./startDates.ts";
+import { ridgeRoofs, type RoofFaces } from "./roofRidges.ts";
 import {
   dedupe,
   distanceToRing,
@@ -160,6 +161,8 @@ export interface Building {
    * it slopes down to
    */
   roofAngle?: number;
+  /** A roof drawn from its ridge lines (roof:ridge=yes ways, see roofRidges.ts), instead of roofShape */
+  roofFaces?: RoofFaces;
   /** Steps (building:part=steps): how many (step_count=*), when OSM tells; they climb against a skillion roof's slope */
   stepCount?: number;
   /** Wall colour: building:colour or colour */
@@ -801,6 +804,8 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   const through = new Set<Road>();
   // ways indoors, kept where they come out of a tunnel's end (the stairs up out of an underpass)
   const indoors: Road[] = [];
+  // roof lines along roofs' ridges (roofRidges.ts)
+  const ridges: Point[][] = [];
 
   for (const element of elements) {
     const tags = element.tags ?? {};
@@ -875,6 +880,9 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
       if (tags.natural === "tree_row") {
         features.trees.push(...alongLine(points, TREE_ROW_SPACING_M).map((point) => tree(tags, point)));
       }
+      if (tags["roof:ridge"] === "yes") {
+        ridges.push(points);
+      }
       const kind = BARRIER_KINDS.get(tags.barrier ?? "");
       if (kind) {
         features.barriers.push(barrier(osm, kind, tags, points));
@@ -940,6 +948,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   const indoorEnds = new Set(indoors.filter((r) => !kept.has(r)).flatMap((r) => [pointKey(r.line[0]), pointKey(r.line[r.line.length - 1])]));
 
   markBuildingsWithParts(features.buildings);
+  ridgeRoofs(features.buildings, ridges);
   const found = new Set<Road>();
   // how many ways have each point: the end of a covered way on the ground floor where another goes on is no dead end
   // (a ramp down into a garage goes on into its tunnel, a way on an upper storey into the building)

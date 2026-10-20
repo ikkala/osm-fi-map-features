@@ -73,6 +73,7 @@ export type {
 } from "./osm.ts";
 export { isValidGeoPoint, LocalProjection, type GeoPoint } from "./projection.ts";
 export type { Ride } from "./rides.ts";
+export type { RoofFaces } from "./roofRidges.ts";
 export { ROOF_TOP_SOURCES, TAMPERE_ROOF_TOPS, type RoofTopSource } from "./roofTops.ts";
 export { TAMPERE_TREE_REGISTER, TREE_REGISTERS, type TreeRegisterSource } from "./treeRegister.ts";
 export { lightPhases, type Light, type LightSector, type Seamark, type SeamarkKind } from "./seamarks.ts";
