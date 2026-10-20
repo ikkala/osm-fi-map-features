@@ -412,6 +412,22 @@ test("overpassQuery asks for every area rule key", () => {
   assert.match(query, /node\[natural~"\^\(tree\|shrub\)\$"\];/);
   assert.match(query, /way\[natural=tree_row\];/);
   assert.match(query, /way\[man_made~"\^\(chimney\|ventilation_shaft\|storage_tank\|silo\|water_tower\|tower\|gasometer\)\$"\];/);
+  assert.match(query, /way\["roof:ridge"=yes\];/);
+});
+
+test("a part with roof:shape=many gets its roof from the ridge line in it", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 1, tags: { "building:part": "yes", height: "10", "roof:height": "4", "roof:shape": "many" }, geometry: [at(0, 0), at(10, 0), at(10, 20), at(0, 20), at(0, 0)] },
+      { type: "way", id: 2, tags: { "roof:ridge": "yes" }, geometry: [at(5, 0), at(6, 10), at(5, 20)] },
+    ],
+    origin,
+  );
+  const [part] = features.buildings;
+  assert.equal(part.roofHeight, 4);
+  assert.ok(part.roofFaces);
+  assert.equal(Math.max(...part.roofFaces.points.filter((_, i) => i % 3 === 2)), 1);
+  assert.equal(part.roofShape, undefined);
 });
 
 /** A width x depth rectangle (east x north) with its south-west corner at east, north */
