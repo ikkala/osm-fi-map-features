@@ -118,3 +118,17 @@ test("leaveOutOnDecks leaves out a barrier's stretch on a bridge's deck or a tun
     [[0, 17], [44, 56], [65, 80]],
   );
 });
+
+test("leaveOutOnDecks leaves out a barrier across a bridge's way where it lands, and keeps a retaining wall under it", () => {
+  // a footbridge landing at e = 20, rising to 4 m over the ground at e = 40
+  const bridge = road("w1", "footway", [[20, 0], [40, 0]], { width: 2.5, bridge: true, deck: [100.2, 104] });
+  const railing = fence("w2", [[21, -10], [21, 10]]);
+  const wall: Barrier = { osm: "w3", kind: "retaining_wall", height: 3, line: [[30, -10], [30, 10]] };
+  const map: MapFeatures = { roads: [bridge], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [railing, wall], playEquipment: [], bridgeDecks: [] };
+  assert.equal(leaveOutOnDecks(map, () => 100), 1);
+  // the way's 1.25 m and its edge 0.5 m out (sampled every meter)
+  assert.deepEqual(
+    map.barriers.map((b) => [b.osm, b.line.map(([, n]) => n)]),
+    [["w2", [-10, -1.5]], ["w2", [1.5, 10]], ["w3", [-10, 10]]],
+  );
+});

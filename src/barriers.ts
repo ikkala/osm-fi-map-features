@@ -97,14 +97,17 @@ const RAIL_WIDTH_M = 3;
 /** Meters along the line to each of its points */
 /**
  * Leaves out the stretches of barriers on bridges' decks and tunnels' lids (a railing along a bridge): a barrier
- * stands on the ground, which is under the deck there. Returns how many stretches were left out.
+ * stands on the ground, which is under the deck there. Across a bridge's way it is left out however low the deck,
+ * as where the bridge lands. A retaining wall stays under a bridge: it holds up the ground there. Returns how many
+ * stretches were left out.
  */
 export function leaveOutOnDecks(features: MapFeatures, heightAt: (e: number, n: number) => number | undefined): number {
+  // across: how far out of a bridge's way's line its deck is (m), none for a lid
   const decks = [...features.roads, ...features.rails]
-    .flatMap((w) => {
+    .flatMap((w): { line: Point[]; heights: number[]; reach: number; across?: number }[] => {
       const half = ("width" in w ? w.width : RAIL_WIDTH_M) / 2;
       if (w.bridge && w.deck) {
-        return [{ line: w.line, heights: w.deck, reach: half + DECK_EDGE_M + ON_DECK_M }];
+        return [{ line: w.line, heights: w.deck, reach: half + DECK_EDGE_M + ON_DECK_M, across: half + DECK_EDGE_M }];
       }
       return w.lid ? [{ line: w.line, heights: w.lid, reach: half + LID_EDGE_M + ON_DECK_M }] : [];
     })
@@ -125,12 +128,18 @@ export function leaveOutOnDecks(features: MapFeatures, heightAt: (e: number, n: 
     for (let d = 0; d <= total; d += SAMPLE_M) {
       const [p] = between(barrier.line, lengths, d, d);
       const ground = heightAt(...p);
-      const on = near.some(({ line, heights, reach }) => {
-        let close = false;
-        for (let i = 0; i + 1 < line.length && !close; i++) {
-          close = distanceToSegment(p, line[i], line[i + 1]) <= reach;
+      const on = near.some(({ line, heights, reach, across }) => {
+        if (across !== undefined && barrier.kind === "retaining_wall") {
+          return false;
         }
-        return close && ground !== undefined && deckAt(line, heights, p) - ground >= OVER_GROUND_M;
+        let distance = Infinity;
+        for (let i = 0; i + 1 < line.length; i++) {
+          distance = Math.min(distance, distanceToSegment(p, line[i], line[i + 1]));
+        }
+        if (across !== undefined && distance <= across) {
+          return true;
+        }
+        return distance <= reach && ground !== undefined && deckAt(line, heights, p) - ground >= OVER_GROUND_M;
       });
       if (on) {
         const last = cuts[cuts.length - 1];
