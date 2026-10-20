@@ -948,7 +948,7 @@ test("a building under construction is drawn as the building it will be", () => 
 test("a bridge's outline (man_made=bridge) is kept apart for its deck, not drawn as an area", () => {
   const { features, bridgeOutlines } = parseOsm(
     [
-      { type: "way", id: 1, tags: { man_made: "bridge", name: "Silta", layer: "1" }, geometry: square(0, 0, 10) },
+      { type: "way", id: 1, tags: { man_made: "bridge", name: "Silta", layer: "1", "bridge:structure": "truss", colour: "#8a3a3a" }, geometry: square(0, 0, 10) },
       {
         type: "relation",
         id: 2,
@@ -959,6 +959,7 @@ test("a bridge's outline (man_made=bridge) is kept apart for its deck, not drawn
     origin,
   );
   assert.deepEqual(bridgeOutlines.map((b) => [b.osm, b.name, b.polygon.outer.length]), [["w1", "Silta", 4], ["r2", undefined, 4]]);
+  assert.deepEqual(bridgeOutlines.map((b) => [b.structure, b.colour]), [["truss", "#8a3a3a"], [undefined, undefined]]);
   assert.deepEqual([features.areas, features.buildings, features.bridgeDecks], [[], [], []]);
   assert.match(overpassQuery({ south: 0, west: 0, north: 1, east: 1 }), /way\[man_made=bridge\];[\s\S]*relation\[man_made=bridge\]\[type=multipolygon\];/);
 });
@@ -972,4 +973,15 @@ test("openRailHalls opens the walls of a hall where a railway runs in, and makes
   assert.equal(depot.passages?.length, 1);
   assert.equal(depot.height, 6);
   assert.equal(shed.height, 3);
+});
+
+test("a bridge way keeps its bridge:structure and colour, a way on the ground neither", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 1, tags: { highway: "footway", bridge: "yes", layer: "1", "bridge:structure": "truss", colour: "maroon" }, geometry: [at(0, 0), at(30, 0)] },
+      { type: "way", id: 2, tags: { highway: "footway", "bridge:structure": "truss", colour: "maroon" }, geometry: [at(0, 10), at(30, 10)] },
+    ],
+    origin,
+  );
+  assert.deepEqual(features.roads.map((r) => [r.osm, r.bridgeStructure, r.bridgeColour]), [["w1", "truss", "maroon"], ["w2", undefined, undefined]]);
 });

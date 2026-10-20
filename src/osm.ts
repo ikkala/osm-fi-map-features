@@ -87,6 +87,9 @@ export interface Road {
   incline?: "up" | "down";
   /** surface=* (asphalt, paving_stones, fine_gravel, ...), when OSM tells; steps without one take their material=* */
   surface?: string;
+  /** Bridges: bridge:structure=* (beam, truss, arch, suspension, ...) and colour=*, when OSM tells */
+  bridgeStructure?: string;
+  bridgeColour?: string;
 }
 
 export type Sidewalks = "both" | "left" | "right" | "none" | "separate";
@@ -313,6 +316,9 @@ export interface Tree {
 export interface BridgeOutline {
   osm: string;
   name?: string;
+  /** bridge:structure=* and colour=*, when OSM tells */
+  structure?: string;
+  colour?: string;
   polygon: Polygon;
 }
 
@@ -323,6 +329,9 @@ export interface BridgeOutline {
 export interface BridgeDeck {
   osm: string;
   name?: string;
+  /** Its bridge's bridge:structure=* and colour=*, when OSM tells */
+  structure?: string;
+  colour?: string;
   /** Meters east and north of the origin */
   vertices: Point[];
   /** Three vertex numbers (from 0) each */
@@ -840,6 +849,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
           ...access(road),
           ...(road.highway === "steps" ? stepping(road) : {}),
           ...surfaceOf(road),
+          ...bridgeLooks(road),
           line: points,
         };
         const storeys = storeysOf(road);
@@ -979,7 +989,8 @@ function addPolygonFeature(features: MapFeatures, bridgeOutlines: BridgeOutline[
     playgrounds.push(polygon);
   }
   if (tags.man_made === "bridge") {
-    bridgeOutlines.push({ osm, ...optionalName(tags), polygon });
+    const { bridgeStructure, bridgeColour } = bridgeLooks({ ...tags, bridge: "yes" });
+    bridgeOutlines.push({ osm, ...optionalName(tags), ...(bridgeStructure && { structure: bridgeStructure }), ...(bridgeColour && { colour: bridgeColour }), polygon });
     return;
   }
   // a building under construction is drawn as the building it will be, as a road is
@@ -2041,6 +2052,15 @@ function underground(tags: Tags): boolean {
     return storeys.every((storey) => storey < 0);
   }
   return tags.parking === "underground" && tags.building !== "roof" && tags.building !== "carport";
+}
+
+/** A bridge way's bridge:structure=* and colour=*, when it is a bridge and OSM tells */
+function bridgeLooks(tags: Tags): { bridgeStructure?: string; bridgeColour?: string } {
+  if (!layering(tags).bridge) {
+    return {};
+  }
+  const structure = tags["bridge:structure"];
+  return { ...(structure && { bridgeStructure: structure }), ...(tags.colour && { bridgeColour: tags.colour }) };
 }
 
 function layering(tags: Tags): { layer: number; bridge: boolean; tunnel: boolean } {

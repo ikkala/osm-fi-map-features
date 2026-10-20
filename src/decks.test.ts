@@ -34,6 +34,10 @@ test("the ways on a bridge's outline get one straight deck, also at their free e
   // the ways get points every 5 m
   assert.equal(footway.line.length, 21);
   assert.ok(decks.length > 0);
+  // the deck has the outline's looks
+  const truss = setOutlineDecks([{ ...outline, structure: "truss", colour: "maroon" }], [ways().footway]).decks;
+  assert.ok(truss.length > 0 && truss.every((d) => d.structure === "truss" && d.colour === "maroon"));
+  assert.ok(decks.every((d) => d.structure === undefined && d.colour === undefined));
 });
 
 /** The triangles of deck pieces, as corners */
