@@ -402,6 +402,7 @@ test("overpassQuery asks for every area rule key", () => {
   assert.match(query, /node\[natural~"\^\(tree\|shrub\)\$"\];/);
   assert.match(query, /way\[natural=tree_row\];/);
   assert.match(query, /way\[man_made~"\^\(chimney\|ventilation_shaft\|storage_tank\|silo\|water_tower\|tower\|gasometer\)\$"\];/);
+  assert.match(query, /way\["roof:ridge"=yes\];/);
 });
 
 test("a part with roof:shape=many gets its roof from the ridge line in it", () => {

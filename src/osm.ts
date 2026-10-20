@@ -631,7 +631,7 @@ export function estimatedLevels(kind: string, area: number): number {
 
 export function overpassQuery(box: GeoBox): string {
   const selectors = ["way[highway]", "way[railway]", "way[building]", "way[\"building:part\"]", "node[natural~\"^(tree|shrub)$\"]", "way[natural=tree_row]", "node[highway=street_lamp]",
-    "node[highway~\"^(crossing|traffic_signals)$\"]", "node[barrier=gate]", "way[barrier~\"^(fence|wall|retaining_wall|hedge)$\"]", "way[man_made=bridge]", `way[man_made~"^(${[...STRUCTURES].join("|")})$"]`];
+    "node[highway~\"^(crossing|traffic_signals)$\"]", "node[barrier=gate]", "way[barrier~\"^(fence|wall|retaining_wall|hedge)$\"]", "way[man_made=bridge]", `way[man_made~"^(${[...STRUCTURES].join("|")})$"]`, "way[\"roof:ridge\"=yes]"];
   const relations = ["relation[building][type=multipolygon]", "relation[\"building:part\"][type=multipolygon]", "relation[man_made=bridge][type=multipolygon]"];
   const byKey = new Map<string, string[]>();
   for (const [key, values] of AREA_RULES) {
