@@ -56,10 +56,28 @@ test("a ridge from side to side bends with the wing: its slopes rise from the ea
   assert.equal(wing.roofShape, undefined);
 });
 
-test("no roof from a ridge that does not reach both sides, on an outline with parts, or a building with a shape of its own", () => {
-  const short = building(WING);
-  assert.equal(ridgeRoofs([short], [[[5, 0], [7, 10]]]), 0);
-  assert.equal(short.roofFaces, undefined);
+test("a ridge ending inside the outline is hipped down to the corners beyond it", () => {
+  const block = building([[0, 0], [20, 0], [20, 10], [0, 10]]);
+  // a gable at the west end, a hip at the east
+  assert.equal(ridgeRoofs([block], [[[0, 5], [15, 5]]]), 1);
+  const faces = block.roofFaces;
+  assert.ok(faces);
+  assert.equal(shareAt(faces, [15, 5]), 1);
+  assert.equal(shareAt(faces, [0, 5]), 1);
+  // the hip's face slopes down to the east wall as the sides do to theirs
+  assert.equal(shareAt(faces, [17.5, 5])?.toFixed(2), "0.50");
+  assert.equal(shareAt(faces, [10, 2.5])?.toFixed(2), "0.50");
+  assert.equal(shareAt(faces, [19.9, 5])?.toFixed(2), "0.02");
+  // hipped at both ends
+  const hipped = building([[0, 0], [20, 0], [20, 10], [0, 10]]);
+  assert.equal(ridgeRoofs([hipped], [[[5, 5], [15, 5]]]), 1);
+  assert.equal(shareAt(hipped.roofFaces ?? { points: [], triangles: [] }, [2.5, 5])?.toFixed(2), "0.50");
+});
+
+test("no roof from a ridge that does not reach a side, on an outline with parts, or a building with a shape of its own", () => {
+  const outside = building(WING);
+  assert.equal(ridgeRoofs([outside], [[[5, 0], [7, 10], [25, 10]]]), 0);
+  assert.equal(outside.roofFaces, undefined);
   const outline = building(WING, { hasParts: true, part: false });
   const shaped = building(WING, { roofShape: "gabled", roofAngle: 90 });
   const flat = building(WING, { roofHeight: undefined });

@@ -1,7 +1,7 @@
 // Roofs drawn from their ridge lines (Simple 3D Buildings' roof lines: roof:ridge=yes ways on a roof:shape=many
-// building or part): a ridge running across the outline from side to side splits it into the roof's slopes, which
-// rise from the eaves at the outline to the ridge. A ridge may bend, as one along a curving wing does, which the
-// shapes from roof:shape and roof:orientation cannot draw.
+// building or part): a ridge running across the outline from side to side, or ending inside it in a hip, splits it
+// into the roof's slopes, which rise from the eaves at the outline to the ridge. A ridge may bend, as one along a
+// curving wing does, which the shapes from roof:shape and roof:orientation cannot draw.
 import { distanceToSegment, nearestOnSegment, pointInRing, type Point } from "./geometry.ts";
 import type { Building } from "./osm.ts";
 
@@ -59,17 +59,53 @@ function place(ring: Ring, p: Point): Ring[number] | undefined {
   return vertex;
 }
 
-/** The two slopes a ridge from side to side splits a ring into, or undefined when it does not reach both sides */
+/**
+ * Where a ridge's end inside the ring is hipped: the corner of the side the ridge points at, beyond its end (extended
+ * from its last stretch), which a hip runs down to; the other corner's hip comes with the slope
+ */
+function hipCorner(ring: Ring, end: Point, before: Point): Ring[number] | undefined {
+  const de = end[0] - before[0];
+  const dn = end[1] - before[1];
+  let best: { t: number; vertex: Ring[number] } | undefined;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i].point;
+    const b = ring[(i + 1) % ring.length].point;
+    const ee = b[0] - a[0];
+    const en = b[1] - a[1];
+    const det = ee * dn - en * de;
+    if (Math.abs(det) < 1e-12) {
+      continue;
+    }
+    // end + t (de, dn) = a + u (ee, en)
+    const t = (ee * (a[1] - end[1]) - en * (a[0] - end[0])) / det;
+    const u = (de * (a[1] - end[1]) - dn * (a[0] - end[0])) / det;
+    if (t > 0 && u >= 0 && u <= 1 && (!best || t < best.t)) {
+      best = { t, vertex: ring[i] };
+    }
+  }
+  return best?.vertex;
+}
+
+/**
+ * The two slopes a ridge splits a ring into, or undefined when it does not: from side to side, its ends on them
+ * (gables), or ending inside it in a hip down to the corners beyond
+ */
 function split(ring: Ring, ridge: Point[]): [Slope, Slope] | undefined {
   const copy = [...ring];
-  const start = place(copy, ridge[0]);
-  const end = start && place(copy, ridge[ridge.length - 1]);
+  const last = ridge.length - 1;
+  const inside = (p: Point) => !onRing(copy, p) && pointInRing(p, copy.map(({ point }) => point));
+  const startHip = inside(ridge[0]) ? hipCorner(copy, ridge[0], ridge[1]) : undefined;
+  const endHip = inside(ridge[last]) ? hipCorner(copy, ridge[last], ridge[last - 1]) : undefined;
+  const start = startHip ?? place(copy, ridge[0]);
+  const end = start && (endHip ?? place(copy, ridge[last]));
   if (!start || !end || start === end) {
     return undefined;
   }
   const i = copy.indexOf(start);
   const j = copy.indexOf(end);
-  const along: Ring = [start, ...ridge.slice(1, -1).map((point) => ({ point, share: 1 })), end];
+  // the ridge's points between the vertices on the ring: a hipped end's too
+  const between: Ring = ridge.slice(startHip ? 0 : 1, endHip ? ridge.length : last).map((point) => ({ point, share: 1 }));
+  const along: Ring = [start, ...between, end];
   const walk = (from: number, to: number) => {
     const out: Ring = [];
     for (let k = from; ; k = (k + 1) % copy.length) {
@@ -82,10 +118,9 @@ function split(ring: Ring, ridge: Point[]): [Slope, Slope] | undefined {
   // one slope round the ring from the ridge's start to its end, the other from its end to its start
   const one = walk(i, j);
   const other = walk(j, i).reverse();
-  const inside = along.slice(1, -1);
   return [
-    { ring: [...one, ...[...inside].reverse()], side: one, ridge: along },
-    { ring: [...other.slice().reverse(), ...inside], side: other, ridge: along },
+    { ring: [...one, ...[...between].reverse()], side: one, ridge: along },
+    { ring: [...other.slice().reverse(), ...between], side: other, ridge: along },
   ];
 }
 
@@ -147,7 +182,8 @@ function addSlope(faces: RoofFaces, slope: Slope): void {
 /**
  * Gives the buildings and parts a roof from the ridges inside them (roofFaces): those that draw no pitched shape of
  * their own and have a roof's height, and no holes; an outline with parts leaves its roof to them. A ridge goes in
- * the slope its middle is in, and splits it when its ends are on that slope's sides; one that does not is left out.
+ * the slope its middle is in, and splits it when its ends are on that slope's sides or inside it (hipped); one that
+ * does not is left out.
  * Returns how many buildings got one.
  */
 export function ridgeRoofs(buildings: Building[], ridges: Point[][]): number {
