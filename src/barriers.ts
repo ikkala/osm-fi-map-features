@@ -14,6 +14,10 @@ const IN_BARRIER_M = 1;
 const ON_DECK_M = 1.5;
 const OVER_GROUND_M = 1;
 const DECK_EDGE_M = 0.5;
+/** A barrier crossing a bridge's way at this sine or more passes under it, at less runs along it */
+const CROSSING_SINE = 0.5;
+/** A barrier passing under a deck that is less than this (m) over its top is left out there */
+const UNDER_DECK_M = 0.5;
 /** A barrier is looked at this often (m) */
 const SAMPLE_M = 1;
 /** A barrier crossing a tunnel's line this near its end (m), in or out of it, is the wall its portal is in */
@@ -97,9 +101,9 @@ const RAIL_WIDTH_M = 3;
 /** Meters along the line to each of its points */
 /**
  * Leaves out the stretches of barriers on bridges' decks and tunnels' lids (a railing along a bridge): a barrier
- * stands on the ground, which is under the deck there. Across a bridge's way it is left out however low the deck,
- * as where the bridge lands. A retaining wall stays under a bridge: it holds up the ground there. A parapet stays
- * too: it stands on the deck. Returns how many stretches were left out.
+ * stands on the ground, which is under the deck there. One crossing a bridge's way passes under it, left out only
+ * where the deck is too low for it, as where the bridge lands. A retaining wall stays under a bridge: it holds up
+ * the ground there. A parapet stays too: it stands on the deck. Returns how many stretches were left out.
  */
 export function leaveOutOnDecks(features: MapFeatures, heightAt: (e: number, n: number) => number | undefined): number {
   // across: how far out of a bridge's way's line its deck is (m), none for a lid
@@ -131,19 +135,32 @@ export function leaveOutOnDecks(features: MapFeatures, heightAt: (e: number, n: 
     const cuts: [number, number][] = [];
     for (let d = 0; d <= total; d += SAMPLE_M) {
       const [p] = between(barrier.line, lengths, d, d);
+      // the barrier's way there
+      const [from] = between(barrier.line, lengths, Math.max(0, d - SAMPLE_M / 2), Math.max(0, d - SAMPLE_M / 2));
+      const [to] = between(barrier.line, lengths, Math.min(total, d + SAMPLE_M / 2), Math.min(total, d + SAMPLE_M / 2));
       const ground = heightAt(...p);
       const on = near.some(({ line, heights, reach, across }) => {
-        if (across !== undefined && barrier.kind === "retaining_wall") {
+        let distance = Infinity;
+        let nearest = 0;
+        for (let i = 0; i + 1 < line.length; i++) {
+          const away = distanceToSegment(p, line[i], line[i + 1]);
+          if (away < distance) {
+            distance = away;
+            nearest = i;
+          }
+        }
+        const high = ground !== undefined && deckAt(line, heights, p) - ground >= OVER_GROUND_M;
+        if (across === undefined) {
+          return distance <= reach && high;
+        }
+        if (barrier.kind === "retaining_wall") {
           return false;
         }
-        let distance = Infinity;
-        for (let i = 0; i + 1 < line.length; i++) {
-          distance = Math.min(distance, distanceToSegment(p, line[i], line[i + 1]));
+        if (sine(from, to, line[nearest], line[nearest + 1]) >= CROSSING_SINE) {
+          // across the bridge's way it passes under the deck, unless the deck is too low for it
+          return distance <= across && ground !== undefined && deckAt(line, heights, p) - ground < barrier.height + UNDER_DECK_M;
         }
-        if (across !== undefined && distance <= across) {
-          return true;
-        }
-        return distance <= reach && ground !== undefined && deckAt(line, heights, p) - ground >= OVER_GROUND_M;
+        return distance <= reach && high;
       });
       if (on) {
         const last = cuts[cuts.length - 1];
@@ -165,6 +182,13 @@ export function leaveOutOnDecks(features: MapFeatures, heightAt: (e: number, n: 
   }
   features.barriers = pieces;
   return count;
+}
+
+/** The sine of the angle between a to b and c to d, 0 where either has no length */
+function sine(a: Point, b: Point, c: Point, d: Point): number {
+  const [ux, uy, vx, vy] = [b[0] - a[0], b[1] - a[1], d[0] - c[0], d[1] - c[1]];
+  const lengths = Math.hypot(ux, uy) * Math.hypot(vx, vy);
+  return lengths > 0 ? Math.abs(ux * vy - uy * vx) / lengths : 0;
 }
 
 function cumulative(line: Point[]): number[] {

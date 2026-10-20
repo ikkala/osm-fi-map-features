@@ -417,9 +417,10 @@ their `colour`. A path through a fence often has no gate or opening in OSM, so
 each barrier is cut open where a way (not a bridge or a tunnel) crosses it, 0.4 m wider than the way, at its
 gates, and at a tunnel's portal in it (crossing the tunnel's line within 3 m of its end, in or out, as wide as its
 room) (`src/barriers.ts`). A barrier's stretches on a bridge's deck or a tunnel's lid, at least 1 m over the ground,
-are left out (a railing along a bridge): a barrier stands on the ground, which is under the deck there. Across a
-bridge's way (its width and the deck's edge) a barrier is left out however low the deck, as where the bridge lands,
-but a retaining wall stays under a bridge: it holds up the ground there. A bridge's parapet (`wall=parapet`, told
+are left out (a railing along a bridge): a barrier stands on the ground, which is under the deck there. One crossing
+a bridge's way passes under it: it is left out across the way (its width and the deck's edge) only where the deck is
+less than half a meter over its top, as where the bridge lands. A retaining wall stays under a bridge: it holds up the
+ground there. A bridge's parapet (`wall=parapet`, told
 by `parapet`) stays on the deck it stands on.
 
 Playground equipment (`playground=*` nodes and ways: swings, basket swings, slides, sandpits, climbing frames,
