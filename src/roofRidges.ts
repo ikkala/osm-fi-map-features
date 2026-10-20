@@ -140,7 +140,18 @@ function shares(chain: Ring): number[] {
  * behind, so each runs from the eaves up to the ridge; and not out of the slope where its side turns in.
  */
 function addSlope(faces: RoofFaces, slope: Slope): void {
-  const { side, ridge } = slope;
+  // a side ending on another ridge (a wing's ridge running into the main one) goes on along it: its points at the
+  // ridge's height go with the ridge, so no triangle lies flat at the top and the valley runs up from the eaves
+  const side = [...slope.side];
+  const ridge = [...slope.ridge];
+  while (side.length > 2 && side[side.length - 2].share === 1) {
+    side.pop();
+    ridge.push(side[side.length - 1]);
+  }
+  while (side.length > 2 && side[1].share === 1) {
+    side.shift();
+    ridge.unshift(side[0]);
+  }
   const base = faces.points.length / 3;
   for (const { point, share } of [...side, ...ridge]) {
     faces.points.push(point[0], point[1], share);

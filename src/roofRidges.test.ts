@@ -99,6 +99,17 @@ test("a cross gable's ridge goes to it alone, not to the longer roof under it", 
   assert.equal(shareAt(cross.roofFaces, [15, 1]), 1);
 });
 
+test("a wing's ridge running into the main ridge: its slopes go on into the main roof, a valley between", () => {
+  const block = building([[0, 0], [20, 0], [20, 10], [0, 10]]);
+  // the main ridge from a gable in the west to a hip in the east, then the wing's from the south side up to it
+  assert.equal(ridgeRoofs([block], [[[0, 5], [15, 5]], [[10, 0], [10, 5]]]), 1);
+  const faces = block.roofFaces;
+  assert.ok(faces);
+  // east of the wing's ridge: its slope down to the corner, and the main roof's beyond the valley; nothing flat on top
+  assert.ok(Math.abs((shareAt(faces, [11.5, 3.5]) ?? 0) - 0.85) < 1e-9);
+  assert.ok(Math.abs((shareAt(faces, [17, 2.5]) ?? 0) - 0.5) < 1e-9);
+});
+
 test("a ridge over where two roofs meet goes to the part over both, not to either", () => {
   // two roofs meeting a little off the cross gable's ridge, each smaller than it
   const west = building([[5, 0], [15.2, 0], [15.2, 10], [5, 10]], { osm: "w1" });
