@@ -40,6 +40,7 @@ export {
   type PowerLine,
 } from "./landmarks.ts";
 export { ORTHO_ATTRIBUTION } from "./ortho.ts";
+export { inheritFromOutlines, parseOsm, parseOverpassResponse, type OsmElement, type OverpassResponse, type ParseResult } from "./osm.ts";
 export type {
   Area,
   AreaKind,
