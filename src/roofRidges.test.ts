@@ -88,6 +88,31 @@ test("no roof from a ridge that does not reach a side, on an outline with parts,
   assert.equal(guessed.roofAngle, undefined);
 });
 
+test("a cross gable's ridge goes to it alone, not to the longer roof under it", () => {
+  const long = building([[0, 0], [30, 0], [30, 10], [0, 10]], { osm: "w1" });
+  const cross = building([[10, 0], [20, 0], [20, 10], [10, 10]], { osm: "w2", height: 11 });
+  assert.equal(ridgeRoofs([long, cross], [[[15, 0], [15, 10]], [[0, 5], [30, 5]]]), 2);
+  assert.ok(long.roofFaces && cross.roofFaces);
+  // the long roof's slope rises from its eaves to its own ridge under the cross gable too
+  assert.ok(Math.abs((shareAt(long.roofFaces, [15, 1]) ?? 0) - 0.2) < 1e-9);
+  assert.ok(Math.abs((shareAt(cross.roofFaces, [12.5, 5]) ?? 0) - 0.5) < 1e-9);
+  assert.equal(shareAt(cross.roofFaces, [15, 1]), 1);
+});
+
+test("a ridge over where two roofs meet goes to the part over both, not to either", () => {
+  // two roofs meeting a little off the cross gable's ridge, each smaller than it
+  const west = building([[5, 0], [15.2, 0], [15.2, 10], [5, 10]], { osm: "w1" });
+  const east = building([[15.2, 0], [25, 0], [25, 10], [15.2, 10]], { osm: "w2" });
+  const cross = building([[8, 0], [22, 0], [22, 10], [8, 10]], { osm: "w3", height: 11 });
+  const ridges: Point[][] = [[[15, 0], [15, 10]], [[5, 5], [15.2, 5]], [[15.2, 5], [25, 5]]];
+  assert.equal(ridgeRoofs([west, east, cross], ridges), 3);
+  assert.ok(west.roofFaces && east.roofFaces && cross.roofFaces);
+  assert.equal(shareAt(cross.roofFaces, [15, 1]), 1);
+  // the others' slopes rise from their own eaves to their own ridges
+  assert.ok(Math.abs((shareAt(west.roofFaces, [10, 1]) ?? 0) - 0.2) < 1e-9);
+  assert.ok(Math.abs((shareAt(east.roofFaces, [20, 1]) ?? 0) - 0.2) < 1e-9);
+});
+
 test("a ridge ending at a corner, and a second ridge across a slope", () => {
   const square = building([[0, 0], [10, 0], [10, 10], [0, 10]]);
   // corner to corner, then from the diagonal's middle to the far side

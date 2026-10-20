@@ -2,7 +2,7 @@
 // building or part): a ridge running across the outline from side to side, or ending inside it in a hip, splits it
 // into the roof's slopes, which rise from the eaves at the outline to the ridge. A ridge may bend, as one along a
 // curving wing does, which the shapes from roof:shape and roof:orientation cannot draw.
-import { distanceToSegment, nearestOnSegment, pointInRing, type Point } from "./geometry.ts";
+import { distanceToRing, distanceToSegment, nearestOnSegment, pointInRing, ringArea, type Point } from "./geometry.ts";
 import type { Building } from "./osm.ts";
 
 /** A ridge's end within this (m) of the outline is on it */
@@ -181,22 +181,36 @@ function addSlope(faces: RoofFaces, slope: Slope): void {
 
 /**
  * Gives the buildings and parts a roof from the ridges inside them (roofFaces): those that draw no pitched shape of
- * their own and have a roof's height, and no holes; an outline with parts leaves its roof to them. A ridge goes in
- * the slope its middle is in, and splits it when its ends are on that slope's sides or inside it (hipped); one that
- * does not is left out.
+ * their own and have a roof's height, and no holes; an outline with parts leaves its roof to them. A ridge goes to
+ * the smallest of them that holds it whole, its middle well inside (a cross gable's, not the longer roof's under it,
+ * nor a roof's ending under it), in the slope its middle is in, and splits it when its ends are on that slope's sides
+ * or inside it (hipped); one that does not is left out.
  * Returns how many buildings got one.
  */
 export function ridgeRoofs(buildings: Building[], ridges: Point[][]): number {
+  const roofed = buildings.filter(
+    (building) => !building.hasParts && building.polygon.holes.length === 0 && building.roofHeight && !(building.roofShape && !building.roofShapeEstimated),
+  );
+  const ridgesOf = new Map<Building, Point[][]>();
+  for (const ridge of ridges.filter((line) => line.length >= 2)) {
+    let best: { building: Building; area: number } | undefined;
+    for (const building of roofed) {
+      const outer = building.polygon.outer;
+      const at = middle(ridge);
+      if (pointInRing(at, outer) && distanceToRing(at, outer) > SNAP_M && ridge.every((p) => pointInRing(p, outer) || distanceToRing(p, outer) <= SNAP_M)) {
+        const area = Math.abs(ringArea(outer));
+        if (!best || area < best.area) {
+          best = { building, area };
+        }
+      }
+    }
+    if (best) {
+      ridgesOf.set(best.building, [...(ridgesOf.get(best.building) ?? []), ridge]);
+    }
+  }
   let count = 0;
-  for (const building of buildings) {
+  for (const [building, mine] of ridgesOf) {
     const outer = building.polygon.outer;
-    if (building.hasParts || building.polygon.holes.length > 0 || !building.roofHeight || (building.roofShape && !building.roofShapeEstimated)) {
-      continue;
-    }
-    const mine = ridges.filter((ridge) => ridge.length >= 2 && pointInRing(middle(ridge), outer));
-    if (mine.length === 0) {
-      continue;
-    }
     let slopes: Slope[] = [];
     let rings: Ring[] = [outer.map((point) => ({ point, share: 0 }))];
     for (const ridge of mine) {

@@ -184,7 +184,9 @@ A roof may also be drawn by its ridge lines (Simple 3D Buildings' roof lines, `r
 `roof:shape=many` building or part with a `roof:height`; `src/roofRidges.ts`): a ridge running across the outline
 from side to side, its ends within half a meter of it, splits it into slopes rising from the eaves at the outline to
 the ridge, given as triangles (`roofFaces`, each point's share of the roof's height), so a ridge may bend as a curving
-wing's does; another ridge may split a slope again, and one that does not reach both sides is left out.
+wing's does; another ridge may split a slope again, and one that does not reach both sides is left out. A ridge goes
+to the smallest such building or part that holds it whole, its middle well inside: a cross gable's to it, not to
+the longer roof under it nor to a roof ending under it.
 Outlines under 1 m wide get no roof, except steps (`building:part=steps`), whose skillion roof is the slope they climb;
 they also tell how many steps they have (`step_count`). Such a part shows the steps themselves, so a way of steps
 (`highway=steps`) inside it (`src/stairs.ts`), up to 0.3 m out of its outline, is left out of the map.
