@@ -191,7 +191,15 @@ export function setOutlineDecks<T extends DeckLine>(
         }
       }
       if (triangles.length > 0) {
-        decks.push({ osm: outline.osm, ...(outline.name !== undefined && { name: outline.name }), vertices: piece.vertices, triangles, heights });
+        decks.push({
+          osm: outline.osm,
+          ...(outline.name !== undefined && { name: outline.name }),
+          ...(outline.structure !== undefined && { structure: outline.structure }),
+          ...(outline.colour !== undefined && { colour: outline.colour }),
+          vertices: piece.vertices,
+          triangles,
+          heights,
+        });
       }
     }
   }
