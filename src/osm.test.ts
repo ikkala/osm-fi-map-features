@@ -346,6 +346,7 @@ test("parseOsm reads the painted crossings, traffic signals and gates, and fence
       { type: "way", id: 67, tags: { barrier: "wall", wall: "noise_barrier" }, geometry: [at(0, 20), at(20, 20)] },
       { type: "way", id: 68, tags: { barrier: "hedge", height: "2" }, geometry: [at(0, 30), at(20, 30)] },
       { type: "way", id: 69, tags: { barrier: "kerb" }, geometry: [at(0, 40), at(20, 40)] },
+      { type: "way", id: 70, tags: { barrier: "fence", fence_type: "railing", material: "Cast_Iron", colour: "grey" }, geometry: [at(0, 50), at(20, 50)] },
     ],
     origin,
   );
@@ -356,8 +357,10 @@ test("parseOsm reads the painted crossings, traffic signals and gates, and fence
   assert.deepEqual([streetNodes[2], streetNodes[3]].map((s) => (s.kind === "signal" ? s.direction : s.kind === "gate" ? s.width : undefined)), ["backward", 4]);
   assert.deepEqual(
     features.barriers.map((b) => [b.osm, b.kind, b.height, b.heightEstimated, b.material]),
-    [["w66", "fence", 1.2, true, "wood"], ["w67", "wall", 3, true, "noise_barrier"], ["w68", "hedge", 2, undefined, undefined]],
+    [["w66", "fence", 1.2, true, "wood"], ["w67", "wall", 3, true, "noise_barrier"], ["w68", "hedge", 2, undefined, undefined], ["w70", "fence", 1.2, true, "railing"]],
   );
+  // a railing keeps what it is made of, and its colour
+  assert.deepEqual([features.barriers[3].madeOf, features.barriers[3].colour, features.barriers[0].madeOf], ["cast_iron", "grey", undefined]);
 });
 
 test("trees go to the tile of their trunk and lamps to the tile of their foot, south to north", () => {

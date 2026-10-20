@@ -407,6 +407,10 @@ export interface Barrier {
   heightEstimated?: boolean;
   /** fence_type, material or wall=* in lower case (railing, wire, wood, brick, noise_barrier, ...), when known */
   material?: string;
+  /** material=* in lower case when fence_type stands in `material` (a railing of cast_iron or steel) */
+  madeOf?: string;
+  /** colour=* as tagged (#rrggbb or a name) */
+  colour?: string;
   /** Cut open where ways cross it and at its gates (see barriers.ts) */
   line: Point[];
 }
@@ -1141,6 +1145,8 @@ const NOISE_BARRIER_HEIGHT_M = 3;
 /** A barrier=fence, wall, retaining_wall or hedge way */
 function barrier(osm: string, kind: BarrierKind, tags: Tags, line: Point[]): Barrier {
   const material = (tags.fence_type ?? tags.material ?? tags.wall)?.trim().toLowerCase();
+  const madeOf = tags.fence_type !== undefined ? tags.material?.trim().toLowerCase() : undefined;
+  const colour = tags.colour?.trim();
   const height = meters(tags.height);
   const guess = material === "noise_barrier" ? NOISE_BARRIER_HEIGHT_M : DEFAULT_BARRIER_HEIGHTS[kind];
   return {
@@ -1148,6 +1154,8 @@ function barrier(osm: string, kind: BarrierKind, tags: Tags, line: Point[]): Bar
     kind,
     ...(height !== undefined && height > 0 ? { height } : { height: guess, heightEstimated: true }),
     ...(material && { material }),
+    ...(madeOf && { madeOf }),
+    ...(colour && { colour }),
     line,
   };
 }
