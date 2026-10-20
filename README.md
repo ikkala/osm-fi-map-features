@@ -419,7 +419,8 @@ gates, and at a tunnel's portal in it (crossing the tunnel's line within 3 m of 
 room) (`src/barriers.ts`). A barrier's stretches on a bridge's deck or a tunnel's lid, at least 1 m over the ground,
 are left out (a railing along a bridge): a barrier stands on the ground, which is under the deck there. Across a
 bridge's way (its width and the deck's edge) a barrier is left out however low the deck, as where the bridge lands,
-but a retaining wall stays under a bridge: it holds up the ground there.
+but a retaining wall stays under a bridge: it holds up the ground there. A bridge's parapet (`wall=parapet`, told
+by `parapet`) stays on the deck it stands on.
 
 Playground equipment (`playground=*` nodes and ways: swings, basket swings, slides, sandpits, climbing frames,
 spring riders, ...) comes from a query of its own (`src/playgrounds.ts`), with its `capacity`, `baby` (a swing's

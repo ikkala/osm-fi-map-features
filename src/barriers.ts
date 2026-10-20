@@ -98,8 +98,8 @@ const RAIL_WIDTH_M = 3;
 /**
  * Leaves out the stretches of barriers on bridges' decks and tunnels' lids (a railing along a bridge): a barrier
  * stands on the ground, which is under the deck there. Across a bridge's way it is left out however low the deck,
- * as where the bridge lands. A retaining wall stays under a bridge: it holds up the ground there. Returns how many
- * stretches were left out.
+ * as where the bridge lands. A retaining wall stays under a bridge: it holds up the ground there. A parapet stays
+ * too: it stands on the deck. Returns how many stretches were left out.
  */
 export function leaveOutOnDecks(features: MapFeatures, heightAt: (e: number, n: number) => number | undefined): number {
   // across: how far out of a bridge's way's line its deck is (m), none for a lid
@@ -116,6 +116,10 @@ export function leaveOutOnDecks(features: MapFeatures, heightAt: (e: number, n: 
   let count = 0;
   const pieces: Barrier[] = [];
   for (const barrier of features.barriers) {
+    if (barrier.parapet) {
+      pieces.push(barrier);
+      continue;
+    }
     const box = bounds(barrier.line);
     const near = decks.filter((d) => d.box.maxX + d.reach >= box.minX && d.box.minX - d.reach <= box.maxX && d.box.maxY + d.reach >= box.minY && d.box.minY - d.reach <= box.maxY);
     if (near.length === 0) {

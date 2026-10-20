@@ -124,11 +124,13 @@ test("leaveOutOnDecks leaves out a barrier across a bridge's way where it lands,
   const bridge = road("w1", "footway", [[20, 0], [40, 0]], { width: 2.5, bridge: true, deck: [100.2, 104] });
   const railing = fence("w2", [[21, -10], [21, 10]]);
   const wall: Barrier = { osm: "w3", kind: "retaining_wall", height: 3, line: [[30, -10], [30, 10]] };
-  const map: MapFeatures = { roads: [bridge], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [railing, wall], playEquipment: [], bridgeDecks: [] };
+  // a parapet along its edge stands on the deck
+  const parapet: Barrier = { osm: "w4", kind: "wall", height: 1.1, parapet: true, line: [[20, 1], [40, 1]] };
+  const map: MapFeatures = { roads: [bridge], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [railing, wall, parapet], playEquipment: [], bridgeDecks: [] };
   assert.equal(leaveOutOnDecks(map, () => 100), 1);
   // the way's 1.25 m and its edge 0.5 m out (sampled every meter)
   assert.deepEqual(
     map.barriers.map((b) => [b.osm, b.line.map(([, n]) => n)]),
-    [["w2", [-10, -1.5]], ["w2", [1.5, 10]], ["w3", [-10, 10]]],
+    [["w2", [-10, -1.5]], ["w2", [1.5, 10]], ["w3", [-10, 10]], ["w4", [1, 1]]],
   );
 });

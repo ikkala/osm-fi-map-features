@@ -411,6 +411,8 @@ export interface Barrier {
   madeOf?: string;
   /** colour=* as tagged (#rrggbb or a name) */
   colour?: string;
+  /** wall=parapet: a wall along a bridge's edge, standing on its deck */
+  parapet?: boolean;
   /** Cut open where ways cross it and at its gates (see barriers.ts) */
   line: Point[];
 }
@@ -1156,6 +1158,7 @@ function barrier(osm: string, kind: BarrierKind, tags: Tags, line: Point[]): Bar
     ...(material && { material }),
     ...(madeOf && { madeOf }),
     ...(colour && { colour }),
+    ...(tags.wall?.trim().toLowerCase() === "parapet" && { parapet: true }),
     line,
   };
 }
