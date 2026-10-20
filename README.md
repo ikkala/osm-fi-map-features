@@ -380,7 +380,8 @@ Finnish cities use: a WFS layer of a point per tree with its species, height cla
 `geodata.tampere.fi`, about 12 500 around the centre, nearly all trees, few shrubs). Elsewhere the trees are OSM's.
 Only a register's trees inside the map's box are taken, as its server also sends ones with broken coordinates. The height is the middle of the height class, else a guess from
 the trunk (3 m + 0.35 × its diameter in cm, at most 25 m). OSM's `natural=tree` and `natural=shrub` nodes and
-`natural=tree_row` ways (a tree every 8 m or less) are added where the register has no tree within 4 m. Woods
+`natural=tree_row` ways (a tree every 8 m or less) are added where the register has no tree within 4 m, with their
+`height`, `genus` (or `species`), `circumference` and `diameter_crown` (`crown`, meters across) when tagged. Woods
 (`natural=wood`, `landuse=forest`) and scrub (`natural=scrub`) are only areas in OSM, so the import plants them,
 far sparser than real woods since every tree costs something to draw: a tree in each 9 m cell of a grid (spruce, pine
 or birch, 10–26 m), leaving 15 % of the cells empty, and in scrub mostly shrubs in 5 m cells. Woods tagged

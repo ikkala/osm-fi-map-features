@@ -167,7 +167,7 @@ test("parseOsm reads trees, shrubs and tree rows, and what grows in woods and sc
   const { features } = parseOsm(
     [
       { type: "node", id: 40, tags: { natural: "tree", leaf_type: "needleleaved", height: "15", genus: "Picea" }, ...at(1, 2) },
-      { type: "node", id: 41, tags: { natural: "tree", species: "Betula pendula", circumference: "1.2" }, ...at(5, 2) },
+      { type: "node", id: 41, tags: { natural: "tree", species: "Betula pendula", circumference: "1.2", diameter_crown: "6 m" }, ...at(5, 2) },
       { type: "node", id: 42, tags: { natural: "shrub" }, ...at(9, 2) },
       { type: "node", id: 43, tags: { highway: "street_lamp" }, ...at(9, 9) },
       // 20 m long: trees at 0, 6.7, 13.3 and 20 m
@@ -184,7 +184,8 @@ test("parseOsm reads trees, shrubs and tree rows, and what grows in woods and sc
   );
   const [conifer, birch, shrub, ...row] = features.trees;
   assert.deepEqual([conifer.kind, conifer.height, conifer.genus], ["conifer", 15, "picea"]);
-  assert.deepEqual([birch.kind, birch.height, birch.genus, birch.trunk], ["broadleaved", 10, "betula", 1.2]);
+  assert.deepEqual([birch.kind, birch.height, birch.genus, birch.trunk, birch.crown], ["broadleaved", 10, "betula", 1.2, 6]);
+  assert.equal(conifer.crown, undefined);
   assert.deepEqual([shrub.kind, shrub.height], ["shrub", 2]);
   assert.ok(Math.abs(conifer.point[0] - 1) < 0.01 && Math.abs(conifer.point[1] - 2) < 0.01);
   assert.deepEqual(row.map((t) => t.point[0].toFixed(1)), ["0.0", "6.7", "13.3", "20.0"]);

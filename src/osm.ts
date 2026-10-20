@@ -303,6 +303,8 @@ export interface Tree {
   genus?: string;
   /** Meters around the trunk at chest height, when known */
   trunk?: number;
+  /** Meters across the crown (diameter_crown), when known */
+  crown?: number;
   /** A tree on a bridge: the deck's height (m above sea level) it stands on */
   base?: number;
 }
@@ -1032,12 +1034,14 @@ function tree(tags: Tags, point: Point): Tree {
   const genus = (tags.genus ?? tags.species)?.split(/\s+/)[0]?.toLowerCase();
   const height = meters(tags.height);
   const trunk = meters(tags.circumference);
+  const crown = meters(tags.diameter_crown);
   return {
     point,
     kind,
     height: height !== undefined && height > 0 ? height : DEFAULT_TREE_HEIGHTS[kind],
     ...(genus && { genus }),
     ...(kind !== "shrub" && trunk !== undefined && trunk > 0 && { trunk }),
+    ...(crown !== undefined && crown > 0 && { crown }),
   };
 }
 
