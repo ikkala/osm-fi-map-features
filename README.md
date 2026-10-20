@@ -409,7 +409,8 @@ Tampere there are about 1 100 painted crossings, 200 signals and 200 gates on th
 
 Fences, walls, retaining walls and hedges (`barrier=*` ways, about 1 000 around the centre) get OSM's `height`, or
 1.2 m for fences and hedges, 1.5 m for walls (3 m for noise barriers) and 1 m for retaining walls, and their
-`fence_type`, `material` or `wall` as a material. A path through a fence often has no gate or opening in OSM, so
+`fence_type`, `material` or `wall` as a material, a railing's `material` too (`madeOf`: cast iron, steel) and
+their `colour`. A path through a fence often has no gate or opening in OSM, so
 each barrier is cut open where a way (not a bridge or a tunnel) crosses it, 0.4 m wider than the way, at its
 gates, and at a tunnel's portal in it (crossing the tunnel's line within 3 m of its end, in or out, as wide as its
 room) (`src/barriers.ts`). A barrier's stretches on a bridge's deck or a tunnel's lid, at least 1 m over the ground,
