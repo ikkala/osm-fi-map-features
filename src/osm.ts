@@ -505,7 +505,7 @@ const AREA_RULES: [key: string, values: Record<string, AreaKind>][] = [
   ["place", { square: "paved" }],
   ["area:highway", { "*": "paved" }],
   ["leisure", { pitch: "pitch", playground: "sand", park: "grass", garden: "grass", golf_course: "grass" }],
-  ["natural", { sand: "sand", beach: "sand", shingle: "sand", bare_rock: "rock", scree: "rock" }],
+  ["natural", { sand: "sand", beach: "sand", shingle: "rock", bare_rock: "rock", scree: "rock" }],
   ["natural", { wood: "forest", scrub: "forest", grassland: "grass", heath: "grass", wetland: "grass" }],
   ["landuse", { forest: "forest" }],
   ["landuse", { grass: "grass", meadow: "grass", village_green: "grass", flowerbed: "grass", allotments: "grass", cemetery: "grass", orchard: "grass" }],

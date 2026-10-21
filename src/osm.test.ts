@@ -408,6 +408,12 @@ test("areaKind makes farmland a field, and wetlands, golf courses and orchards g
   assert.equal(areaKind({ landuse: "orchard" }), "grass");
 });
 
+test("areaKind makes a shingle of stones rock, as bare rock and scree, and a beach sand", () => {
+  assert.equal(areaKind({ natural: "shingle" }), "rock");
+  assert.equal(areaKind({ natural: "bare_rock" }), "rock");
+  assert.equal(areaKind({ natural: "beach" }), "sand");
+});
+
 test("overpassQuery asks for every area rule key", () => {
   const query = overpassQuery({ south: 1, west: 2, north: 3, east: 4 });
   assert.match(query, /\[bbox:1,2,3,4\]/);
