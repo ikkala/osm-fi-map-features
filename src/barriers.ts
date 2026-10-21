@@ -1,5 +1,6 @@
 // Fences, walls and hedges are cut open where ways cross them at grade and at their gates: in OSM a fence
-// often runs on over a path with no opening of its own. A wall is cut open at a tunnel's portal in it too.
+// often runs on over a path with no opening of its own. A wall is cut open at a tunnel's portal in it too. A parapet
+// stands on a bridge's deck, over the ways passing under it: it opens at its gates alone.
 import { distanceToSegment, pointKey, type Point } from "./geometry.ts";
 import { deckAt } from "./bridges.ts";
 import { LID_EDGE_M } from "./cuts.ts";
@@ -27,7 +28,7 @@ const MIN_PIECE_M = 0.3;
 
 /**
  * Cuts the barriers open where the roads and rails cross them and at their gates (features.gates, so after
- * streets.ts), replacing each with its pieces. Returns how many openings were cut.
+ * streets.ts), replacing each with its pieces; a parapet only at its gates. Returns how many openings were cut.
  */
 export function openBarriers(features: MapFeatures): number {
   const ways = [
@@ -42,7 +43,7 @@ export function openBarriers(features: MapFeatures): number {
     const lengths = cumulative(barrier.line);
     // [from, to] meters along the barrier
     const cuts: [number, number][] = [];
-    for (const way of ways) {
+    for (const way of barrier.parapet ? [] : ways) {
       if (way.box.maxX < box.minX || way.box.minX > box.maxX || way.box.maxY < box.minY || way.box.minY > box.maxY) {
         continue;
       }
