@@ -86,6 +86,31 @@ test("a portal's floor is the ramp's just outside it, not the top of the portal'
   assert.equal(round(tunnel.floor)?.[0], 93);
 });
 
+test("under a bridge the floor goes level between its portals, not down under the model's span", () => {
+  // a footway along under a bridge, portals at 83; the model under the deck spans the gap at 86
+  const ground = (e: number, n: number) => (n <= 0 || n >= 60 ? 83 : 86);
+  const floors = (underBridge?: (p: Point) => boolean) => {
+    const tunnel = road("w1", [[0, 0], [0, 60]], { kind: "footway", width: 5, tunnel: true, layer: -1 });
+    setTunnelFloors(features([road("w2", [[0, -20], [0, 0]], { kind: "footway", width: 2.5 }), tunnel, road("w3", [[0, 60], [0, 80]], { kind: "footway", width: 2.5 })]), ground, new Map(), underBridge);
+    return round(tunnel.floor);
+  };
+  assert.ok(Math.min(...(floors() ?? [])) < 83 - 0.5);
+  assert.deepEqual(floors(([, n]) => n >= 0 && n <= 60), [83, 83, 83, 83, 83, 83, 83]);
+});
+
+test("a street ending at a bridge over a tunnel does not sink its floor under the model's ground there", () => {
+  // the tunnel along under the bridge's end, the street's end over its room at the bridge, where the model is low
+  const ground = (e: number, n: number) => (n <= 0 || n >= 60 ? 83 : e > 4 ? 88 : 85);
+  const floors = (underBridge?: (p: Point) => boolean) => {
+    const tunnel = road("w1", [[0, 0], [0, 60]], { kind: "footway", width: 5, tunnel: true, layer: -1 });
+    const street = road("w4", [[4, 30], [40, 30]], { kind: "residential", width: 7 });
+    setTunnelFloors(features([road("w2", [[0, -20], [0, 0]], { kind: "footway", width: 2.5 }), tunnel, street, road("w3", [[0, 60], [0, 80]], { kind: "footway", width: 2.5 })]), ground, new Map(), underBridge);
+    return round(tunnel.floor);
+  };
+  assert.ok(Math.min(...(floors(([e, n]) => e <= 4 && n >= 0 && n <= 60) ?? [])) >= 83 - 1e-9);
+  assert.ok(Math.min(...(floors(([e, n]) => e < 4 && n >= 0 && n <= 60) ?? [])) < 83 - 0.5);
+});
+
 test("the floor sinks under a dip in the ground, no steeper than a road tunnel, and not at the portals", () => {
   // level ground at 110 over a tunnel between portals at 100, dipping to 102 at e = 150
   const ground = (e: number) => (e <= 0 || e >= 300 ? 100 : e >= 140 && e <= 160 ? 102 : 110);

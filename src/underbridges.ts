@@ -60,6 +60,28 @@ export function decksOver(bridges: Way[], outlines: BridgeOutline[]): (p: Point,
 }
 
 /**
+ * Whether a point is under a bridge (within its way's width, or in its outline with a bridge way in it), where the
+ * elevation model has no ground
+ */
+export function underBridges(bridges: Way[], outlines: BridgeOutline[]): (p: Point) => boolean {
+  const spans = bridges
+    .filter((b) => b.bridge && b.line.length >= 2)
+    .map((b) => ({ line: b.line, box: bounds(b.line), half: ("width" in b ? b.width : RAIL_WIDTH_M) / 2 + DECK_EDGE_M }));
+  const shapes = outlines
+    .map((o) => ({ polygon: o.polygon, box: bounds(o.polygon.outer) }))
+    .filter(({ polygon }) => spans.some(({ line }) => line.some((p) => pointInPolygon(p, polygon))));
+  return ([e, n]) =>
+    spans.some(
+      ({ line, box, half }) =>
+        e >= box.minX - half &&
+        e <= box.maxX + half &&
+        n >= box.minY - half &&
+        n <= box.maxY + half &&
+        line.some((a, i) => i + 1 < line.length && distanceToSegment([e, n], a, line[i + 1]) <= half),
+    ) || shapes.some(({ polygon, box }) => e >= box.minX && e <= box.maxX && n >= box.minY && n <= box.maxY && pointInPolygon([e, n], polygon));
+}
+
+/**
  * The highest a tramway's bed may be at a point under a deck, leaving a tram its room: under the decks of the bridges
  * that are not tramways (a tramway's bridge outline reaches over its own ways beside the bridge) and their outlines,
  * where the ground is at most MAX_DEPTH_M over that (deeper, the deck is the tramway's own or the data is wrong), else

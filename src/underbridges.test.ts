@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Point } from "./geometry.ts";
 import type { Rail, Road } from "./osm.ts";
-import { lowerUnderBridges } from "./underbridges.ts";
+import { lowerUnderBridges, underBridges } from "./underbridges.ts";
 
 function road(osm: string, line: Point[], extra: Partial<Road> = {}): Road {
   return { osm, kind: "residential", width: 6, layer: 0, bridge: false, tunnel: false, line, ...extra };
@@ -66,4 +66,13 @@ test("a way meeting another in the cut it would need is left as it is", () => {
   const ways = [deck, path, across];
   assert.equal(lowerUnderBridges(ways, [deck], [], () => 98), 0);
   assert.equal(path.floor, undefined);
+});
+
+test("a point is under a bridge within its way's width and edges, or in its outline with a bridge way in it", () => {
+  const square = (e: number): Point[] => [[e, -5], [e + 10, -5], [e + 10, 5], [e, 5]];
+  const outlines = [square(50), square(100)].map((outer, i) => ({ osm: `w${9 + i}`, polygon: { outer, holes: [] } }));
+  // the bridge reaches into the first outline; a street on the ground crosses the second
+  const under = underBridges([road("w1", [[-30, 0], [52, 0]], { layer: 1, bridge: true }), road("w2", [[-30, 20], [30, 20]]), road("w3", [[95, 0], [115, 0]])], outlines);
+  const points: Point[] = [[0, 3.4], [0, -3.6], [0, 20], [58, 4], [45, 4], [105, 0]];
+  assert.deepEqual(points.map(under), [true, false, false, true, false, false]);
 });

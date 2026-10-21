@@ -29,7 +29,7 @@ import { cutIntoTiles, latticeProjection, tileHeights, tileName, tilesCovering, 
 import { setPlatformTops } from "./platforms.ts";
 import { applyRoofTops, fetchRoofTops, ROOF_TOP_SOURCES, type RoofTopSource } from "./roofTops.ts";
 import { setTrackBeds } from "./trackbeds.ts";
-import { decksOver, lowerUnderBridges, tramBedCeiling } from "./underbridges.ts";
+import { decksOver, lowerUnderBridges, tramBedCeiling, underBridges } from "./underbridges.ts";
 import { passagesUpSlopes, raisePassages } from "./raisedPassages.ts";
 import { fitRoomsUnderDecks, portalWallsAt, raiseToWalls, setTunnelFloors, setTunnelRooms, uncoverAtGrade } from "./tunnels.ts";
 import { fetchTreeRegister, overlaps, TREE_REGISTERS, type RegisterTree, type TreeRegisterSource } from "./treeRegister.ts";
@@ -257,7 +257,7 @@ export class MapBuilder {
       const covered = coverCutTunnels(features, heightAt);
       logger.log(`${covered.tunnels} tunnels in cuts get lids, ${covered.crossings} ways over them become bridges`);
       logger.log(`${uncoverAtGrade(features, heightAt)} tunnels run at the ground under buildings`);
-      const tunnels = setTunnelFloors(features, heightAt, levels);
+      const tunnels = setTunnelFloors(features, heightAt, levels, underBridges([...features.roads, ...features.rails], bridgeOutlines));
       logger.log(`${tunnels.floors} tunnel ways under hills and lakes get floors, ${tunnels.ramps} ways out of their portals ramps, ${tunnels.walls.length} stretches of ground raised over portals`);
       // from here on, and in the tiles' heights, the ground over the tunnels' ends is raised to their portals' walls
       const wallsAt = portalWallsAt(tunnels.walls);

@@ -208,13 +208,15 @@ export function uncoverAtGrade(features: MapFeatures, heightAt: (e: number, n: n
 
 /**
  * Sets `floor` on tunnels not in a cut (densifying their lines) and on ramps split off the ways leading on
- * from their portals. Ways on another storey (`levels`) do not lead on: they go on from a lift. Returns the
+ * from their portals. Ways on another storey (`levels`) do not lead on: they go on from a lift. Under a bridge
+ * (`underBridge`) the floor is not kept under the elevation model, which has no ground there. Returns the
  * portals' walls, which raise the ground over the tunnels' ends (see `portalWallsAt`).
  */
 export function setTunnelFloors(
   features: MapFeatures,
   modelAt: (e: number, n: number) => number | undefined,
   levels: ReadonlyMap<Way, number[]> = new Map(),
+  underBridge: (p: Point) => boolean = () => false,
 ): { floors: number; ramps: number; walls: PortalWall[] } {
   const tunnels: Way[] = [...features.roads, ...features.rails].filter((w) => w.tunnel && !w.lid && w.line.length >= 2);
   const key = pointKey;
@@ -329,7 +331,8 @@ export function setTunnelFloors(
     const around = [node.p, ...node.next.map(({ key: q }) => nodes.get(q)?.p).filter((q) => q !== undefined).map((q): Point => [(node.p[0] + q[0]) / 2, (node.p[1] + q[1]) / 2])];
     // under water across the room's width too: a water's surface falls across it where it flows
     const wet = [...around, ...acrossRoom(nodes, node)].filter(inWater);
-    const ground = [...around, ...wet].map((p) => heightAt(...p)).filter((h) => h !== undefined);
+    // the model has no ground under a bridge: the tunnel there only has to fit under its deck
+    const ground = [...around.filter((p) => !underBridge(p)), ...wet].map((p) => heightAt(...p)).filter((h) => h !== undefined);
     if (ground.length > 0) {
       const depth = node.depth * Math.min(1, (fromPortal.get(k) ?? Infinity) / PORTAL_EASE_M) + (wet.length > 0 ? WATER_DEPTH_M + BED_M : 0);
       node.floor = Math.min(node.floor, Math.min(...ground) - depth);
@@ -338,7 +341,7 @@ export function setTunnelFloors(
 
   // deep enough under the ways crossing over: from there the floor rises no steeper than MAX_GRADE, also to
   // the portals, whose ways leading on then ramp down to them
-  const crossed = spread(nodes, underCrossings(features, tunnels, nodes, heightAt), (length) => MAX_GRADE * length);
+  const crossed = spread(nodes, underCrossings(features, tunnels, nodes, heightAt, underBridge), (length) => MAX_GRADE * length);
   for (const [k, node] of nodes) {
     node.floor = Math.min(node.floor, crossed.get(k) ?? Infinity);
   }
@@ -663,9 +666,16 @@ export function portalWallsAt(walls: readonly PortalWall[]): (e: number, n: numb
  * portal from a short way out of it), nor under an open roof (a shelter's) over a portal of its (not stairs'
  * foot) and over most of it, where the tunnel is a covered ramp with no ground over it. Ways at a tunnel's
  * level or under it,
- * bridges, tunnels and the ways meeting it are not over it.
+ * bridges, tunnels and the ways meeting it are not over it, nor a way's points under a bridge (`underBridge`), where
+ * the model has no ground: an approach's end over the tunnel at a bridge's end.
  */
-function underCrossings(features: MapFeatures, tunnels: Way[], nodes: Map<string, Node>, heightAt: (e: number, n: number) => number | undefined): [string, number][] {
+function underCrossings(
+  features: MapFeatures,
+  tunnels: Way[],
+  nodes: Map<string, Node>,
+  heightAt: (e: number, n: number) => number | undefined,
+  underBridge: (p: Point) => boolean,
+): [string, number][] {
   const inTunnels = new Set(tunnels);
   const over = [...features.roads, ...features.rails]
     .filter((w) => !inTunnels.has(w) && !w.tunnel && !w.bridge && w.line.length >= 2)
@@ -735,7 +745,7 @@ function underCrossings(features: MapFeatures, tunnels: Way[], nodes: Map<string
           }
           for (let k = 0; k + 1 < way.line.length; k++) {
             const { distance, at } = nearestOnSegment(p, way.line[k], way.line[k + 1]);
-            const ground = distance <= margin && !pastPortal(p, at, margin) ? heightAt(...at) : undefined;
+            const ground = distance <= margin && !pastPortal(p, at, margin) && !underBridge(at) ? heightAt(...at) : undefined;
             if (ground !== undefined) {
               deepest = Math.min(deepest, ground);
             }
