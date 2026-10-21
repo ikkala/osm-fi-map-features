@@ -16,6 +16,13 @@ const FLAT_M = 0.2;
 const MIN_STEP_M = 0.5;
 /** At a wall's free end the step eases in over this length (m) */
 const EASE_M = 4;
+/**
+ * A stretch whose slope reaches over OVERREACH_M further in, to a top over RISE_M higher, than stretches of its wall
+ * (or of walls joined to it) within BESIDE_M on both sides has ground rising on behind the wall (m)
+ */
+const OVERREACH_M = 2;
+const RISE_M = 1;
+const BESIDE_M = 15;
 /** Stretches are looked up in squares this big (m) */
 const CELL_M = 16;
 
@@ -49,8 +56,24 @@ export function groundSteps(barriers: readonly Barrier[], heightAt: (e: number, 
     }
   }
   const free = (p: Point) => (ends.get(pointKey(p)) ?? 0) < 2;
+  // walls joined end to end make one line
+  const joined = walls.map((_, i) => i);
+  const root = (i: number): number => (joined[i] === i ? i : (joined[i] = root(joined[i])));
+  const endOf = new Map<string, number>();
+  for (const [i, wall] of walls.entries()) {
+    for (const p of [wall.line[0], wall.line[wall.line.length - 1]]) {
+      const other = endOf.get(pointKey(p));
+      if (other === undefined) {
+        endOf.set(pointKey(p), i);
+      } else {
+        joined[root(i)] = root(other);
+      }
+    }
+  }
   const steps: GroundStep[] = [];
-  for (const wall of walls) {
+  // the stepped stretches' heights on the high side, by the line of walls they are on
+  const rising = new Map<number, { step: GroundStep; up: number[] }[]>();
+  for (const [w, wall] of walls.entries()) {
     const line = wall.line;
     const lengths = [0];
     for (let i = 1; i < line.length; i++) {
@@ -97,7 +120,7 @@ export function groundSteps(barriers: readonly Barrier[], heightAt: (e: number, 
       const topIn = slopeEnd(up, 1);
       const stepped = footOut !== undefined && topIn !== undefined && up[topIn] - down[footOut] >= MIN_STEP_M;
       // a stretch with no step is kept with no reach, so the ground beside it is not taken for a stepped one's
-      steps.push({
+      const step: GroundStep = {
         wall: wall.osm,
         a: s.a,
         b: s.b,
@@ -105,10 +128,58 @@ export function groundSteps(barriers: readonly Barrier[], heightAt: (e: number, 
         ...(stepped ? { foot: down[footOut], footOut, top: up[topIn], topIn } : { foot: 0, footOut: 0, top: 0, topIn: 0 }),
         shareA: s.shareA,
         shareB: s.shareB,
-      });
+      };
+      steps.push(step);
+      if (stepped) {
+        const line = rising.get(root(w)) ?? [];
+        line.push({ step, up });
+        rising.set(root(w), line);
+      }
     }
   }
+  for (const line of rising.values()) {
+    stepOnlyTheWall(line);
+  }
   return steps;
+}
+
+/**
+ * Ground rising on behind a wall, where the wall holds up lower ground on both sides of it: a stretch whose slope
+ * reaches much further in, to a much higher top, than stretches near it on both sides is stepped only as far in as
+ * theirs, or not at all where that is too little a step
+ */
+function stepOnlyTheWall(line: { step: GroundStep; up: number[] }[]): void {
+  const mid = ({ a, b }: GroundStep): Point => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const cuts = line.map(({ step }) => {
+    const [me, mn] = mid(step);
+    const [de, dn] = [step.b[0] - step.a[0], step.b[1] - step.a[1]];
+    let before: number | undefined;
+    let after: number | undefined;
+    for (const { step: other } of line) {
+      const [oe, on] = mid(other);
+      if (other.topIn + OVERREACH_M >= step.topIn || other.top + RISE_M >= step.top || Math.hypot(oe - me, on - mn) > BESIDE_M) {
+        continue;
+      }
+      if ((oe - me) * de + (on - mn) * dn < 0) {
+        before = Math.max(before ?? 0, other.topIn);
+      } else {
+        after = Math.max(after ?? 0, other.topIn);
+      }
+    }
+    return before !== undefined && after !== undefined ? Math.max(before, after) : undefined;
+  });
+  for (const [i, { step, up }] of line.entries()) {
+    const cut = cuts[i];
+    if (cut === undefined) {
+      continue;
+    }
+    if (up[cut] - step.foot >= MIN_STEP_M) {
+      step.topIn = cut;
+      step.top = up[cut];
+    } else {
+      Object.assign(step, { foot: 0, footOut: 0, top: 0, topIn: 0 });
+    }
+  }
 }
 
 /**

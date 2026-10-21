@@ -242,7 +242,10 @@ used, the tiles' heights too) steps at the wall: on its low side, as found in th
 lowered to the slope's foot, and on the high side raised to its top, each as far out as the slope reaches (where
 the ground stops falling or climbing 0.2 m a meter for two meters on, within 8 m), where the model has the sides at
 least 0.5 m apart. Where a side does not level off so (a bank going on up or down past the wall) the wall steps nothing.
-Toward a wall's free end (not one another retaining wall goes on from) the step eases in over 4 m.
+Where the high side's slope reaches more than 2 m further in, to a top more than 1 m higher, than the slopes along
+the same wall (or a retaining wall joined to it) within 15 m on both sides, the ground rises on behind the wall,
+which holds up the lower ground there: the step reaches only as far in as theirs, up to the model's height there, or
+not at all where that is less than 0.5 m over the foot. Toward a wall's free end (not one another retaining wall goes on from) the step eases in over 4 m.
 
 A road tunnel for vehicles gets a room (`room`) lower than a road's 4.8 m where `maxheight` is lower, at least
 2.2 m: the tallest `maxheight` among the vehicles' tunnels joined to it at their points, so a car park's aisles behind

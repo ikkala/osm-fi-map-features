@@ -47,6 +47,26 @@ test("a retaining wall with a bank going on up past it, not flattening within re
   assert.deepEqual([-1, 1, 3].map((n) => round(ground(20, n))), [-1, 1, 3].map((n) => round(bank(20, n))));
 });
 
+// the ground going on up past the wall's top between e = from and to, 2 m more over 4 m, then flat
+const risingBehind = (from: number, to: number) => (e: number, n: number) =>
+  e >= from && e <= to && n > 2 ? 84 + Math.min(n - 2, 4) / 2 : blurred(e, n);
+
+test("ground rising on behind a wall that holds up lower ground on both sides is stepped only as far in as there", () => {
+  const rising = risingBehind(15, 25);
+  for (const walls of [[wall("w1", [[0, 0], [40, 0]])], [wall("w1", [[0, 0], [20, 0]]), wall("w2", [[20, 0], [40, 0]])]]) {
+    const ground = stepAtWalls(rising, groundSteps(walls, rising));
+    // up to the wall's top where the rest of it has its, the ground going on up past it as it is
+    assert.deepEqual([1, 3, 5, 7].map((n) => round(ground(20, n))), [84, 84.5, 85.5, 86]);
+    assert.equal(round(ground(20, -3)), 80);
+  }
+});
+
+test("ground rising on behind a wall's end, with lower ground beside it on one side only, is stepped up to", () => {
+  const rising = risingBehind(30, 40);
+  const ground = stepAtWalls(rising, groundSteps([wall("w1", [[0, 0], [40, 0]])], rising));
+  assert.equal(round(ground(35, 1)), 86);
+});
+
 test("a retaining wall the model has no step at, and other barriers, leave the ground as it is", () => {
   const flat = () => 90;
   assert.ok(groundSteps([wall("w1", [[0, 0], [40, 0]])], flat).every((s) => s.footOut === 0 && s.topIn === 0));
