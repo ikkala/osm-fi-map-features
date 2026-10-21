@@ -802,6 +802,23 @@ test("wall colour comes from building:colour or colour", () => {
   assert.deepEqual(["w35", "w36", "w37"].map(colour), ["white", "red", undefined]);
 });
 
+test("walls tagged window=no or windows=no are windowless, and storeys in a roof are kept", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 35, tags: { "building:part": "yes", window: "no", "building:levels": "2", "roof:levels": "1", "roof:shape": "hipped" }, geometry: square(0, 0, 10) },
+      { type: "way", id: 36, tags: { building: "yes", windows: "no", "roof:levels": "0" }, geometry: square(20, 0, 10) },
+      { type: "way", id: 37, tags: { building: "yes", window: "yes" }, geometry: square(40, 0, 10) },
+    ],
+    origin,
+  );
+  const building = (osm: string) => defined(features.buildings.find((b) => b.osm === osm));
+  assert.deepEqual(["w35", "w36", "w37"].map((osm) => [building(osm).windowless, building(osm).roofLevels]), [
+    [true, 1],
+    [true, undefined],
+    [undefined, undefined],
+  ]);
+});
+
 test("a lattice tower is a framework of bars, also as the filler under a raised part", () => {
   const { features } = parseOsm(
     [

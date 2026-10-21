@@ -141,6 +141,8 @@ export interface Building {
   low?: number;
   /** Storeys in the walls, from minHeight to the eaves, when OSM or a building register has them */
   levels?: number;
+  /** Storeys in the roof (roof:levels), when OSM has any: an attic's, whose low knee walls may be in the walls */
+  roofLevels?: number;
   /** Its main use in the building register */
   use?: BuildingUse;
   /** The year it was built, when known: start_date naming a year, or a building register's completion year that it allows */
@@ -186,6 +188,8 @@ export interface Building {
   shelter?: string;
   /** A framework of bars, not a closed body (tower:construction=lattice or guyed_lattice) */
   lattice?: boolean;
+  /** Walls without windows (window=no or windows=no) */
+  windowless?: boolean;
   name?: string;
   /** Where ways run through the building (tunnel=building_passage): its walls are open there */
   passages?: Opening[];
@@ -1289,6 +1293,7 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
     ...(heightFromLevels && { heightFromLevels }),
     minHeight,
     ...(wallLevels !== undefined && wallLevels >= 1 && { levels: Math.round(wallLevels) }),
+    ...(roofLevels !== undefined && roofLevels >= 1 && { roofLevels: Math.round(roofLevels) }),
     ...(roof && { roofShape: roof.shape, roofAngle: roof.angle }),
     ...(tags["roof:shape"] === undefined && { roofShapeEstimated: true }),
     ...(roofHeight !== undefined && { roofHeight }),
@@ -1302,6 +1307,7 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
     ...(startDate !== undefined && { startDate }),
     ...(shelter && { shelter }),
     ...(LATTICES.has(tags["tower:construction"] ?? "") && { lattice: true }),
+    ...((tags.window === "no" || tags.windows === "no") && { windowless: true }),
     ...(isSpecial(tags) && { special: true }),
     ...optionalName(tags),
     polygon,
