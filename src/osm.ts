@@ -345,10 +345,10 @@ export interface BridgeDeck {
 
 /**
  * How a street lamp is held up: on a straight pole (the light on top), on a pole with an arm reaching
- * out, on a high mast (squares, junctions), on a tram or railway catenary mast (with an arm), on a wall,
- * or hung from a wire
+ * out, on a pole bent over at its top (a swan neck, the light hanging from it), on a high mast (squares,
+ * junctions), on a tram or railway catenary mast (with an arm), on a wall, or hung from a wire
  */
-export type LampMount = "straight" | "angled" | "high" | "catenary" | "wall" | "wire";
+export type LampMount = "straight" | "angled" | "bent" | "high" | "catenary" | "wall" | "wire";
 
 export interface StreetLamp {
   /** Meters east and north of the origin */
@@ -365,6 +365,8 @@ export interface StreetLamp {
   base?: number;
   /** lamp_type=* in lower case (led, sodium, mercury, ...), when known */
   lampType?: string;
+  /** light:shape=* in lower case (spherical, cylindrical, directed), when known */
+  shape?: string;
   /** Its mast's structure=* in lower case (lattice, tubular, ...), when known */
   structure?: string;
   /** colour=* as OSM has it (a name or #rrggbb), when known */
@@ -1087,11 +1089,13 @@ const LAMP_MOUNTS = new Map<string, LampMount>([
   ["suspended", "wire"],
   ["wire", "wire"],
   ["catenary", "catenary"],
+  ["bent_mast", "bent"],
 ]);
 /** Heights of street lamps whose height OSM does not have, until lamps.ts looks at the street */
 export const DEFAULT_LAMP_HEIGHTS: Record<LampMount | "unknown", number> = {
   straight: 5,
   angled: 8,
+  bent: 5,
   high: 20,
   catenary: 8,
   wall: 4,
@@ -1105,6 +1109,7 @@ function lamp(tags: Tags, point: Point): StreetLamp {
   const height = meters(tags.height);
   const direction = compassDegrees(tags.direction);
   const lampType = tags.lamp_type?.trim().toLowerCase();
+  const shape = tags["light:shape"]?.trim().toLowerCase();
   const structure = tags.structure?.trim().toLowerCase();
   const colour = tags.colour?.trim();
   return {
@@ -1114,6 +1119,7 @@ function lamp(tags: Tags, point: Point): StreetLamp {
     // direction is clockwise from north
     ...(direction !== undefined && { toward: (((90 - direction) % 360) + 360) % 360 }),
     ...(lampType && { lampType }),
+    ...(shape && { shape }),
     ...(structure && { structure }),
     ...(colour && { colour }),
   };
