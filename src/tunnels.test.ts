@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { Point, Polygon } from "./geometry.ts";
 import type { Building, MapFeatures, Rail, Road } from "./osm.ts";
 import { defined } from "./testing.ts";
-import { BED_M, densify, portalWallsAt, RAIL_CLEARANCE_M, raiseToWalls, ROAD_CLEARANCE_M, roomHeight, ROOF_M, setTunnelFloors, setTunnelRooms, uncoverAtGrade, WATER_DEPTH_M } from "./tunnels.ts";
+import { BED_M, densify, fitRoomsUnderDecks, portalWallsAt, RAIL_CLEARANCE_M, raiseToWalls, ROAD_CLEARANCE_M, roomHeight, ROOF_M, setTunnelFloors, setTunnelRooms, uncoverAtGrade, WATER_DEPTH_M } from "./tunnels.ts";
 
 function road(osm: string, line: Point[], extra: Partial<Road> = {}): Road {
   return { osm, kind: "primary", width: 8, layer: 0, bridge: false, tunnel: false, line, ...extra };
@@ -317,6 +317,18 @@ test("under a way crossing over it the floor is deep enough under that way, fall
   const ramps = map.roads.filter((r) => (r.osm === "w3" || r.osm === "w4") && r.floor);
   assert.equal(ramps.length, 2);
   assert.equal(beyond.floor, undefined);
+});
+
+test("a tunnel under a bridge's deck gets the room the deck leaves over its floor under its roof, within reason", () => {
+  const tunnel = road("w1", [[0, 0], [12, 0]], { tunnel: true, layer: -1, kind: "cycleway", width: 2.5, floor: [89.1, 88.8] });
+  const deep = road("w2", [[0, 10], [12, 10]], { tunnel: true, layer: -1, kind: "footway", width: 2.5, floor: [80, 80] });
+  const low = road("w3", [[0, 20], [12, 20]], { tunnel: true, layer: -1, kind: "footway", width: 2.5, floor: [90, 90] });
+  const deckOver = ([e]: Point) => (e >= 4 && e <= 8 ? { deck: 92.4 } : undefined);
+  assert.equal(fitRoomsUnderDecks([tunnel, deep, low], deckOver), 2);
+  // its floor under the deck's ends at 89.0 and 88.9: 92.4 less the roof's 1 m and 89.0
+  assert.ok(Math.abs(defined(tunnel.room) - 2.4) < 1e-9, `${tunnel.room}`);
+  assert.equal(deep.room, undefined);
+  assert.equal(low.room, 2.2);
 });
 
 test("a way beside a tunnel under an open roof over its portal is not over it: the tunnel is a covered cut there", () => {

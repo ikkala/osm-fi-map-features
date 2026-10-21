@@ -21,6 +21,8 @@ test("a way under a bridge too low over it goes down into a cut under it, the de
   const cut = ways.find((w) => w.osm === "w2" && w.floor);
   assert.ok(cut?.floor);
   assert.ok(Math.abs(Math.min(...cut.floor) - 96.3) < 1e-9);
+  // its room in the cut that much, so its roof stays under the deck
+  assert.equal(cut.room, 2.7);
   assert.ok(Math.abs(cut.floor[0] - 98) < 0.05 && Math.abs(cut.floor[cut.floor.length - 1] - 98) < 0.05);
   // under the deck (its 6 m, 0.5 m edges and a meter more) at the bottom; the ramps 1.7 m / 8 % long
   const n = cut.line.map(([, y]) => y);
