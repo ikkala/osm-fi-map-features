@@ -969,6 +969,28 @@ test("an outline whose parts cover under half of it is drawn as well", () => {
   assert.equal(get("w43").hasParts, false);
 });
 
+test("parts are in the outline holding them, not in a structure mapped inside them", () => {
+  const { features } = parseOsm(
+    [
+      // a chimney on its pedestal: the pedestal's parts centred on the chimney, the building's outline around all
+      { type: "way", id: 50, tags: { building: "yes", "building:material": "concrete" }, geometry: square(0, 0, 10) },
+      { type: "way", id: 51, tags: { "building:part": "yes", height: "4" }, geometry: square(0, 0, 10) },
+      { type: "way", id: 52, tags: { "building:part": "yes", height: "12" }, geometry: square(2, 2, 6) },
+      { type: "way", id: 53, tags: { man_made: "chimney", height: "84" }, geometry: square(3, 3, 4) },
+      // a tower on a lower building, its top a little over the tower's outline
+      { type: "way", id: 54, tags: { building: "commercial", "building:material": "glass" }, geometry: square(40, 0, 40) },
+      { type: "way", id: 55, tags: { building: "yes", "building:material": "concrete", height: "52" }, geometry: square(55, 15, 10) },
+      { type: "way", id: 56, tags: { "building:part": "yes", min_height: "50", height: "52" }, geometry: rectangle(54.4, 15, 10.6, 10) },
+    ],
+    origin,
+  );
+  const get = (osm: string) => defined(features.buildings.find((b) => b.osm === osm && !b.part));
+  const part = (osm: string) => defined(features.buildings.find((b) => b.osm === osm && b.part));
+  assert.deepEqual(["w50", "w53", "w54", "w55"].map((osm) => get(osm).hasParts), [true, false, false, true]);
+  inheritFromOutlines(features.buildings);
+  assert.deepEqual(["w51", "w52", "w56"].map((osm) => part(osm).material), ["concrete", "concrete", "concrete"]);
+});
+
 test("a road under construction is drawn as the road it will be", () => {
   const { features } = parseOsm(
     [

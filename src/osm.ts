@@ -1842,21 +1842,35 @@ function raiseRoofsOverRoads(features: MapFeatures): void {
   }
 }
 
-/** Each part with the building outline its centroid is in, the smallest of nested ones */
-export function partOutlines(buildings: Building[]): Map<Building, Building> {
+/**
+ * A part is not in an outline its centroid is in when another one holds more of it by this share of the part: a
+ * chimney mapped inside its pedestal's parts holds only some of them, the building around both all.
+ */
+const PART_HOLDER_SLACK = 0.1;
+
+/** Each part with the building outlines it is in (see PART_HOLDER_SLACK), smallest first */
+function partHolders(buildings: Building[]): Map<Building, Building[]> {
   const outlines = buildings.filter((b) => !b.part).map((b) => ({ b, box: bounds(b.polygon.outer), area: Math.abs(ringArea(b.polygon.outer)) }));
-  const result = new Map<Building, Building>();
+  const result = new Map<Building, Building[]>();
   for (const part of buildings.filter((b) => b.part)) {
     const [x, y] = ringCentroid(part.polygon.outer);
-    let best: { b: Building; area: number } | undefined;
-    for (const o of outlines) {
-      if (x >= o.box.minX && x <= o.box.maxX && y >= o.box.minY && y <= o.box.maxY && (!best || o.area < best.area) && pointInPolygon([x, y], o.b.polygon)) {
-        best = o;
-      }
+    const around = outlines.filter(({ b, box }) => x >= box.minX && x <= box.maxX && y >= box.minY && y <= box.maxY && pointInPolygon([x, y], b.polygon));
+    if (around.length === 0) {
+      continue;
     }
-    if (best) {
-      result.set(part, best.b);
-    }
+    const shares = around.length === 1 ? [1] : around.map((o) => shareCovered(part.polygon, [o]));
+    const most = Math.max(...shares);
+    const holders = around.filter((_, i) => shares[i] >= most - PART_HOLDER_SLACK).sort((a, b) => a.area - b.area);
+    result.set(part, holders.map(({ b }) => b));
+  }
+  return result;
+}
+
+/** Each part with the building outline it is in, the smallest of nested ones */
+export function partOutlines(buildings: Building[]): Map<Building, Building> {
+  const result = new Map<Building, Building>();
+  for (const [part, [outline]] of partHolders(buildings)) {
+    result.set(part, outline);
   }
   return result;
 }
@@ -1911,35 +1925,31 @@ export function inheritFromOutlines(buildings: Building[]): number {
 const MIN_PARTS_COVER = 0.5;
 
 function markBuildingsWithParts(buildings: Building[]): void {
-  const parts = buildings.filter((b) => b.part).map((b) => ({ b, centroid: ringCentroid(b.polygon.outer), box: bounds(b.polygon.outer) }));
-  if (parts.length === 0) {
-    return;
-  }
-  for (const b of buildings) {
-    if (!b.part) {
-      const box = bounds(b.polygon.outer);
-      const inside = parts.filter(
-        ({ centroid: p }) => p[0] >= box.minX && p[0] <= box.maxX && p[1] >= box.minY && p[1] <= box.maxY && pointInPolygon(p, b.polygon),
-      );
-      b.hasParts = inside.length > 0 && partsCover(b.polygon, inside) >= MIN_PARTS_COVER;
+  const inside = new Map<Building, { b: Building; box: ReturnType<typeof bounds> }[]>();
+  for (const [part, outlines] of partHolders(buildings)) {
+    for (const outline of outlines) {
+      inside.set(outline, [...(inside.get(outline) ?? []), { b: part, box: bounds(part.polygon.outer) }]);
     }
+  }
+  for (const [outline, parts] of inside) {
+    outline.hasParts = shareCovered(outline.polygon, parts) >= MIN_PARTS_COVER;
   }
 }
 
-/** The share of an outline under its parts, sampled on a grid. */
-function partsCover(outline: Polygon, parts: { b: Building; box: ReturnType<typeof bounds> }[]): number {
-  const box = bounds(outline.outer);
+/** The share of a polygon under the buildings, sampled on a grid. */
+function shareCovered(polygon: Polygon, buildings: { b: Building; box: ReturnType<typeof bounds> }[]): number {
+  const box = bounds(polygon.outer);
   const step = Math.max(0.5, Math.sqrt(((box.maxX - box.minX) * (box.maxY - box.minY)) / 400));
   let points = 0;
   let covered = 0;
   for (let x = box.minX + step / 2; x < box.maxX; x += step) {
     for (let y = box.minY + step / 2; y < box.maxY; y += step) {
       const p: Point = [x, y];
-      if (!pointInPolygon(p, outline)) {
+      if (!pointInPolygon(p, polygon)) {
         continue;
       }
       points++;
-      if (parts.some(({ b, box: pb }) => x >= pb.minX && x <= pb.maxX && y >= pb.minY && y <= pb.maxY && pointInPolygon(p, b.polygon))) {
+      if (buildings.some(({ b, box: pb }) => x >= pb.minX && x <= pb.maxX && y >= pb.minY && y <= pb.maxY && pointInPolygon(p, b.polygon))) {
         covered++;
       }
     }
@@ -2014,7 +2024,7 @@ function groundFloatingBuildings(features: MapFeatures): void {
       continue;
     }
     const lower = all.filter((o) => o.b !== b && o.b.minHeight < b.minHeight && meet(box, o.box));
-    if (lower.length > 0 && partsCover(b.polygon, lower) >= MIN_OVER_BUILDINGS) {
+    if (lower.length > 0 && shareCovered(b.polygon, lower) >= MIN_OVER_BUILDINGS) {
       continue;
     }
     if (b.levels !== undefined) {
