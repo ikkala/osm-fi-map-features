@@ -422,6 +422,12 @@ export interface Barrier {
   colour?: string;
   /** wall=parapet: a wall along a bridge's edge, standing on its deck */
   parapet?: boolean;
+  /** layer=* when over 0: on a bridge, over the ways under it */
+  layer?: number;
+  /** design=* in lower case: a railing's pattern (rosette, ...), when known */
+  design?: string;
+  /** A railing's stretch on a bridge's deck (see barriers.ts): not on the ground, the look of the bridge's railing */
+  onDeck?: boolean;
   /** Cut open where ways cross it and at its gates (see barriers.ts) */
   line: Point[];
 }
@@ -1172,6 +1178,8 @@ function barrier(osm: string, kind: BarrierKind, tags: Tags, line: Point[]): Bar
   const material = (tags.fence_type ?? tags.material ?? tags.wall)?.trim().toLowerCase();
   const madeOf = tags.fence_type !== undefined ? tags.material?.trim().toLowerCase() : undefined;
   const colour = tags.colour?.trim();
+  const design = tags.design?.trim().toLowerCase();
+  const layer = Number(tags.layer);
   const height = meters(tags.height);
   const guess = material === "noise_barrier" ? NOISE_BARRIER_HEIGHT_M : DEFAULT_BARRIER_HEIGHTS[kind];
   return {
@@ -1182,6 +1190,8 @@ function barrier(osm: string, kind: BarrierKind, tags: Tags, line: Point[]): Bar
     ...(madeOf && { madeOf }),
     ...(colour && { colour }),
     ...(tags.wall?.trim().toLowerCase() === "parapet" && { parapet: true }),
+    ...(Number.isFinite(layer) && layer > 0 && { layer }),
+    ...(design && { design }),
     line,
   };
 }

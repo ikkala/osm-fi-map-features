@@ -1,6 +1,7 @@
 // Fences, walls and hedges are cut open where ways cross them at grade and at their gates: in OSM a fence
 // often runs on over a path with no opening of its own. A wall is cut open at a tunnel's portal in it too. A parapet
-// stands on a bridge's deck, over the ways passing under it: it opens at its gates alone.
+// stands on a bridge's deck, over the ways passing under it, and so does a railing on a layer over the ground: they
+// open at their gates alone.
 import { distanceToSegment, pointKey, type Point } from "./geometry.ts";
 import { deckAt } from "./bridges.ts";
 import { LID_EDGE_M } from "./cuts.ts";
@@ -43,7 +44,7 @@ export function openBarriers(features: MapFeatures): number {
     const lengths = cumulative(barrier.line);
     // [from, to] meters along the barrier
     const cuts: [number, number][] = [];
-    for (const way of barrier.parapet ? [] : ways) {
+    for (const way of barrier.parapet || bridgeRailing(barrier) ? [] : ways) {
       if (way.box.maxX < box.minX || way.box.minX > box.maxX || way.box.maxY < box.minY || way.box.minY > box.maxY) {
         continue;
       }
@@ -96,6 +97,11 @@ function portals(features: MapFeatures): { line: Point[]; width: number }[] {
   return result;
 }
 
+/** A railing on a layer over the ground: along a bridge, on its deck however little over the ground it is */
+function bridgeRailing(barrier: Barrier): boolean {
+  return barrier.kind === "fence" && barrier.material === "railing" && (barrier.layer ?? 0) > 0;
+}
+
 /** Railway tracks are this wide (m) where they go through a fence */
 const RAIL_WIDTH_M = 3;
 
@@ -104,7 +110,8 @@ const RAIL_WIDTH_M = 3;
  * Leaves out the stretches of barriers on bridges' decks and tunnels' lids (a railing along a bridge): a barrier
  * stands on the ground, which is under the deck there. One crossing a bridge's way passes under it, left out only
  * where the deck is too low for it, as where the bridge lands. A retaining wall stays under a bridge: it holds up
- * the ground there. A parapet stays too: it stands on the deck. Returns how many stretches were left out.
+ * the ground there. A parapet stays too: it stands on the deck. A railing's stretches on a deck stay as onDeck,
+ * not on the ground, the look of the bridge's railing there. Returns how many stretches were left out.
  */
 export function leaveOutOnDecks(features: MapFeatures, heightAt: (e: number, n: number) => number | undefined): number {
   // across: how far out of a bridge's way's line its deck is (m), none for a lid
@@ -150,7 +157,7 @@ export function leaveOutOnDecks(features: MapFeatures, heightAt: (e: number, n: 
             nearest = i;
           }
         }
-        const high = ground !== undefined && deckAt(line, heights, p) - ground >= OVER_GROUND_M;
+        const high = ground !== undefined && (deckAt(line, heights, p) - ground >= OVER_GROUND_M || bridgeRailing(barrier));
         if (across === undefined) {
           return distance <= reach && high;
         }
@@ -179,6 +186,14 @@ export function leaveOutOnDecks(features: MapFeatures, heightAt: (e: number, n: 
     count += cuts.length;
     for (const line of cutOut(barrier.line, lengths, cuts)) {
       pieces.push({ ...barrier, line });
+    }
+    if (barrier.kind === "fence" && barrier.material === "railing") {
+      for (const [from, to] of cuts) {
+        const line = between(barrier.line, lengths, from, to);
+        if (line.length >= 2) {
+          pieces.push({ ...barrier, line, onDeck: true });
+        }
+      }
     }
   }
   features.barriers = pieces;
