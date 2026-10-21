@@ -365,6 +365,10 @@ export interface StreetLamp {
   base?: number;
   /** lamp_type=* in lower case (led, sodium, mercury, ...), when known */
   lampType?: string;
+  /** Its mast's structure=* in lower case (lattice, tubular, ...), when known */
+  structure?: string;
+  /** colour=* as OSM has it (a name or #rrggbb), when known */
+  colour?: string;
 }
 
 /** A point on a way (see streets.ts): where it is, which way the way runs there, and the way itself */
@@ -1101,6 +1105,8 @@ function lamp(tags: Tags, point: Point): StreetLamp {
   const height = meters(tags.height);
   const direction = compassDegrees(tags.direction);
   const lampType = tags.lamp_type?.trim().toLowerCase();
+  const structure = tags.structure?.trim().toLowerCase();
+  const colour = tags.colour?.trim();
   return {
     point,
     ...(height !== undefined && height > 0 ? { height } : { height: DEFAULT_LAMP_HEIGHTS[mount ?? "unknown"], heightEstimated: true }),
@@ -1108,6 +1114,8 @@ function lamp(tags: Tags, point: Point): StreetLamp {
     // direction is clockwise from north
     ...(direction !== undefined && { toward: (((90 - direction) % 360) + 360) % 360 }),
     ...(lampType && { lampType }),
+    ...(structure && { structure }),
+    ...(colour && { colour }),
   };
 }
 

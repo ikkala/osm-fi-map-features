@@ -313,11 +313,11 @@ test("openDoorways opens a building's walls where a covered way comes in at its 
   assert.equal(hall.passageRooms, undefined);
 });
 
-test("parseOsm reads street lamps: their mount, height, direction and lamp type", () => {
+test("parseOsm reads street lamps: their mount, height, direction, lamp type and mast", () => {
   const { features } = parseOsm(
     [
       { type: "node", id: 50, tags: { highway: "street_lamp", lamp_mount: "angled_mast", lamp_type: "LED" }, ...at(1, 2) },
-      { type: "node", id: 51, tags: { highway: "street_lamp", power: "catenary_mast", support: "pole" }, ...at(3, 2) },
+      { type: "node", id: 51, tags: { highway: "street_lamp", power: "catenary_mast", support: "pole", structure: "Lattice", colour: "black" }, ...at(3, 2) },
       { type: "node", id: 52, tags: { highway: "street_lamp", support: "wall_mounted", height: "4.5", direction: "NE" }, ...at(5, 2) },
       { type: "node", id: 53, tags: { highway: "street_lamp", lamp_mount: "constructor" }, ...at(7, 2) },
     ],
@@ -326,7 +326,8 @@ test("parseOsm reads street lamps: their mount, height, direction and lamp type"
   const [angled, catenary, wall, unknown] = features.lamps;
   assert.deepEqual([angled.mount, angled.height, angled.heightEstimated, angled.lampType], ["angled", 8, true, "led"]);
   assert.ok(Math.abs(angled.point[0] - 1) < 0.01 && Math.abs(angled.point[1] - 2) < 0.01);
-  assert.deepEqual([catenary.mount, catenary.height], ["catenary", 8]);
+  assert.deepEqual([catenary.mount, catenary.height, catenary.structure, catenary.colour], ["catenary", 8, "lattice", "black"]);
+  assert.deepEqual([angled.structure, angled.colour], [undefined, undefined]);
   // north-east is 45° clockwise from north: 45° counter-clockwise from east
   assert.deepEqual([wall.mount, wall.height, wall.heightEstimated, wall.toward], ["wall", 4.5, undefined, 45]);
   assert.deepEqual([unknown.mount, unknown.height], [undefined, 5]);
