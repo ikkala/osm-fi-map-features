@@ -86,6 +86,15 @@ test("fences open where ways cross them and at their gates, but not for bridges 
   assert.ok(map.barriers.every((b) => b.osm === "w4"));
 });
 
+test("a bridge's parapet stays whole over a path passing under the deck, opening at its gates alone", () => {
+  const map = features([road("w1", "footway", [[10, -5], [10, 5]], { width: 2 })], [{ osm: "w2", kind: "wall", height: 1.1, parapet: true, line: [[0, 0], [100, 0]] }]);
+  assert.equal(openBarriers(map), 0);
+  assert.deepEqual(map.barriers.map((b) => b.line), [[[0, 0], [100, 0]]]);
+  map.gates.push({ point: [70, 0.5], across: 0, width: 3 });
+  assert.equal(openBarriers(map), 1);
+  assert.equal(map.barriers.length, 2);
+});
+
 test("a wall opens at a tunnel's portal in it, as wide as the tunnel's room, not where a tunnel passes deep under it", () => {
   // a tunnel ending 1 m south of the wall (its portal), another passing under it, joined to a third tunnel
   const map = features(
