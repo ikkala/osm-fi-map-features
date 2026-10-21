@@ -349,7 +349,7 @@ test("parseOsm reads the painted crossings, traffic signals and gates, and fence
       { type: "way", id: 67, tags: { barrier: "wall", wall: "noise_barrier" }, geometry: [at(0, 20), at(20, 20)] },
       { type: "way", id: 68, tags: { barrier: "hedge", height: "2" }, geometry: [at(0, 30), at(20, 30)] },
       { type: "way", id: 69, tags: { barrier: "kerb" }, geometry: [at(0, 40), at(20, 40)] },
-      { type: "way", id: 70, tags: { barrier: "fence", fence_type: "railing", material: "Cast_Iron", colour: "grey" }, geometry: [at(0, 50), at(20, 50)] },
+      { type: "way", id: 70, tags: { barrier: "fence", fence_type: "railing", material: "Cast_Iron", colour: "grey", design: "Rosette", layer: "1" }, geometry: [at(0, 50), at(20, 50)] },
       { type: "way", id: 71, tags: { barrier: "wall", wall: "parapet", material: "concrete", height: "1.1" }, geometry: [at(0, 60), at(20, 60)] },
     ],
     origin,
@@ -371,6 +371,8 @@ test("parseOsm reads the painted crossings, traffic signals and gates, and fence
   );
   // a railing keeps what it is made of, and its colour
   assert.deepEqual([features.barriers[3].madeOf, features.barriers[3].colour, features.barriers[0].madeOf], ["cast_iron", "grey", undefined]);
+  // and its design, and a layer over the ground
+  assert.deepEqual([features.barriers[3].design, features.barriers[3].layer, features.barriers[0].layer], ["rosette", 1, undefined]);
   // a bridge's parapet is told
   assert.deepEqual([features.barriers[4].parapet, features.barriers[1].parapet], [true, undefined]);
 });

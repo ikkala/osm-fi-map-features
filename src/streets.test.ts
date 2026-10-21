@@ -128,6 +128,37 @@ test("leaveOutOnDecks leaves out a barrier's stretch on a bridge's deck or a tun
   );
 });
 
+test("leaveOutOnDecks keeps a railing's stretch on a deck as the look of the bridge's railing there", () => {
+  const bridge = road("w1", "primary", [[20, 0], [40, 0]], { bridge: true, deck: [104, 104] });
+  const railing: Barrier = { ...fence("w3", [[0, 4.5], [60, 4.5]]), material: "railing", madeOf: "cast_iron", design: "rosette" };
+  const map: MapFeatures = { roads: [bridge], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [railing], playEquipment: [], bridgeDecks: [] };
+  assert.equal(leaveOutOnDecks(map, () => 100), 1);
+  assert.deepEqual(
+    map.barriers.map((b) => [b.line.map(([e]) => Math.round(e)), b.onDeck, b.madeOf, b.design]),
+    [
+      [[0, 17], undefined, "cast_iron", "rosette"],
+      [[44, 60], undefined, "cast_iron", "rosette"],
+      [[17, 44], true, "cast_iron", "rosette"],
+    ],
+  );
+});
+
+test("a railing on a layer over the ground opens at its gates alone, not for the ways under it; another barrier does", () => {
+  const railing = { ...fence("w2", [[0, 0], [100, 0]]), material: "railing", layer: 1 };
+  const wall: Barrier = { osm: "w3", kind: "wall", height: 3, layer: 1, line: [[0, 2], [100, 2]] };
+  const map = features([road("w1", "footway", [[10, -5], [10, 5]], { width: 2 })], [railing, wall]);
+  assert.equal(openBarriers(map), 1);
+  assert.deepEqual(map.barriers.map((b) => b.osm), ["w2", "w3", "w3"]);
+});
+
+test("leaveOutOnDecks takes a railing on a layer along a deck as on it, however little over the ground", () => {
+  const bridge = road("w1", "primary", [[20, 0], [40, 0]], { bridge: true, deck: [100.5, 100.5] });
+  const railing: Barrier = { ...fence("w2", [[20, 4.5], [40, 4.5]]), material: "railing", layer: 1 };
+  const map: MapFeatures = { roads: [bridge], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [railing], playEquipment: [], bridgeDecks: [] };
+  leaveOutOnDecks(map, () => 100);
+  assert.ok(map.barriers.length > 0 && map.barriers.every((b) => b.onDeck));
+});
+
 test("leaveOutOnDecks keeps a barrier passing under a bridge high over it", () => {
   // a bridge 8 m over the ground, a fence crossing under it and one along its side
   const bridge = road("w1", "primary", [[20, 0], [60, 0]], { width: 8, bridge: true, deck: [108, 108] });
