@@ -13,7 +13,7 @@ const STREET_LAMP_M = 8;
 const PATH_LAMP_M = 5;
 const MAIN_STREETS = new Set(["motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link", "secondary", "secondary_link"]);
 /** The mounts whose height the street tells; high masts, catenary masts, walls and wires keep their own */
-const BY_STREET = new Set<StreetLamp["mount"]>([undefined, "straight", "angled"]);
+const BY_STREET = new Set<StreetLamp["mount"]>([undefined, "straight", "angled", "bent"]);
 /** A lamp this close (m) to a deck's edge, or inside it, stands on the deck */
 const ON_DECK_M = 1;
 
