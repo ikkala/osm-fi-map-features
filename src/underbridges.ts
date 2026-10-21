@@ -260,16 +260,23 @@ export function lowerUnderBridges<T extends Way>(
       if (!head) {
         continue;
       }
+      // a road's room in the cut is the one its floor leaves under the deck, so its roof stays under it
       for (const piece of rest) {
         const copy = { ...m.way, line: piece.line };
         if (piece.floor) {
           copy.floor = piece.floor;
+          if ("width" in copy) {
+            copy.room = room;
+          }
         }
         added.push(copy);
       }
       m.way.line = head.line;
       if (head.floor) {
         m.way.floor = head.floor;
+        if ("width" in m.way) {
+          m.way.room = room;
+        }
       }
     }
   }

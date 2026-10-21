@@ -399,6 +399,39 @@ export function roomHeight(way: Way): number {
 }
 
 /**
+ * Gives the tunnels under a bridge's deck (deckOver: the deck over a point, over a way on a layer), as through its
+ * abutment, a room as tall as the deck leaves over their floors under their roofs, where that is lower than their
+ * own, but no lower than MIN_ROAD_CLEARANCE_M: their floors are set before the decks, from the elevation model, which
+ * has the ground under a bridge's end up at its deck. Returns how many tunnels got a lower room.
+ */
+export function fitRoomsUnderDecks(roads: Road[], deckOver: (p: Point, layer: number) => { deck: number } | undefined): number {
+  let count = 0;
+  for (const way of roads) {
+    const floor = way.floor;
+    if (!way.tunnel || way.lid || !floor || way.line.length < 2) {
+      continue;
+    }
+    let room = roomHeight(way);
+    for (let i = 0; i + 1 < way.line.length; i++) {
+      const [a, b] = [way.line[i], way.line[i + 1]];
+      const steps = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1])));
+      for (let k = 0; k <= steps; k++) {
+        const t = k / steps;
+        const over = deckOver([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], way.layer);
+        if (over) {
+          room = Math.min(room, over.deck - ROOF_M - (floor[i] + (floor[i + 1] - floor[i]) * t));
+        }
+      }
+    }
+    if (room < roomHeight(way) - 1e-6) {
+      way.room = Math.max(MIN_ROAD_CLEARANCE_M, room);
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
  * Gives the vehicles' tunnels that meet at their points a room as tall as the tallest maxheight=* among them,
  * when it is lower than a road's: the signs at a car park's entrances tell the room inside, and tunnels sharing a
  * hall share its height; so do walkways' tunnels meeting them or beside them, when lower than theirs. Returns how

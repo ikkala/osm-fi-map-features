@@ -29,9 +29,9 @@ import { cutIntoTiles, latticeProjection, tileHeights, tileName, tilesCovering, 
 import { setPlatformTops } from "./platforms.ts";
 import { applyRoofTops, fetchRoofTops, ROOF_TOP_SOURCES, type RoofTopSource } from "./roofTops.ts";
 import { setTrackBeds } from "./trackbeds.ts";
-import { lowerUnderBridges, tramBedCeiling } from "./underbridges.ts";
+import { decksOver, lowerUnderBridges, tramBedCeiling } from "./underbridges.ts";
 import { passagesUpSlopes, raisePassages } from "./raisedPassages.ts";
-import { portalWallsAt, raiseToWalls, setTunnelFloors, setTunnelRooms, uncoverAtGrade } from "./tunnels.ts";
+import { fitRoomsUnderDecks, portalWallsAt, raiseToWalls, setTunnelFloors, setTunnelRooms, uncoverAtGrade } from "./tunnels.ts";
 import { fetchTreeRegister, overlaps, TREE_REGISTERS, type RegisterTree, type TreeRegisterSource } from "./treeRegister.ts";
 import { assignWindows } from "./windows.ts";
 import { applyOsmEdits, type OsmEdit } from "./edits.ts";
@@ -291,6 +291,7 @@ export class MapBuilder {
       const over = new Set<string>();
       const cuts = lowerUnderBridges(features.roads, bridges, bridgeOutlines, heightAt, over, features.rails) + lowerUnderBridges(features.rails, bridges, bridgeOutlines, heightAt, over, features.roads);
       logger.log(`${cuts} ways lowered into cuts under ${over.size} bridges too low over them (their ends may be too low): ${[...over].join(", ")}`);
+      logger.log(`${fitRoomsUnderDecks(features.roads, decksOver(bridges, bridgeOutlines))} tunnels under bridges' decks get a lower room`);
       // after the decks: the railways end at their bridges' and approaches' heights, and tramways stay under the decks
       // over them by a tram's room
       const beds = setTrackBeds(
