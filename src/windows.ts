@@ -1,5 +1,5 @@
 // Guesses window rows (one per storey) for ordinary buildings by their kind; other kinds are too varied to
-// guess and get none.
+// guess and get none, and neither do walls tagged without windows.
 import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
 import { orientedBox, pointInPolygon, ringCentroid } from "./geometry.ts";
 import { bounds, type Building, type BuildingUse, type WindowStyle } from "./osm.ts";
@@ -50,12 +50,12 @@ const SLENDER = 5;
 
 /**
  * Sets the windows of every building by its kind, or for a building=yes by its register use; a generic part
- * takes after its building. Special, slender, glass and open buildings get none. Returns how many got windows.
+ * takes after its building. Special, windowless, slender, glass and open buildings get none. Returns how many got windows.
  */
 export function assignWindows(buildings: Building[]): number {
   // a whole building so slender is a tower; the parts of a building (bays, stairwells) may well be slender
   const tower = (b: Building) => b.special === true || b.height - b.minHeight > SLENDER * orientedBox(b.polygon.outer).length;
-  const unusual = (b: Building) => b.special === true || b.shelter !== undefined || b.material === "glass";
+  const unusual = (b: Building) => b.special === true || b.windowless === true || b.shelter !== undefined || b.material === "glass";
   const own = (b: Building): WindowStyle | undefined =>
     GENERIC_KINDS.has(b.kind) ? byUse(b) : BY_KIND[b.kind];
   const outlines = buildings

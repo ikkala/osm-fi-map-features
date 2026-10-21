@@ -28,6 +28,17 @@ test("assignWindows goes by kind, and for building=yes by the register's use", (
   assert.deepEqual([unknown, hall, glass, shelter].map((b) => b.windows), [undefined, undefined, undefined, undefined]);
 });
 
+test("assignWindows leaves out windowless buildings and parts, and the generic parts of a windowless outline", () => {
+  const blind = square(0, 10, { kind: "apartments", windowless: true });
+  const outline = square(20, 20, { kind: "office", hasParts: true });
+  const storey = square(22, 5, { part: true });
+  const blindStorey = square(22, 5, { part: true, minHeight: 4, windowless: true });
+  const blindOutline = square(60, 20, { kind: "office", hasParts: true, windowless: true });
+  const part = square(62, 5, { part: true });
+  assert.equal(assignWindows([blind, outline, storey, blindStorey, blindOutline, part]), 1);
+  assert.deepEqual([blind, storey, blindStorey, part].map((b) => b.windows), [undefined, "office", undefined, undefined]);
+});
+
 test("assignWindows gives parts of unknown kind the windows of their outline", () => {
   const outline = square(0, 20, { kind: "office", hasParts: true });
   const part = square(2, 5, { part: true });

@@ -178,7 +178,8 @@ Roofs are flat unless OSM has a pitched `roof:shape`, drawn as gabled (also salt
 half-hipped, mansard), pyramidal (also cone, dome) or skillion. Houses, cabins, sheds, garages, barns, saunas and
 churches, and `building=yes` / `residential` of at most 150 m² and two storeys, get a guessed gabled roof when their
 outline is nearly a rectangle. The ridge runs along the outline's long side unless `roof:orientation=across`; a
-skillion roof slopes down to `roof:direction`. The roof's height is `roof:height` or `roof:levels`, else a 27°
+skillion roof slopes down to `roof:direction`. The roof's height is `roof:height` or `roof:levels` (kept as
+`roofLevels`: an attic's storeys, whose knee walls may show under the eaves), else a 27°
 slope (10° for skillion, at most 6 m): on top of the storeys, or within a tagged `height`, taking at most half of it.
 A roof may also be drawn by its ridge lines (Simple 3D Buildings' roof lines, `roof:ridge=yes` ways, on a
 `roof:shape=many` building or part with a `roof:height`; `src/roofRidges.ts`): a ridge running across the outline
@@ -379,7 +380,8 @@ decides: houses and holiday homes, blocks of flats, and public buildings (shops,
 with offices' windows. Offices and factories are one class there, so of those only buildings of 4 storeys or more
 get offices' windows (in Tampere 103 of 135 such are offices, and 880 of the 952 lower ones not). A
 `building:part=yes` gets the windows of the building it is in. Other buildings (churches, sheds, factories,
-halls, ...) and glass walls get no windows, and neither do storeys under 2.2 m or over 6 m tall. Nor do buildings
+halls, ...), glass walls and buildings or parts tagged `window=no` (or `windows=no`) get no windows, and neither do
+storeys under 2.2 m or over 6 m tall; a blind storey over windowed ones is a part of its own over them. Nor do buildings
 tagged as something special whatever their `building=*` (`man_made=*` such as towers and chimneys,
 `amenity=place_of_worship`, `historic=*` other than `building`, `tourism=attraction` or `museum`) and the parts in
 them, or buildings over five times taller than their longest side (towers that are not tagged so); Näsinneula is
