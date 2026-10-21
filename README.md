@@ -279,7 +279,11 @@ steeper than 7 %. The model smooths a portal's wall into a slope over the tunnel
 room (in the tiles' heights too) is raised from the portal 6 m in to the ground there, and so is the ground under a
 way over that, across its width and as far along it as the model is lower (the cut in front of a portal is often
 wider than the tunnel), at most 10 m either way: a way over the portal stays level. Under a way over it (where the way's width and the tunnel's room overlap, but not at the tunnel's
-free ends nor beyond them, as a way going on from a short way out of a portal) it is that deep from the start, and rises from there no steeper than 7 %, to the portals too. Where it
+free ends nor beyond them, as a way going on from a short way out of a portal) it is that deep from the start, and rises from there no steeper than 7 %, to the portals too. Under a
+bridge (within a bridge way's width and 0.5 m edges, or in its outline with a bridge way in it) the model has no ground, only the gap spanned
+from the ground around: there neither its ground nor a way's over the tunnel (a street's end at the bridge) keeps
+the floor down, and a tunnel through a bridge's end goes straight between its portals, its room fitted under the deck
+(below). Where it
 would follow the ground's humps it is smoothed, lowered only: no point is more than 0.1 m over the line between its
 neighbours (portals and junctions stay). Tunnels that touch (meeting at a point, or with their rooms overlapping: side
 by side, or one crossing over the other) are a group whose floors go through these passes together, twice, and again
@@ -323,7 +327,8 @@ at most 6 m of the hollow's level bottom and at most 24 m on, and those ways get
 under a bridge (at a lower layer, not in a tunnel) has less room under the deck than 2.7 m for people, 4.2 m for
 vehicles, 4.7 m for trams and 5.5 m for trains, and the deck's 1 m, the way goes down into a cut there (a stretch
 split off with a `floor`), ramping down no steeper than 8 % (people), 6 % (vehicles) or 3 % (trains); one that
-would go deeper than 3 m, or ends in the cut, is left as it is. The bridges over cuts are logged: their ends may
+would go deeper than 3 m, or ends in the cut, is left as it is. A tunnel under a deck keeps its floor and gets a
+lower room (`room`) where the deck and its 1 m leave less. The bridges over cuts are logged: their ends may
 be too low in the model, as a footbridge's ramps and steps are not in it. Many bridges are also drawn as an outline
 (`man_made=bridge`, a way or a multipolygon): the whole deck, with what is between the ways, such as planted strips
 (`src/decks.ts`). The bridge ways at least half inside an outline get one deck: along the bridge straight from
