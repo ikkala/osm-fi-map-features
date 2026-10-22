@@ -221,6 +221,27 @@ test("parseOsm leaves out ways indoors, but not the ones on from a tunnel's end,
   assert.deepEqual(openings, [[[8, 19], [8, 21]]]);
 });
 
+test("parseOsm keeps a ramp into a garage under a house in its tunnel, and the corridors on from it under the ground", () => {
+  // a ramp mostly under a house (e 5 .. 24), out of it on into the garage's corridor at level -1 to a lift, up there at level 0
+  const ramp: OverpassResponse["elements"] = [
+    { type: "way", id: 90, tags: { highway: "service", tunnel: "yes", layer: "-1" }, geometry: [at(0, 0), at(25, 0)] },
+    { type: "way", id: 91, tags: { building: "apartments" }, geometry: [at(5, -10), at(24, -10), at(24, 10), at(5, 10), at(5, -10)] },
+  ];
+  const corridors: OverpassResponse["elements"] = [
+    { type: "way", id: 92, tags: { highway: "corridor", indoor: "yes", layer: "-1", level: "-1" }, geometry: [at(25, 0), at(45, 0)] },
+    { type: "way", id: 93, tags: { highway: "corridor", indoor: "yes", level: "0" }, geometry: [at(45, 0), at(48, 0)] },
+  ];
+  const { features } = parseOsm([...ramp, ...corridors], origin);
+  assert.deepEqual(features.roads.map((r) => [r.osm, r.tunnel]), [["w90", true], ["w92", true], ["w93", false]]);
+  assert.equal(features.buildings[0].passages, undefined);
+  // without them the ramp is taken for a passage through the house
+  assert.deepEqual(parseOsm(ramp, origin).features.roads.map((r) => [r.osm, r.tunnel]), [["w90", false]]);
+  // out of a tunnel on a storey a corridor goes on at its level into a building, and up in it
+  const onStorey = ramp.map((e) => (e.id === 90 ? { ...e, tags: { ...e.tags, level: "-1" } } : e));
+  const corridor = parseOsm([...onStorey, ...corridors], origin).features.roads.find((r) => r.osm === "w92");
+  assert.equal(corridor?.tunnel, false);
+});
+
 test("parseOsm tells the ends of the ways indoors it leaves out, where a bridge may go into a building", () => {
   const { features, indoors } = parseOsm(
     [
