@@ -53,7 +53,7 @@ test("applyRegister replaces estimated heights and sets materials from the point
   const at = (e: number, n: number, floors?: number, facade?: string, use?: BuildingUse, year?: number): RegisterBuilding => ({ longitude: e, latitude: n, floors, facade, use, year });
   const register = [at(2, 2, 2, "wood", "house", 1950), at(8, 8, 5, "brick", "apartments", 1912), at(9, 1, 1, "brick", "apartments"), at(25, 5, 4, "concrete", undefined, 1980), at(100, 100, 3)];
   const match = applyRegister([estimated, tagged, empty], register, (r) => [r.longitude, r.latitude]);
-  assert.deepEqual(match, { matched: 2, heights: 1, materials: 1, frames: 0, unmatched: 1, elsewhere: 0 });
+  assert.deepEqual(match, { matched: 2, heights: 1, materials: 1, frames: 0, unmatched: 1, elsewhere: 0, attics: 0, uncounted: 0 });
   // the most storeys and the most common facade win
   assert.equal(estimated.height, 15);
   assert.equal(estimated.heightEstimated, undefined);
@@ -132,4 +132,26 @@ test("applyRegister takes no storeys from a register building mostly elsewhere, 
   // the same building in the first house alone is mostly elsewhere
   const alone = square(20, 10);
   assert.equal(applyRegister([alone], [{ longitude: 25, latitude: 5, floors: 2, area: 1700 }], (r) => [r.longitude, r.latitude]).elsewhere, 1);
+});
+
+test("applyRegister gives the storeys its count leaves out to a guessed roof, or as storeys", () => {
+  // 10 m by 10 m each: a house under a guessed gabled roof, a flat-roofed one, and two whose area says nothing
+  const gabled = square(0, 10, { roofShape: "gabled", roofHeight: 2, roofHeightEstimated: true });
+  const flat = square(20, 10);
+  const counted = square(40, 10);
+  const elsewhere = square(60, 10);
+  const match = applyRegister(
+    [gabled, flat, counted, elsewhere],
+    [
+      { longitude: 5, latitude: 5, floors: 1, area: 160 },
+      { longitude: 25, latitude: 5, floors: 2, area: 300 },
+      { longitude: 45, latitude: 5, floors: 2, area: 230 },
+      { longitude: 65, latitude: 5, floors: 1, area: 400 },
+    ],
+    (r) => [r.longitude, r.latitude],
+  );
+  assert.deepEqual([match.attics, match.uncounted], [1, 1]);
+  assert.deepEqual([gabled.levels, gabled.roofLevels, gabled.roofHeight, gabled.height], [1, 1, 3, 6]);
+  assert.deepEqual([flat.levels, flat.height], [3, 9]);
+  assert.deepEqual([counted.levels, counted.height, elsewhere.levels, elsewhere.height], [2, 6, 1, 3]);
 });
