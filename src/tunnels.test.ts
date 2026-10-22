@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { Point, Polygon } from "./geometry.ts";
 import type { Building, MapFeatures, Rail, Road } from "./osm.ts";
 import { defined } from "./testing.ts";
-import { BED_M, densify, fitRoomsUnderDecks, portalWallsAt, RAIL_CLEARANCE_M, raiseToWalls, ROAD_CLEARANCE_M, roomHeight, ROOF_M, setTunnelFloors, setTunnelRooms, uncoverAtGrade, WATER_DEPTH_M } from "./tunnels.ts";
+import { BED_M, densify, fitRoomsUnderDecks, openPortals, portalWallsAt, RAIL_CLEARANCE_M, raiseToWalls, ROAD_CLEARANCE_M, roomHeight, ROOF_M, setTunnelFloors, setTunnelRooms, uncoverAtGrade, WATER_DEPTH_M } from "./tunnels.ts";
 
 function road(osm: string, line: Point[], extra: Partial<Road> = {}): Road {
   return { osm, kind: "primary", width: 8, layer: 0, bridge: false, tunnel: false, line, ...extra };
@@ -544,4 +544,82 @@ test("a tunnel's floor does not depend on tunnels crossing elsewhere: each group
     return [a.floor, b.floor].map((floor) => floor?.map((v) => Math.round(v * 100) / 100));
   };
   assert.deepEqual(floors(false), floors(true));
+});
+
+test("a ramp down from a portal in a building goes down at one steady grade, however steep; from a portal in the open, as before", () => {
+  // a 25 m ramp down from a street at 100 on level ground, to a dead end where a corridor goes on
+  const floors = (building: "over" | "small" | "none") => {
+    const ramp = road("w1", [[0, 0], [25, 0]], { kind: "service", width: 4, tunnel: true, layer: -1 });
+    const corridor = road("w2", [[25, 0], [25, 20]], { kind: "corridor", width: 3, tunnel: true, layer: -1 });
+    const map = features([road("w3", [[-20, 0], [0, 0]], { kind: "service", width: 4 }), ramp, corridor]);
+    // a house over the ramp, or a small one only around its portal, which the ramp goes away from
+    const outer: Point[] = building === "over" ? [[0, -10], [30, -10], [30, 30], [0, 30]] : [[-3, -3], [3, -3], [3, 3], [-3, 3]];
+    if (building !== "none") {
+      map.buildings.push({ osm: "w9", kind: "apartments", part: false, hasParts: false, height: 20, minHeight: 0, polygon: { outer, holes: [] } });
+    }
+    const { basements } = setTunnelFloors(map, () => 100);
+    const floor = defined(ramp.floor);
+    const along = ramp.line.map(([e]) => e);
+    return { grades: floor.slice(1).map((f, i) => (floor[i] - f) / (along[i + 1] - along[i])), basements: basements.map((w) => w.osm) };
+  };
+  const steady = floors("over");
+  const grade = (100 - (100 - (ROOF_M + ROAD_CLEARANCE_M) * (25 / 30))) / 25;
+  for (const g of steady.grades) {
+    assert.ok(Math.abs(g - grade) < 0.01, `${g} is the steady ${grade}`);
+  }
+  // they go down into a basement, the corridor on from the ramp too
+  assert.deepEqual(steady.basements, ["w1", "w2"]);
+  // in the open, past the first step down no steeper than 7 %
+  const open = floors("none");
+  assert.ok(open.grades[0] > grade);
+  for (const g of open.grades.slice(1)) {
+    assert.ok(g <= 0.07 + 1e-9, `${g}`);
+  }
+  assert.deepEqual(open.basements, []);
+  assert.deepEqual(floors("small"), open);
+});
+
+test("a ramp down into a basement opens the walls it crosses with its room over their lowest ground, from its floor there", () => {
+  // a house from e = 0 to 20, n = 0 to 30, the ramp in at its corner from a way at 100 and under its east wall
+  const house = (): Building => ({ osm: "w9", kind: "apartments", part: false, hasParts: false, height: 20, minHeight: 0, polygon: { outer: [[0, 0], [20, 0], [20, 30], [0, 30]], holes: [] } });
+  const approach = road("w2", [[-10, -10], [0, 0]], { kind: "service", width: 4 });
+  const ground = () => 100;
+  const shallow = house();
+  const ramp = road("w1", [[0, 0], [25, 25]], { kind: "service", width: 4, tunnel: true, layer: -1, floor: [100, 95] });
+  assert.equal(openPortals([shallow], [ramp], [ramp, approach], ground) > 0, true);
+  const openings = defined(shallow.passages);
+  const at = (o: (typeof openings)[number]) => [(o.from[0] + o.to[0]) / 2, (o.from[1] + o.to[1]) / 2];
+  const portal = openings.filter((o) => Math.hypot(...at(o)) < 4);
+  const east = openings.filter((o) => o.from[0] === 20 && o.to[0] === 20);
+  assert.ok(portal.length > 0 && east.length > 0);
+  assert.equal(portal.length + east.length, openings.length);
+  // the floor at the opening's middle, a little in from the portal
+  for (const o of portal) {
+    assert.ok(Math.abs((o.ground ?? 0) - 100) < 0.3, `${o.ground}`);
+  }
+  // under the east wall at e = 20 the floor is 4/5 down the ramp
+  for (const o of east) {
+    assert.ok(Math.abs((o.ground ?? 0) - 96) < 0.2, `${o.ground}`);
+  }
+  for (const o of openings) {
+    assert.equal(o.height, roomHeight(ramp));
+  }
+  assert.equal(shallow.passageRooms, undefined);
+  // deeper there, its room under the house's lowest ground: the east wall stays whole
+  const deep = house();
+  const steep = road("w1", [[0, 0], [25, 25]], { kind: "service", width: 4, tunnel: true, layer: -1, floor: [100, 85] });
+  openPortals([deep], [steep], [steep, approach], ground);
+  assert.ok(defined(deep.passages).every((o) => Math.hypot(...at(o)) < 4));
+  // a short piece of wall left beside the opening, up to a corner, opens too; a long one stays
+  const notched: Building = { ...house(), polygon: { outer: [[0, 0], [3, 0], [3, -1], [20, -1], [20, 30], [0, 30]], holes: [] } };
+  openPortals([notched], [ramp], [ramp, approach], ground);
+  const ends = defined(notched.passages).flatMap((o) => [o.from, o.to]);
+  assert.ok(ends.some(([e, n]) => e === 3 && n === 0), `${JSON.stringify(ends)} reach the corner at (3, 0)`);
+  assert.ok(!ends.some(([e, n]) => e === 0 && n === 30), "the long west wall stays");
+  // a way without a floor, or crossing no wall: none
+  const closed = house();
+  const noFloor = road("w5", [[0, 0], [25, 25]], { kind: "service", width: 4, tunnel: true, layer: -1 });
+  const inside = road("w6", [[5, 5], [15, 15]], { kind: "corridor", width: 3, tunnel: true, layer: -1, floor: [95, 95] });
+  assert.equal(openPortals([closed], [noFloor, inside], [noFloor, inside, approach], ground), 0);
+  assert.equal(closed.passages, undefined);
 });

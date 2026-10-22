@@ -950,8 +950,10 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   // out through a building): they become passages, starting OUT_OF_TUNNEL_M on so the wall stays whole
   // where they come up from under the ground. Those on storeys under the ground out of a tunnel on no storey (a
   // ramp down into a basement) go on in the tunnel, and so do the ways on from them; out of a tunnel on a storey
-  // they go on at its level into a building and up in it.
+  // they go on at its level into a building and up in it. Out of a basement, a way only on storeys over it goes on
+  // from a lift, which OSM does not have: it is left out too.
   const belowGround = (r: Road) => (levels.get(r) ?? [0]).every((storey) => storey < 0);
+  const overGround = (r: Road) => (levels.get(r) ?? [0]).every((storey) => storey >= 0);
   const reached = new Map<string, number>();
   // the points from which ways indoors under the ground go on under it, and the ends of those that do
   const under = new Set<string>();
@@ -970,7 +972,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
     for (const r of indoors) {
       const ends = [r.line[0], r.line[r.line.length - 1]].map(pointKey);
       const from = Math.min(...ends.map((k) => reached.get(k) ?? Infinity));
-      if (kept.has(r) || from >= INDOOR_REACH_M) {
+      if (kept.has(r) || from >= INDOOR_REACH_M || (overGround(r) && ends.some((k) => basements.has(k)))) {
         continue;
       }
       kept.add(r);

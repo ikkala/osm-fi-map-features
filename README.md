@@ -240,7 +240,13 @@ when it is at most 60 m long (an arcade, along a building's front, may be longer
 neither end is more than 1 m inside a building (unless, for a covered way on the ground floor, not below the ground
 nor on a `level` above, another way goes on from there: steps up under a building to an arcade), and at least half
 of it is inside buildings. A tunnel going on so into ways indoors under the ground (below) goes into a basement,
-such as a ramp into a car park under a house, and is no passage.
+such as a ramp into a car park under a house, and is no passage. Where such a tunnel's portal is in the house's wall
+or inside it, and the tunnel goes in under the house, it and the tunnels on from it open the walls they cross with
+their room over the building's lowest ground (which its walls reach down to): at the portal, under another wall, into
+a building a corridor comes up under; as wide as the tunnel and as tall as its room, from its floor there up, without
+a room, and on to a corner less than 2 m beyond, rather than leave a piece of wall standing like a door ajar. Out of a
+basement, ways indoors only
+on storeys over it go on from a lift, which OSM does not map: they are left out, and the lift's house stays shut.
 A railway (not in a tunnel or on a bridge) running into a building, such as a depot whose doors OSM does not map,
 opens its walls 4.5 m wide, and a building lower than 6 m becomes 6 m tall, without a room.
 
@@ -294,7 +300,8 @@ lowest within 4 m outside, along the ways leading on and on past a short one, si
 the top of its wall), a junction underground
 hanging between its branches' ends by distance, but at least room and a 1 m roof under the ground (3 m of
 room for people, 4.8 m for vehicles or lower by `maxheight`, 6 m for trains; reached 30 m in from a portal; under water areas 5 m more, the water's 3 m, since the model has its surface, and 2 m of its bed over the roof, wherever water is over the room's width) and no
-steeper than 7 %. The model smooths a portal's wall into a slope over the tunnel's end, so the ground over the
+steeper than 7 %, but from a portal in a house that the tunnel goes in under (a ramp down into a basement, with no cut
+in front of it) at one steady grade down to where it must be, however steep. The model smooths a portal's wall into a slope over the tunnel's end, so the ground over the
 room (in the tiles' heights too) is raised from the portal 6 m in to the ground there, and so is the ground under a
 way over that, across its width and as far along it as the model is lower (the cut in front of a portal is often
 wider than the tunnel), at most 10 m either way: a way over the portal stays level. Under a way over it (where the way's width and the tunnel's room overlap, but not at the tunnel's
