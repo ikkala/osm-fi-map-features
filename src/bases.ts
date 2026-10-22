@@ -25,8 +25,8 @@ const ROOF_THICKNESS_M = 0.3;
  * a railway platform (an area with a top) under them; one of an estimated height is made tall enough for
  * ROOM_UNDER_ROOF_M over the ways under it, standing at its lowest corner on a slope. A carport stands as a
  * building does, so there is room for a car under all of it on a slope. A building or part with a base also gets its
- * own low: the lowest ground along its outline and holes, which its walls reach down to. Returns how many buildings
- * got a base.
+ * own low: the lowest ground along its outline and holes, which its walls reach down to, from lowAt (the ground
+ * stepped at the buildings' walls, buildingSteps.ts). Returns how many buildings got a base.
  */
 export function setBuildingBases(
   buildings: Building[],
@@ -35,6 +35,7 @@ export function setBuildingBases(
   raised: Building[] = [],
   platforms: Area[] = [],
   ways: { line: Point[] }[] = [],
+  lowAt: (e: number, n: number) => number | undefined = heightAt,
 ): number {
   const baseOf = (b: Building, entrances: Entrance[]) => {
     const range = groundRange(b.polygon.outer, heightAt);
@@ -92,7 +93,7 @@ export function setBuildingBases(
     const base = outline ? outlineBases.get(outline) : baseOf(b, b.entrances ?? []);
     if (base !== undefined) {
       b.base = base;
-      const low = lowestGround(b.polygon, heightAt);
+      const low = lowestGround(b.polygon, lowAt);
       if (low !== undefined) {
         b.low = low;
       }

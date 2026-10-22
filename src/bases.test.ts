@@ -151,3 +151,11 @@ test("an open roof of an estimated height is raised to leave room over the ways 
   // a tagged height stays
   assert.equal(tagged.height, 2.5);
 });
+
+test("setBuildingBases stands a building on its ground, its walls reaching down to the low the ground stepped at it has", () => {
+  const house = square(0, 10);
+  // the ground stepped down a meter outside its walls
+  setBuildingBases([house], heightAt, [], [], [], [], (e, n) => (heightAt(e, n) ?? 0) - 1);
+  assert.equal(house.base, 105.5);
+  assert.equal(house.low, 99);
+});

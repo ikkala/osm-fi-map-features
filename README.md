@@ -248,6 +248,18 @@ the same wall (or a retaining wall joined to it) within 15 m on both sides, the 
 which holds up the lower ground there: the step reaches only as far in as theirs, up to the model's height there, or
 not at all where that is less than 0.5 m over the foot. Toward a wall's free end (not one another retaining wall goes on from) the step eases in over 4 m.
 
+A building's walls step the ground the same way. The model has no ground under a building, only a slope across it
+from the ground around, so where a building is cut into a slope the slope goes on out of its wall, a heap of ground
+against it: outside a wall the ground falling out of it to a foot within 8 m, at least 0.5 m lower, where it rises
+on into the building (0.2 m over its first meter), is lowered to that foot, also on the wall's own line; the ground
+inside is left as it is (`src/buildingSteps.ts`). A building on the edge of a bank, its ground level inside, steps
+nothing, nor does a wall whose slope falls to the water (a water area within 2 m past its foot), has a dam on it or
+steps (`highway=steps`) climbing it, which tell it is the ground's. Neither do walls not standing on the ground
+(shelters, lattice towers, buildings raised off it; a building's parts count their outline's walls), nor a wall's
+stretches with another building outside them or within a meter beyond the half width of a way going through the
+wall. The buildings stand at the base the ground had before, their walls reaching down to the stepped ground (`low`).
+A tile has these stretches (`buildingSteps`), its buildings' and those of the buildings around it within 8 m of it.
+
 A road tunnel for vehicles gets a room (`room`) lower than a road's 4.8 m where `maxheight` is lower, at least
 2.2 m: the tallest `maxheight` among the vehicles' tunnels joined to it at their points, so a car park's aisles behind
 its entrances' signs, and tunnels sharing a hall, share it; so does a walkway's tunnel meeting one or beside it.

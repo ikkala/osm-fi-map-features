@@ -40,6 +40,11 @@ export interface Tile extends TileKey, MapFeatures {
   heights?: Heights;
   /** The waterways in the tile's water, where the elevation model was there to level it */
   waterways?: Waterway[];
+  /**
+   * The stretches of buildings' walls, the tile's and those around it, where the ground steps down outside them
+   * (buildingSteps.ts): from a to b with the building on the left, its outside on the right
+   */
+  buildingSteps?: { a: Point; b: Point }[];
 }
 
 /** Areas are simplified to this many meters before cutting. */
