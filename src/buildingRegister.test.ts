@@ -23,7 +23,7 @@ test("parseBuildingRegister keeps standing buildings with their storeys, facade,
     features: [
       {
         geometry: point(23.1, 61.1),
-        properties: { kerrosluku: 4, julkisivumateriaali: "Tiili", kantavien_rakenteiden_rakennusaine: "Betoni", paaasiallinen_kayttotarkoitus: "Kerrostalo", valmistumispaivamaara: "1962-11-30Z" },
+        properties: { kerrosluku: 4, kokonaisala: 3200, julkisivumateriaali: "Tiili", kantavien_rakenteiden_rakennusaine: "Betoni", paaasiallinen_kayttotarkoitus: "Kerrostalo", valmistumispaivamaara: "1962-11-30Z" },
       },
       // 29 February 1904 stands for an unknown date, and "Muu" for no known material; a frame without a facade
       {
@@ -40,7 +40,7 @@ test("parseBuildingRegister keeps standing buildings with their storeys, facade,
     ],
   });
   assert.deepEqual(parsed, [
-    { longitude: 23.1, latitude: 61.1, floors: 4, facade: "brick", frame: "concrete", use: "apartments", year: 1962 },
+    { longitude: 23.1, latitude: 61.1, floors: 4, area: 3200, facade: "brick", frame: "concrete", use: "apartments", year: 1962 },
     { longitude: 23.2, latitude: 61.2, frame: "wood" },
     { longitude: 23.4, latitude: 61.4, floors: 6, use: "work" },
   ]);
@@ -53,7 +53,7 @@ test("applyRegister replaces estimated heights and sets materials from the point
   const at = (e: number, n: number, floors?: number, facade?: string, use?: BuildingUse, year?: number): RegisterBuilding => ({ longitude: e, latitude: n, floors, facade, use, year });
   const register = [at(2, 2, 2, "wood", "house", 1950), at(8, 8, 5, "brick", "apartments", 1912), at(9, 1, 1, "brick", "apartments"), at(25, 5, 4, "concrete", undefined, 1980), at(100, 100, 3)];
   const match = applyRegister([estimated, tagged, empty], register, (r) => [r.longitude, r.latitude]);
-  assert.deepEqual(match, { matched: 2, heights: 1, materials: 1, frames: 0, unmatched: 1 });
+  assert.deepEqual(match, { matched: 2, heights: 1, materials: 1, frames: 0, unmatched: 1, elsewhere: 0 });
   // the most storeys and the most common facade win
   assert.equal(estimated.height, 15);
   assert.equal(estimated.heightEstimated, undefined);
@@ -115,4 +115,21 @@ test("applyRegister replaces a guessed material", () => {
   const match = applyRegister([chimney], [{ longitude: 2, latitude: 2, facade: "concrete" }], (r) => [r.longitude, r.latitude]);
   assert.equal(match.materials, 1);
   assert.deepEqual([chimney.material, chimney.materialEstimated], ["concrete", undefined]);
+});
+
+test("applyRegister takes no storeys from a register building mostly elsewhere, but from one spanning a row", () => {
+  // a car park's kiosk of 10 m by 10 m whose register building has three storeys of 3500 m² under the ground
+  const kiosk = square(0, 10);
+  // a row of three houses of 10 m by 10 m sharing walls, one register building of two storeys for them all
+  const row = [square(20, 10), square(30, 10), square(40, 10)];
+  const match = applyRegister([kiosk, ...row], [{ longitude: 5, latitude: 5, floors: 3, area: 10500 }, { longitude: 25, latitude: 5, floors: 2, area: 600 }], (r) => [
+    r.longitude,
+    r.latitude,
+  ]);
+  assert.equal(match.elsewhere, 1);
+  assert.deepEqual([kiosk.levels, kiosk.heightEstimated], [undefined, true]);
+  assert.equal(row[0].levels, 2);
+  // the same building in the first house alone is mostly elsewhere
+  const alone = square(20, 10);
+  assert.equal(applyRegister([alone], [{ longitude: 25, latitude: 5, floors: 2, area: 1700 }], (r) => [r.longitude, r.latitude]).elsewhere, 1);
 });

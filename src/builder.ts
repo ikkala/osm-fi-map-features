@@ -320,7 +320,8 @@ export class MapBuilder {
       const match = applyRegister(features.buildings, register, (r) => toMeters(r.latitude, r.longitude));
       logger.log(
         `building register: ${register.length} buildings (${registerCached ? "cached" : "fetched"}), ` +
-          `${match.heights} heights, ${match.materials} wall materials and ${match.frames} frame materials set, ${match.unmatched} inside no OSM building`,
+          `${match.heights} heights, ${match.materials} wall materials and ${match.frames} frame materials set, ${match.unmatched} inside no OSM building, ` +
+          `${match.elsewhere} mostly elsewhere (their storeys not taken)`,
       );
       if (match.matched > 0) {
         otherAttributions.push(BUILDING_REGISTER_ATTRIBUTION);

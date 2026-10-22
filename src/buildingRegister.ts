@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
 import { bounds, LEVEL_HEIGHT_M, partOutlines, type Building, type BuildingUse, type GeoBox } from "./osm.ts";
-import { pointInPolygon, type Point } from "./geometry.ts";
+import { pointInPolygon, pointKey, ringArea, type Point } from "./geometry.ts";
 import { field, items, optionalNumber, optionalString } from "./json.ts";
 import { inGeoBox } from "./projection.ts";
 import { allows } from "./startDates.ts";
@@ -53,6 +53,8 @@ export interface RegisterBuilding {
   latitude: number;
   longitude: number;
   floors?: number;
+  /** kokonaisala: the floor area of all its storeys (m²) */
+  area?: number;
   /** brick | concrete | wood | metal | stone */
   facade?: string;
   /** The load-bearing frame's material: brick | concrete | steel | wood */
@@ -81,6 +83,7 @@ export function parseBuildingRegister(response: unknown): RegisterBuilding[] {
       continue;
     }
     const floors = optionalNumber(field(feature, "properties", "kerrosluku"));
+    const area = optionalNumber(field(feature, "properties", "kokonaisala"));
     const facade = FACADES[optionalString(field(feature, "properties", "julkisivumateriaali")) ?? ""];
     const frame = FRAMES[optionalString(field(feature, "properties", "kantavien_rakenteiden_rakennusaine")) ?? ""];
     const use = USES[optionalString(field(feature, "properties", "paaasiallinen_kayttotarkoitus")) ?? ""];
@@ -89,6 +92,7 @@ export function parseBuildingRegister(response: unknown): RegisterBuilding[] {
       longitude,
       latitude,
       ...(floors !== undefined && floors > 0 && { floors }),
+      ...(area !== undefined && area > 0 && { area }),
       ...(facade && { facade }),
       ...(frame && { frame }),
       ...(use && { use }),
@@ -161,13 +165,22 @@ export interface RegisterMatch {
   frames: number;
   /** Register buildings inside no OSM outline */
   unmatched: number;
+  /** OSM buildings whose register buildings are mostly elsewhere, their storeys not taken */
+  elsewhere: number;
 }
+
+/**
+ * A register building with this many times the floor area its outline holds on its storeys (and the outlines
+ * adjoining it without one of their own, which it may span) is mostly elsewhere: a car park under the ground
+ * whose point is in its entrance's kiosk. Its storeys are not the outline's.
+ */
+const ELSEWHERE_SHARE = 8;
 
 /**
  * Gives OSM buildings the storeys, facades, frames, uses and years of the register buildings inside them (most
  * storeys, most common facade, frame and use, earliest year); a part in an outline gets nothing, its outline does.
- * OSM values and heights guessed by type are kept;
- * toPoint maps a register building to map meters.
+ * OSM values and heights guessed by type are kept, and storeys of register buildings mostly elsewhere (see
+ * ELSEWHERE_SHARE) are not taken; toPoint maps a register building to map meters.
  */
 export function applyRegister(buildings: Building[], register: RegisterBuilding[], toPoint: (r: RegisterBuilding) => Point): RegisterMatch {
   const inside = new Map<Building, RegisterBuilding[]>();
@@ -188,9 +201,16 @@ export function applyRegister(buildings: Building[], register: RegisterBuilding[
       unmatched++;
     }
   }
-  const result: RegisterMatch = { matched: inside.size, heights: 0, materials: 0, frames: 0, unmatched };
+  const result: RegisterMatch = { matched: inside.size, heights: 0, materials: 0, frames: 0, unmatched, elsewhere: 0 };
+  const groundArea = adjoiningArea(boxes.map(({ b }) => b), (b) => inside.has(b));
   for (const [b, rs] of inside) {
-    const floors = Math.max(0, ...rs.map((r) => r.floors ?? 0));
+    const area = rs.reduce((sum, r) => sum + (r.area ?? 0), 0);
+    const most = Math.max(0, ...rs.map((r) => r.floors ?? 0));
+    const elsewhere = most > 0 && area > groundArea(b) * most * ELSEWHERE_SHARE;
+    if (elsewhere) {
+      result.elsewhere++;
+    }
+    const floors = elsewhere ? 0 : most;
     if (b.heightEstimated && !b.heightByType && !b.part && floors > 0) {
       b.height = Math.max(floors * LEVEL_HEIGHT_M + (b.roofHeight ?? 0), b.minHeight + LEVEL_HEIGHT_M);
       delete b.heightEstimated;
@@ -226,6 +246,35 @@ export function applyRegister(buildings: Building[], register: RegisterBuilding[
     }
   }
   return result;
+}
+
+/**
+ * The floor area of an outline and of those adjoining it (sharing a point), and so on, that have no register
+ * building of their own (hasOwn): one register building may stand for several outlines, such as a row of houses.
+ */
+function adjoiningArea(outlines: Building[], hasOwn: (b: Building) => boolean): (b: Building) => number {
+  const byPoint = new Map<string, Building[]>();
+  for (const b of outlines) {
+    for (const p of b.polygon.outer) {
+      byPoint.set(pointKey(p), [...(byPoint.get(pointKey(p)) ?? []), b]);
+    }
+  }
+  const area = (b: Building) => Math.abs(ringArea(b.polygon.outer)) - b.polygon.holes.reduce((sum, h) => sum + Math.abs(ringArea(h)), 0);
+  return (start) => {
+    const group = new Set([start]);
+    const todo = [start];
+    for (let b = todo.pop(); b !== undefined; b = todo.pop()) {
+      for (const p of b.polygon.outer) {
+        for (const next of byPoint.get(pointKey(p)) ?? []) {
+          if (!group.has(next) && !hasOwn(next)) {
+            group.add(next);
+            todo.push(next);
+          }
+        }
+      }
+    }
+    return [...group].reduce((sum, b) => sum + area(b), 0);
+  };
 }
 
 function mostCommon<T extends string>(values: T[]): T | undefined {
