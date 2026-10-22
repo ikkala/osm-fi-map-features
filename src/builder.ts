@@ -5,6 +5,7 @@ import { applyAges } from "./ages.ts";
 import { applyRegister, BUILDING_REGISTER_ATTRIBUTION, fetchBuildingRegister } from "./buildingRegister.ts";
 import { leaveOutOnDecks, openBarriers } from "./barriers.ts";
 import { MAX_PLINTH_M, setBuildingBases } from "./bases.ts";
+import { buildingSteps, cutBuildingSteps } from "./buildingSteps.ts";
 import { setBridgeDecks } from "./bridges.ts";
 import { setOutlineDecks, standOnDecks } from "./decks.ts";
 import { bicycleParkingQuery, parseBicycleParking } from "./bicycleParking.ts";
@@ -100,6 +101,7 @@ interface Built {
         grid: ElevationGrid;
         toTm: (e: number, n: number) => [number, number];
         steps: GroundStep[];
+        buildingSteps: GroundStep[];
         wallsAt?: (e: number, n: number) => number | undefined;
       }
     | undefined;
@@ -140,10 +142,13 @@ export class MapBuilder {
     if (!tile || !built.ground || tile.heights) {
       return tile;
     }
-    const { grid, toTm, steps, wallsAt } = built.ground;
+    const { grid, toTm, steps, buildingSteps: walls, wallsAt } = built.ground;
     const at = latticeProjection(tile, this.#options.tileSizeM, TM_LATTICE_M, toTm);
     const water = built.water;
-    const model = stepAtWalls((e: number, n: number) => this.#corrected(e, n, sampleElevation(grid, ...at(e, n))), steps);
+    const model = stepAtWalls(
+      stepAtWalls((e: number, n: number) => this.#corrected(e, n, sampleElevation(grid, ...at(e, n))), steps),
+      walls,
+    );
     const ground = wallsAt ? raiseToWalls(model, wallsAt) : model;
     const { heights, missing } = tileHeights(tile, this.#options.tileSizeM, HEIGHT_STEP_M, (e, n) => water?.levelAt([e, n]) ?? ground(e, n));
     if (missing > 0) {
@@ -230,6 +235,8 @@ export class MapBuilder {
       barrier.line = simplifyLine(barrier.line, LINE_TOLERANCE_M);
     }
     let heightAt: ((e: number, n: number) => number | undefined) | undefined;
+    // the ground stepped at the retaining walls only, which the buildings' walls step after the tunnels and bridges
+    let wallStepped: ((e: number, n: number) => number | undefined) | undefined;
     let ground: Built["ground"];
     if (mmlApiKey) {
       // the corners' TM35FIN box covers the tiles, turned or not
@@ -251,7 +258,8 @@ export class MapBuilder {
       const stepping = steps.filter((s) => s.footOut > 0 || s.topIn > 0);
       logger.log(`${new Set(stepping.map((s) => s.wall)).size} retaining walls step the ground, in ${stepping.length} stretches`);
       heightAt = stepAtWalls(modelAt, steps);
-      ground = { grid, toTm, steps };
+      wallStepped = heightAt;
+      ground = { grid, toTm, steps, buildingSteps: [] };
       logger.log(`${setTunnelRooms(features.roads)} tunnels get a lower room by their maxheight`);
       // tunnels in cuts first: the ways over them become bridges
       const covered = coverCutTunnels(features, heightAt);
@@ -262,7 +270,7 @@ export class MapBuilder {
       // from here on, and in the tiles' heights, the ground over the tunnels' ends is raised to their portals' walls
       const wallsAt = portalWallsAt(tunnels.walls);
       heightAt = raiseToWalls(heightAt, wallsAt);
-      ground = { grid, toTm, steps, wallsAt };
+      ground = { grid, toTm, steps, buildingSteps: [], wallsAt };
       // before cutting into tiles, so a bridge's deck goes from end to end
       const ramps = (lines: { bridge: boolean; deck?: number[] }[]) => lines.filter((l) => l.deck && !l.bridge).length;
       const stepped = setBridgeDecks(features.roads, heightAt, indoors, throughBuildings) + setBridgeDecks(features.rails, heightAt, indoors);
@@ -415,12 +423,27 @@ export class MapBuilder {
     } catch (err) {
       logger.warn(`warning: no bicycle parking: ${err instanceof Error ? err.message : String(err)}`);
     }
+    // the ground cut or filled at buildings' walls into heaps outside them, under the ground raised over the portals:
+    // the buildings stand where they did, their walls reaching down to it, and from them on it is the ground
+    let buildingStepped = heightAt;
+    if (heightAt && wallStepped && ground) {
+      const water = features.areas.filter((a) => a.kind === "water").map((a) => a.polygon);
+      const dams = (features.dams ?? []).flatMap((d) => {
+        const line = d.outline ?? d.line;
+        return line ? [line] : [];
+      });
+      const walls = buildingSteps(features.buildings, [...features.roads, ...features.rails], heightAt, water, dams);
+      logger.log(`${new Set(walls.map((s) => s.wall)).size} buildings step the ground outside their walls, in ${walls.length} stretches`);
+      const stepped = stepAtWalls(wallStepped, walls);
+      buildingStepped = ground.wallsAt ? raiseToWalls(stepped, ground.wallsAt) : stepped;
+      ground = { ...ground, buildingSteps: walls };
+    }
     if (heightAt) {
       const lids = [...features.roads, ...features.rails].flatMap((w) => (w.lid ? [{ line: w.line, lid: w.lid }] : []));
       const raised: Building[] = [];
       const platforms = features.areas.filter((a) => a.kind === "platform");
       const ways = [...features.roads, ...features.rails].filter((w) => !w.tunnel && !w.bridge);
-      const based = setBuildingBases(features.buildings, heightAt, lids, raised, platforms, ways);
+      const based = setBuildingBases(features.buildings, heightAt, lids, raised, platforms, ways, buildingStepped);
       logger.log(`${based} buildings stand at their OSM entrance or highest ground (at most ${MAX_PLINTH_M} m above their lowest)`);
       // buildings raised to a door up a slope are stair halls: open them where covered ways come in
       const openings = openDoorways(raised, covered, heightAt);
@@ -447,6 +470,7 @@ export class MapBuilder {
       }
     }
     // TODO: buildings with entrances on several levels, or steps at the door, stand at the wrong one.
+    heightAt = buildingStepped;
 
     // after the businesses and doors that draw people
     const footfall = estimateFootfall(features.roads, features.buildings);
@@ -525,6 +549,9 @@ export class MapBuilder {
     const tiles = new Map(cutIntoTiles(features, keys, size).map((tile) => [tileName(tile), tile]));
     if (water) {
       cutWaterways(tiles, water.waterways, size);
+    }
+    if (ground) {
+      cutBuildingSteps(tiles, ground.buildingSteps, size);
     }
     const attributions = [OSM_ATTRIBUTION, ...(heightAt ? [ELEVATION_ATTRIBUTION] : []), ...otherAttributions];
     return { info: { origin, tileSize: size, tiles: keys, osmTimestamp, attributions }, tiles, heightAt, ground, water };

@@ -7,13 +7,13 @@ import { pointKey } from "./geometry.ts";
 import type { Barrier } from "./osm.ts";
 
 /** A wall is looked at in stretches this long at most (m) */
-const STRETCH_M = 1;
+export const STRETCH_M = 1;
 /** The slope is followed out from a wall this far at most on either side (m), a meter at a time */
-const REACH_M = 8;
+export const REACH_M = 8;
 /** The slope ends where the ground climbs or falls less than this a meter, over two meters */
-const FLAT_M = 0.2;
+export const FLAT_M = 0.2;
 /** A stretch steps the ground only where its sides differ at least this much (m) */
-const MIN_STEP_M = 0.5;
+export const MIN_STEP_M = 0.5;
 /** At a wall's free end the step eases in over this length (m) */
 const EASE_M = 4;
 /**
@@ -186,7 +186,7 @@ function stepOnlyTheWall(line: { step: GroundStep; up: number[] }[]): void {
  * How far out (m) the ground stops falling (sign -1) or climbing (1) by at least FLAT_M a meter, for two meters on;
  * undefined where it does not within the heights (a bank going on past the wall, not the wall smoothed)
  */
-function slopeEnd(heights: number[], sign: number): number | undefined {
+export function slopeEnd(heights: number[], sign: number): number | undefined {
   for (let d = 0; d + 2 < heights.length; d++) {
     if ((heights[d + 1] - heights[d]) * sign < FLAT_M && (heights[d + 2] - heights[d + 1]) * sign < FLAT_M) {
       return d;
