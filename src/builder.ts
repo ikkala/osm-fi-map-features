@@ -23,6 +23,7 @@ import { parsePlayEquipment, placePlayEquipment, playgroundQuery } from "./playg
 import { fetchRoofColours, ORTHO_ATTRIBUTION } from "./ortho.ts";
 import { bounds, fetchOverpass, inheritFromOutlines, LEVEL_HEIGHT_M, NOT_FOR_VEHICLES, openDoorways, openRailHalls, overpassQuery, parseOsm, type Building, type GeoBox } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
+import { flightSteps, stepAtFlights, type FlightStep } from "./flights.ts";
 import { groundSteps, stepAtWalls, type GroundStep } from "./retainingWalls.ts";
 import { dropStepsInParts, setStaircaseDecks } from "./stairs.ts";
 import { placeStreetNodes } from "./streets.ts";
@@ -101,6 +102,7 @@ interface Built {
         grid: ElevationGrid;
         toTm: (e: number, n: number) => [number, number];
         steps: GroundStep[];
+        flights: FlightStep[];
         buildingSteps: GroundStep[];
         wallsAt?: (e: number, n: number) => number | undefined;
       }
@@ -142,11 +144,14 @@ export class MapBuilder {
     if (!tile || !built.ground || tile.heights) {
       return tile;
     }
-    const { grid, toTm, steps, buildingSteps: walls, wallsAt } = built.ground;
+    const { grid, toTm, steps, flights, buildingSteps: walls, wallsAt } = built.ground;
     const at = latticeProjection(tile, this.#options.tileSizeM, TM_LATTICE_M, toTm);
     const water = built.water;
     const model = stepAtWalls(
-      stepAtWalls((e: number, n: number) => this.#corrected(e, n, sampleElevation(grid, ...at(e, n))), steps),
+      stepAtFlights(
+        stepAtWalls((e: number, n: number) => this.#corrected(e, n, sampleElevation(grid, ...at(e, n))), steps),
+        flights,
+      ),
       walls,
     );
     const ground = wallsAt ? raiseToWalls(model, wallsAt) : model;
@@ -257,9 +262,12 @@ export class MapBuilder {
       const steps = groundSteps(features.barriers, modelAt);
       const stepping = steps.filter((s) => s.footOut > 0 || s.topIn > 0);
       logger.log(`${new Set(stepping.map((s) => s.wall)).size} retaining walls step the ground, in ${stepping.length} stretches`);
-      heightAt = stepAtWalls(modelAt, steps);
+      // and the edges flights of steps climb, a slab's or a terrace's, into slopes too
+      const flights = flightSteps(features.roads, stepAtWalls(modelAt, steps));
+      logger.log(`${flights.length} flights of steps step the ground the model smooths`);
+      heightAt = stepAtFlights(stepAtWalls(modelAt, steps), flights);
       wallStepped = heightAt;
-      ground = { grid, toTm, steps, buildingSteps: [] };
+      ground = { grid, toTm, steps, flights, buildingSteps: [] };
       logger.log(`${setTunnelRooms(features.roads)} tunnels get a lower room by their maxheight`);
       // tunnels in cuts first: the ways over them become bridges
       const covered = coverCutTunnels(features, heightAt);
@@ -272,7 +280,7 @@ export class MapBuilder {
       // from here on, and in the tiles' heights, the ground over the tunnels' ends is raised to their portals' walls
       const wallsAt = portalWallsAt(tunnels.walls);
       heightAt = raiseToWalls(heightAt, wallsAt);
-      ground = { grid, toTm, steps, buildingSteps: [], wallsAt };
+      ground = { grid, toTm, steps, flights, buildingSteps: [], wallsAt };
       // before cutting into tiles, so a bridge's deck goes from end to end
       const ramps = (lines: { bridge: boolean; deck?: number[] }[]) => lines.filter((l) => l.deck && !l.bridge).length;
       const stepped = setBridgeDecks(features.roads, heightAt, indoors, throughBuildings) + setBridgeDecks(features.rails, heightAt, indoors);

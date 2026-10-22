@@ -261,6 +261,13 @@ the same wall (or a retaining wall joined to it) within 15 m on both sides, the 
 which holds up the lower ground there: the step reaches only as far in as theirs, up to the model's height there, or
 not at all where that is less than 0.5 m over the foot. Toward a wall's free end (not one another retaining wall goes on from) the step eases in over 4 m.
 
+A flight of steps (`highway=steps`) up a slab's or a terrace's edge climbs a step the grid smooths too, so its ends
+are partway up a slope and climb less than its risers. Where a straight flight on the ground with a `step_count`
+climbs less in the model than 0.12 m a riser, and the ground found up to 4 m past its ends is at least 0.2 m further
+apart than its ends but no more than 0.2 m a riser, the ground steps along it (`src/flights.ts`): up to 3 m behind its
+top raised to the top found, under it straight down to its foot, and up to 3 m past its foot lowered to the foot
+found, across its width and eased in over a meter beside it.
+
 A building's walls step the ground the same way. The model has no ground under a building, only a slope across it
 from the ground around, so where a building is cut into a slope the slope goes on out of its wall, a heap of ground
 against it: outside a wall the ground falling out of it to a foot within 8 m, at least 0.5 m lower, where it rises
