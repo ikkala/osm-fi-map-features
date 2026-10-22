@@ -107,8 +107,11 @@ buildings (volumes mapped on top of each other).
 
 Buildings without `height` or `building:levels` in OSM get their storeys from the Finnish building register
 (`kerrosluku`), as Ryhti publishes it in the OGC API Features collection `avoimet_rakennukset` at
-`paikkatiedot.ymparisto.fi` (a point per building, matched to the OSM outline it is in; demolished ones left out),
-which also gives most buildings their facade material (brick, concrete, wood, ...; `julkisivumateriaali`) unless OSM
+`paikkatiedot.ymparisto.fi` (a point per building, matched to the OSM outline it is in; demolished ones left out).
+A register building with eight times the floor area of all its storeys (`kokonaisala`) that its outline holds on its
+storeys, with the outlines adjoining it that have no register building of their own (a row of houses may be one),
+is mostly elsewhere, such as a car park under the ground whose point is in its entrance's kiosk: its storeys are not
+the outline's and are not taken. The register also gives most buildings their facade material (brick, concrete, wood, ...; `julkisivumateriaali`) unless OSM
 has `building:material` or `material`, the material of their load-bearing frame (`frameMaterial`: wood, brick, concrete
 or steel; `kantavien_rakenteiden_rakennusaine`), also where the facade is not known, and their main use (`use`, see windows below). The rest get a guess: one storey for sheds
 and anything under 40 m², two for houses and anything under 150 m², three otherwise. Chimneys, towers, water towers,
