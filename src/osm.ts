@@ -943,11 +943,20 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
 
   // ways indoors are left out, except up to INDOOR_REACH_M on from a tunnel's end (how an underpass comes
   // out through a building): they become passages, starting OUT_OF_TUNNEL_M on so the wall stays whole
-  // where they come up from under the ground.
+  // where they come up from under the ground. Those on storeys under the ground out of a tunnel on no storey (a
+  // ramp down into a basement) go on in the tunnel, and so do the ways on from them; out of a tunnel on a storey
+  // they go on at its level into a building and up in it.
+  const belowGround = (r: Road) => (levels.get(r) ?? [0]).every((storey) => storey < 0);
   const reached = new Map<string, number>();
+  // the points from which ways indoors under the ground go on under it, and the ends of those that do
+  const under = new Set<string>();
+  const basements = new Set<string>();
   for (const r of features.roads.filter((r) => r.tunnel)) {
     for (const p of [r.line[0], r.line[r.line.length - 1]]) {
       reached.set(pointKey(p), 0);
+      if (!levels.has(r)) {
+        under.add(pointKey(p));
+      }
     }
   }
   const kept = new Set<Road>();
@@ -966,6 +975,14 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
         reached.set(k, Math.min(reached.get(k) ?? Infinity, to));
       }
       features.roads.push(r);
+      if (belowGround(r) && ends.some((k) => under.has(k))) {
+        r.tunnel = true;
+        for (const k of ends) {
+          under.add(k);
+          basements.add(k);
+        }
+        continue;
+      }
       const height = NOT_FOR_VEHICLES.has(r.kind) ? WALKWAY_PASSAGE_HEIGHT_M : PASSAGE_HEIGHT_M;
       const outward = reached.get(ends[1]) === 0 && reached.get(ends[0]) !== 0 ? [...r.line].reverse() : r.line;
       const line = from === 0 ? withoutStart(outward, OUT_OF_TUNNEL_M) : outward;
@@ -989,6 +1006,9 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
     }
   }
   for (const { road, passage, arcade } of maybePassages) {
+    if (road.tunnel && [road.line[0], road.line[road.line.length - 1]].some((p) => basements.has(pointKey(p)))) {
+      continue;
+    }
     const groundFloor = !road.tunnel && road.layer >= 0 && (levels.get(road) ?? [0]).every((storey) => storey === 0);
     const goesOn = (p: Point) => groundFloor && (ways.get(pointKey(p)) ?? 0) > 1;
     if (runsThroughBuildings(passage.line, features.buildings, arcade, goesOn)) {

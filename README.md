@@ -233,7 +233,8 @@ Passages are often tagged `tunnel=yes`, `covered=yes` or `covered=arcade` instea
 when it is at most 60 m long (an arcade, along a building's front, may be longer) and not deeper than `layer=-1`,
 neither end is more than 1 m inside a building (unless, for a covered way on the ground floor, not below the ground
 nor on a `level` above, another way goes on from there: steps up under a building to an arcade), and at least half
-of it is inside buildings.
+of it is inside buildings. A tunnel going on so into ways indoors under the ground (below) goes into a basement,
+such as a ramp into a car park under a house, and is no passage.
 A railway (not in a tunnel or on a bridge) running into a building, such as a depot whose doors OSM does not map,
 opens its walls 4.5 m wide, and a building lower than 6 m becomes 6 m tall, without a room.
 
@@ -307,7 +308,9 @@ from there, reaching the ground at most 8 m from the portal (beyond its wall the
 leaves them at least 4 m to rise in. A way ending at a ramp on its way (a path joining a cycleway going down to an
 underpass) ramps on from the ramp's floor there in the same way. A way leads on from a tunnel's end only on the tunnel's storey (`level`, when both have one): one on another
 goes on from a lift. Ways indoors (`indoor=yes`, and corridors, `highway=corridor`, tagged so or not) are left out,
-except up to 30 m on from a tunnel's end. Stairs leading on (`highway=steps`, also indoors), and corridors (on at the tunnel's level into a building), go up out of the
+except up to 30 m on from a tunnel's end; those on storeys under the ground (`level` all below 0) out of a tunnel
+with no `level`, such as a car park's corridors to its lifts at the foot of a ramp, go on in the tunnel, as tunnels
+themselves. Stairs leading on (`highway=steps`, also indoors), and corridors (on at the tunnel's level into a building), go up out of the
 tunnel, such as from an underpass to the platforms over it: they rise from its floor to the ground at 60 %, and
 their foot is no portal the floor hangs from, unless the tunnel has no other way out (then it is as deep as the
 room and the roof need). Stairs leaving a tunnel from a point it passes rise from its floor there too, level across
