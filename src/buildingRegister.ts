@@ -163,6 +163,10 @@ export interface RegisterMatch {
   materials: number;
   /** Buildings that got a frame material from the register */
   frames: number;
+  /** Buildings whose guessed pitched roof got the storeys the register's count leaves out (see UNCOUNTED_MAX_SHARE) */
+  attics: number;
+  /** Buildings without a pitched roof that got them as storeys */
+  uncounted: number;
   /** Register buildings inside no OSM outline */
   unmatched: number;
   /** OSM buildings whose register buildings are mostly elsewhere, their storeys not taken */
@@ -175,6 +179,16 @@ export interface RegisterMatch {
  * whose point is in its entrance's kiosk. Its storeys are not the outline's.
  */
 const ELSEWHERE_SHARE = 8;
+
+/**
+ * A register building with more floor area than its storeys hold on its outline has storeys its count leaves out,
+ * above the ground as measured roof tops show (an attic, a storey and a half): from half a storey more, up to
+ * UNCOUNTED_MAX_SHARE times what its storeys hold (beyond that the area is elsewhere and the count right). A
+ * guessed pitched roof gets them in it, at most MAX_ATTIC_LEVELS; a building without one gets them as storeys.
+ */
+const UNCOUNTED_MIN_LEVELS = 0.5;
+const UNCOUNTED_MAX_SHARE = 3;
+const MAX_ATTIC_LEVELS = 1;
 
 /**
  * Gives OSM buildings the storeys, facades, frames, uses and years of the register buildings inside them (most
@@ -201,17 +215,29 @@ export function applyRegister(buildings: Building[], register: RegisterBuilding[
       unmatched++;
     }
   }
-  const result: RegisterMatch = { matched: inside.size, heights: 0, materials: 0, frames: 0, unmatched, elsewhere: 0 };
+  const result: RegisterMatch = { matched: inside.size, heights: 0, materials: 0, frames: 0, unmatched, elsewhere: 0, attics: 0, uncounted: 0 };
   const groundArea = adjoiningArea(boxes.map(({ b }) => b), (b) => inside.has(b));
   for (const [b, rs] of inside) {
     const area = rs.reduce((sum, r) => sum + (r.area ?? 0), 0);
     const most = Math.max(0, ...rs.map((r) => r.floors ?? 0));
-    const elsewhere = most > 0 && area > groundArea(b) * most * ELSEWHERE_SHARE;
+    const ground = groundArea(b);
+    const elsewhere = most > 0 && area > ground * most * ELSEWHERE_SHARE;
     if (elsewhere) {
       result.elsewhere++;
     }
-    const floors = elsewhere ? 0 : most;
+    let floors = elsewhere ? 0 : most;
     if (b.heightEstimated && !b.heightByType && !b.part && floors > 0) {
+      const uncounted = area / ground - floors;
+      if (uncounted >= UNCOUNTED_MIN_LEVELS && area < ground * floors * UNCOUNTED_MAX_SHARE) {
+        if (b.roofShape && b.roofHeightEstimated) {
+          b.roofLevels = Math.min(Math.round(uncounted), MAX_ATTIC_LEVELS);
+          b.roofHeight = b.roofLevels * LEVEL_HEIGHT_M;
+          result.attics++;
+        } else if (!b.roofShape) {
+          floors += Math.round(uncounted);
+          result.uncounted++;
+        }
+      }
       b.height = Math.max(floors * LEVEL_HEIGHT_M + (b.roofHeight ?? 0), b.minHeight + LEVEL_HEIGHT_M);
       delete b.heightEstimated;
       b.heightFromLevels = true;

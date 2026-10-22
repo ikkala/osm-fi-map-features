@@ -111,7 +111,10 @@ Buildings without `height` or `building:levels` in OSM get their storeys from th
 A register building with eight times the floor area of all its storeys (`kokonaisala`) that its outline holds on its
 storeys, with the outlines adjoining it that have no register building of their own (a row of houses may be one),
 is mostly elsewhere, such as a car park under the ground whose point is in its entrance's kiosk: its storeys are not
-the outline's and are not taken. The register also gives most buildings their facade material (brick, concrete, wood, ...; `julkisivumateriaali`) unless OSM
+the outline's and are not taken. Below three times that, from half a storey more, the register building has storeys
+its count leaves out, above the ground (an attic, a storey and a half): as Tampere's measured roof tops show, the
+floor area tells the height better than the count there. A guessed pitched roof gets one storey in it
+(`roofLevels`), and a building without one gets them as storeys. The register also gives most buildings their facade material (brick, concrete, wood, ...; `julkisivumateriaali`) unless OSM
 has `building:material` or `material`, the material of their load-bearing frame (`frameMaterial`: wood, brick, concrete
 or steel; `kantavien_rakenteiden_rakennusaine`), also where the facade is not known, and their main use (`use`, see windows below). The rest get a guess: one storey for sheds
 and anything under 40 m², two for houses and anything under 150 m², three otherwise. Chimneys, towers, water towers,
