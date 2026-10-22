@@ -649,6 +649,21 @@ them:
 Each gives the pieces it matched, so that a user reading the map a tile at a time can tell whether the feature goes
 on into tiles not read yet, and read them too. `undefined` means there is no such street or water near the point.
 
+### Districts
+
+A city's districts are not in the tiles: they are large, and cities map them differently. `districts.ts` reads them
+on their own, for a user to match points of their own to:
+
+- `fetchDistricts(box, origin, options)` (the query `districtsQuery(box)`, cached as the map's other sources are):
+  the administrative divisions below the municipality (`boundary=administrative`, `admin_level` 9 or 10) and the
+  places of a district's kinds (`place` `suburb`, `quarter` or `neighbourhood`) in the box that have a `name`, as
+  areas in meters around `origin` (`parseDistricts`): a relation's outer and inner members stitched into rings, a
+  closed way one ring. Each has its `kind` (`DISTRICT_KINDS`: `"admin_level=10"`, `"place=suburb"`, ...), its `area`
+  and its `center`: its `label` node when it has one inside it, else the centroid of its largest ring.
+- `districtOf(districts, point, kind?)`: the smallest district (of the kind) that has the point in it.
+- `districtKindOf(districts, points)`: the kind a city's districts are mapped as, the one whose districts have the
+  most of the points in them.
+
 ## Measured in Tampere
 
 Some constants could only be measured from one city's open data, Tampere's. They are kept together in
@@ -698,6 +713,8 @@ The data it builds is not:
 - Places matched to the map's streets and lakes (`streetParts`, `lakeParts`), and the parts found for them, are
   likewise a Derivative Database under the ODbL, stored or not, and `featureParts.ts` is the way they are made. The
   places themselves stay under their own terms.
+- Points matched to the districts (`districtOf`, `districtKindOf`) are a Derivative Database under the ODbL too,
+  stored or not, and `districts.ts` is the way they are made. The points themselves stay under their own terms.
 
 `MapInfo.attributions` lists the credits for the data a build used.
 
