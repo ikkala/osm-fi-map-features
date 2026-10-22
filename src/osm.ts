@@ -691,7 +691,7 @@ type Tags = Record<string, string>;
 export type OsmElement =
   | { type: "node"; id: number; tags?: Tags; lat?: number; lon?: number }
   | { type: "way"; id: number; tags?: Tags; geometry?: LatLon[]; center?: LatLon }
-  | { type: "relation"; id: number; tags?: Tags; members?: { type: string; role: string; geometry?: LatLon[] }[]; center?: LatLon };
+  | { type: "relation"; id: number; tags?: Tags; members?: { type: string; role: string; geometry?: LatLon[]; lat?: number; lon?: number }[]; center?: LatLon };
 
 export interface FetchOptions extends CacheOptions {
   url: string;
@@ -714,11 +714,16 @@ export function parseOverpassResponse(value: unknown): OverpassResponse {
     } else if (type === "way") {
       elements.push({ type, id, tags, geometry: parseGeometry(field(item, "geometry")), ...(center && { center }) });
     } else if (type === "relation") {
-      const members = items(field(item, "members")).map((member) => ({
-        type: String(field(member, "type")),
-        role: String(field(member, "role") ?? ""),
-        geometry: parseGeometry(field(member, "geometry")),
-      }));
+      const members = items(field(item, "members")).map((member) => {
+        // a node member's point, with "out geom"
+        const point = parseLatLon(member);
+        return {
+          type: String(field(member, "type")),
+          role: String(field(member, "role") ?? ""),
+          geometry: parseGeometry(field(member, "geometry")),
+          ...(point && { lat: point.lat, lon: point.lon }),
+        };
+      });
       elements.push({ type, id, tags, members, ...(center && { center }) });
     }
   }

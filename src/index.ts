@@ -3,6 +3,16 @@ export type { BicycleParking } from "./bicycleParking.ts";
 export { BUILDING_REGISTER_ATTRIBUTION } from "./buildingRegister.ts";
 export { fileCache, memoryCache, type SourceCache } from "./cache.ts";
 export { applyOsmEdits, parseOsmEdits, type AppliedEdits, type EditAction, type OsmEdit } from "./edits.ts";
+export {
+  DISTRICT_KINDS,
+  districtKind,
+  districtKindOf,
+  districtOf,
+  districtsQuery,
+  fetchDistricts,
+  parseDistricts,
+  type District,
+} from "./districts.ts";
 export { ELEVATION_ATTRIBUTION } from "./elevation.ts";
 export { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE, type MeasuredDefaults } from "./measuredDefaults.ts";
 export { FAR_CLASSES, farTile, type FarBox, type FarClass, type FarOptions, type FarTile } from "./far.ts";
