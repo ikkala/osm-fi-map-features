@@ -2137,7 +2137,8 @@ function roadWidth(tags: Tags): number {
   }
   const lanes = number(tags.lanes);
   const fallback = ROAD_WIDTHS[tags.highway];
-  return lanes !== undefined && lanes > 0 && fallback >= 6 ? Math.max(fallback, lanes * LANE_WIDTH_M) : fallback;
+  // a narrower road's fallback is a single lane's: two or more lanes widen it too
+  return lanes !== undefined && lanes > 0 && (fallback >= 6 || lanes >= 2) ? Math.max(fallback, lanes * LANE_WIDTH_M) : fallback;
 }
 
 /** The line from `length` meters on (fewer than 2 points when it is no longer) */
