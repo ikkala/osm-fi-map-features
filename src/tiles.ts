@@ -70,6 +70,35 @@ export function tilesCovering(rect: Rect, size: number): TileKey[] {
   return tiles;
 }
 
+/** The tiles that any of the rectangles touches, each once, west to east within south to north. */
+export function tilesCoveringAny(rects: Rect[], size: number): TileKey[] {
+  const tiles = new Map<string, TileKey>();
+  for (const rect of rects) {
+    for (const tile of tilesCovering(rect, size)) {
+      tiles.set(tileName(tile), tile);
+    }
+  }
+  return [...tiles.values()].sort((a, b) => a.y - b.y || a.x - b.x);
+}
+
+/**
+ * The tiles in pieces: squares of pieceTiles tiles a side on a grid from tile 0, 0, each with those of the tiles it
+ * has, in the order of the tiles.
+ */
+export function tilePieces(tiles: TileKey[], pieceTiles: number): TileKey[][] {
+  const pieces = new Map<string, TileKey[]>();
+  for (const tile of tiles) {
+    const key = `${Math.floor(tile.x / pieceTiles)}_${Math.floor(tile.y / pieceTiles)}`;
+    const piece = pieces.get(key);
+    if (piece) {
+      piece.push(tile);
+    } else {
+      pieces.set(key, [tile]);
+    }
+  }
+  return [...pieces.values()];
+}
+
 function tileRange(rect: Rect, size: number): Rect {
   // a rectangle ending exactly on a tile edge does not reach into the next tile
   return {

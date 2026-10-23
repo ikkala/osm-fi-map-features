@@ -34,9 +34,12 @@ import { fileCache, MapBuilder } from "osm-fi-map-features";
 
 const builder = new MapBuilder({
   origin: { latitude: 61.4981, longitude: 23.7610 },
-  // south, west, north, east: every tile touching this box is part of the map
+  // south, west, north, east: every tile touching this box is part of the map; or a list of boxes, overlapping or not,
+  // for a map of another shape: every tile touching one of them
   area: { south: 61.488, west: 23.725, north: 61.512, east: 23.795 },
   tileSizeM: 250,
+  // optional: fetch the sources in pieces of up to this many tiles a side (see below)
+  // fetchPieceTiles: 20,
   // the sources' responses are kept here, one file each
   cache: fileCache(".cache"),
   mmlApiKey: process.env.MML_API_KEY,
@@ -85,6 +88,13 @@ node moved is edited too), those marked `action="delete"` are left out, and new 
 map's features (not to its entrances, businesses or landmarks). A relation's edit changes only its tags (its members
 are kept) or leaves it out; new relations are not supported. Once uploaded,
 the edits are in the fetched data anyway and the file can go.
+
+The sources are asked for a box around all the map's tiles, unless `fetchPieceTiles` is given: then for each piece of
+the map, a square of that many tiles a side on a grid from tile `0, 0`, a box around the map's tiles in it. No request
+then grows with the map, nor asks for what lies between its parts, and a piece's responses stay cached while the map
+changes elsewhere. The pieces' responses are put together as one: an Overpass element in several of them (a way
+across a piece's edge) once, in Overpass' order, so that the map comes out as from one request; a register's entries
+alike once; and the elevation model's heights from a piece's grid, where it has the cells all around the point.
 
 The Overpass server is `https://overpass-api.de/api/interpreter` unless `overpassUrl` is given; mind its
 [usage policy](https://wiki.openstreetmap.org/wiki/Overpass_API#Public_Overpass_API_instances).
