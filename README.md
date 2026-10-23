@@ -294,7 +294,8 @@ A road tunnel for vehicles gets a room (`room`) lower than a road's 4.8 m where 
 2.2 m: the tallest `maxheight` among the vehicles' tunnels joined to it at their points, so a car park's aisles behind
 its entrances' signs, and tunnels sharing a hall, share it; so does a walkway's tunnel meeting one or beside it.
 Tunnels going down into a basement from a portal in a house (a ramp into a car park under it), joined at their points,
-whose vehicles' ways are all service roads, are a car park: their room is at most 2.5 m, a car park's clear height.
+whose vehicles' ways are all service roads, are a car park: their room is at most 2.5 m, a car park's clear height,
+and a service road of it with `lanes` (a ramp with a lane each way) is as wide as its lanes, 3.25 m each.
 
 Other tunnels get heights from the elevation model, which has the bare ground over them. A tunnel (`layer` -1 or above)
 whose ground rises nowhere more than 3 m over its ends runs at the ground under something built over it, which the

@@ -665,6 +665,18 @@ test("the tunnels going down into a car park under a building get a car park's r
   assert.deepEqual(map("service", true), [CAR_PARK_CLEARANCE_M, CAR_PARK_CLEARANCE_M]);
   assert.deepEqual(map("residential", true), [ROAD_CLEARANCE_M, 3]);
   assert.deepEqual(map("service", false), [ROAD_CLEARANCE_M, 3]);
+  // a ramp with a lane each way is two lanes wide in a car park; elsewhere its kind's width
+  const ramp = (inHouse: boolean) => {
+    const way = road("w1", [[0, 0], [25, 0]], { kind: "service", width: 4, tunnel: true, layer: -1, lanes: 2 });
+    const m = features([road("w3", [[-20, 0], [0, 0]], { kind: "service", width: 4 }), way]);
+    if (inHouse) {
+      m.buildings.push(house);
+    }
+    setTunnelFloors(m, () => 100);
+    return way.width;
+  };
+  assert.equal(ramp(true), 6.5);
+  assert.equal(ramp(false), 4);
 });
 
 test("a basement's ramp opens a wall as wide as its room, and where its room reaches only the wall's footings", () => {

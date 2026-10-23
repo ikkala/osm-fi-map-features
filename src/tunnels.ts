@@ -5,7 +5,7 @@
 // Tunnels in cuts (cuts.ts) are left to their cut.
 import { pointAlong } from "./bridges.ts";
 import { distanceToRing, nearestOnLine, pointInPolygon, pointKey, type Point } from "./geometry.ts";
-import { bounds, openPassages, type Building, type MapFeatures, type Opening, type Rail, type Road } from "./osm.ts";
+import { bounds, LANE_WIDTH_M, openPassages, type Building, type MapFeatures, type Opening, type Rail, type Road } from "./osm.ts";
 
 /** Room over the floor for people, vehicles and trains (m) */
 export const WALK_CLEARANCE_M = 3;
@@ -13,7 +13,7 @@ export const ROAD_CLEARANCE_M = 4.8;
 export const RAIL_CLEARANCE_M = 6;
 /** A road's room is as low as its maxheight=*, but no lower than this (m): lower is a mistake in the data */
 const MIN_ROAD_CLEARANCE_M = 2.2;
-/** A car park's room over its floor (m): the tunnels going down into a basement, when no road but a service way leads in */
+/** A car park's room over its floor (m): the tunnels going down into a basement, when no road but a service way leads in; its service ways' lanes widen them */
 export const CAR_PARK_CLEARANCE_M = 2.5;
 /** The roof over the room, under the ground (m) */
 export const ROOF_M = 1;
@@ -451,7 +451,8 @@ export function setTunnelFloors(
   }
 
   // a car park under a building: the tunnels going down into it from a portal in a building, when no road but a
-  // service way leads in among them, are as low as a car park, and their floors need that much less depth
+  // service way leads in among them, are as low as a car park, and their floors need that much less depth; a
+  // service way of it with lanes (a ramp with a lane each way) is as wide as they are, where its kind is one lane's
   for (const group of meetingGroups(tunnels)) {
     const roads = group.ways.filter((way): way is Road => "width" in way);
     const vehicles = roads.filter((r) => !WALKWAYS.has(r.kind));
@@ -463,10 +464,14 @@ export function setTunnelFloors(
     ) {
       for (const r of roads) {
         r.room = Math.min(roomHeight(r), CAR_PARK_CLEARANCE_M);
+        if (r.kind === "service" && r.lanes !== undefined && r.lanes >= 2) {
+          r.width = Math.max(r.width, r.lanes * LANE_WIDTH_M);
+        }
       }
       for (const k of group.keys) {
         const node = nodes.get(k);
         if (node) {
+          node.half = Math.max(node.half, ...(through.get(k) ?? []).map((way) => ("width" in way ? way.width : RAIL_WIDTH_M) / 2 + ROOM_SIDE_M));
           const depth = Math.max(...(through.get(k) ?? []).map((way) => ROOF_M + roomHeight(way)));
           if (node.stairs && node.portal !== undefined) {
             node.portal += node.depth - depth;
