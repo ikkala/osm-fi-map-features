@@ -292,6 +292,8 @@ A tile has these stretches (`buildingSteps`), its buildings' and those of the bu
 A road tunnel for vehicles gets a room (`room`) lower than a road's 4.8 m where `maxheight` is lower, at least
 2.2 m: the tallest `maxheight` among the vehicles' tunnels joined to it at their points, so a car park's aisles behind
 its entrances' signs, and tunnels sharing a hall, share it; so does a walkway's tunnel meeting one or beside it.
+Tunnels going down into a basement from a portal in a house (a ramp into a car park under it), joined at their points,
+whose vehicles' ways are all service roads, are a car park: their room is at most 2.5 m, a car park's clear height.
 
 Other tunnels get heights from the elevation model, which has the bare ground over them. A tunnel (`layer` -1 or above)
 whose ground rises nowhere more than 3 m over its ends runs at the ground under something built over it, which the
@@ -315,7 +317,7 @@ hill or a lake, gets its floor (`floor`, with a point every 10 m): straight betw
 lowest within 4 m outside, along the ways leading on and on past a short one, since at the portal the model has
 the top of its wall), a junction underground
 hanging between its branches' ends by distance, but at least room and a 1 m roof under the ground (3 m of
-room for people, 4.8 m for vehicles or lower by `maxheight`, 6 m for trains; reached 30 m in from a portal; under water areas 5 m more, the water's 3 m, since the model has its surface, and 2 m of its bed over the roof, wherever water is over the room's width) and no
+room for people, 4.8 m for vehicles or lower by `maxheight`, 2.5 m in a car park, 6 m for trains; reached 30 m in from a portal, from a portal in a house only under that house, beyond whose walls the ground over the tunnel is the open ground; under water areas 5 m more, the water's 3 m, since the model has its surface, and 2 m of its bed over the roof, wherever water is over the room's width) and no
 steeper than 7 %, but from a portal in a house that the tunnel goes in under (a ramp down into a basement, with no cut
 in front of it) at one steady grade down to where it must be, however steep. The model smooths a portal's wall into a slope over the tunnel's end, so the ground over the
 room (in the tiles' heights too) is raised from the portal 6 m in to the ground there, and so is the ground under a
