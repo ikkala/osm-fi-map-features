@@ -79,6 +79,8 @@ export interface Road {
   service?: string;
   /** Roads for vehicles: the height a vehicle may have (maxheight=*, m), when OSM tells */
   maxHeight?: number;
+  /** Roads for vehicles: how many lanes it has (lanes=*), when OSM tells */
+  lanes?: number;
   /** Tunnels: the room over the floor (m) where lower than its kind's, from maxheight=* (see tunnels.ts) */
   room?: number;
   /** Roads for vehicles: whether buses may drive on it, from bus=* or psv=*, when OSM tells (e.g. designated on a bus lane closed to others) */
@@ -541,7 +543,7 @@ const ROAD_WIDTHS: Record<string, number> = {
   corridor: 3,
 };
 
-const LANE_WIDTH_M = 3.25;
+export const LANE_WIDTH_M = 3.25;
 
 /** Trees in a natural=tree_row stand this far apart (OSM has only the row's line) */
 const TREE_ROW_SPACING_M = 8;
@@ -907,7 +909,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
           ...layering(road),
           ...optionalName(road),
           ...oneway(road),
-          ...(walkway ? (road.footway ? { footway: road.footway } : {}) : { ...sidewalks(road), ...motorAccess(road), ...maxHeight(road) }),
+          ...(walkway ? (road.footway ? { footway: road.footway } : {}) : { ...sidewalks(road), ...motorAccess(road), ...maxHeight(road), ...lanesOf(road) }),
           ...access(road),
           ...(road.highway === "steps" ? stepping(road) : {}),
           ...surfaceOf(road),
@@ -2246,6 +2248,12 @@ export function motorAccess(tags: Tags): { motorVehicle?: string; service?: stri
     ...(tags.highway === "service" && tags.service && { service: tags.service }),
     ...((bay === "left" || bay === "right" || bay === "both") && { busBay: bay }),
   };
+}
+
+/** A road's lanes=*, when OSM tells a whole number of them */
+function lanesOf(tags: Tags): { lanes?: number } {
+  const lanes = number(tags.lanes);
+  return lanes !== undefined && Number.isInteger(lanes) && lanes > 0 ? { lanes } : {};
 }
 
 /** A road's maxheight=* in meters, when OSM tells one */
