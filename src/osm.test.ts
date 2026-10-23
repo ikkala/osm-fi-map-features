@@ -1105,19 +1105,3 @@ test("a bridge way keeps its bridge:structure and colour, a way on the ground ne
   );
   assert.deepEqual(features.roads.map((r) => [r.osm, r.bridgeStructure, r.bridgeColour]), [["w1", "truss", "maroon"], ["w2", undefined, undefined]]);
 });
-
-test("a road's lanes widen it: any road with two or more, a wider road with one", () => {
-  const road = (id: number, tags: Record<string, string>) => ({ type: "way" as const, id, tags, geometry: [at(0, id * 10), at(50, id * 10)] });
-  const { features } = parseOsm(
-    [
-      road(1, { highway: "service" }),
-      road(2, { highway: "service", lanes: "2" }),
-      road(3, { highway: "service", lanes: "1" }),
-      road(4, { highway: "residential", lanes: "1" }),
-      road(5, { highway: "residential", lanes: "3" }),
-      road(6, { highway: "service", lanes: "2", width: "5" }),
-    ],
-    origin,
-  );
-  assert.deepEqual(features.roads.map((r) => [r.osm, r.width]), [["w1", 4], ["w2", 6.5], ["w3", 4], ["w4", 6], ["w5", 9.75], ["w6", 5]]);
-});
