@@ -19,6 +19,8 @@ const INSIDE_M = 1;
 const SHORE_M = 2;
 /** Buildings and ways are looked up in squares this big (m) */
 const CELL_M = 16;
+/** And the water areas, a lake over thousands of them, in these */
+const WATER_CELL_M = 256;
 
 interface Way {
   line: Point[];
@@ -42,7 +44,7 @@ export function buildingSteps(
   water: readonly Polygon[] = [],
   dams: readonly Point[][] = [],
 ): GroundStep[] {
-  const waters = index(water.map((polygon) => ({ item: polygonTest(polygon), box: bounds(polygon.outer) })));
+  const waters = index(water.map((polygon) => ({ item: polygonTest(polygon), box: bounds(polygon.outer) })), WATER_CELL_M);
   const wet = (p: Point) => waters.near({ minX: p[0], minY: p[1], maxX: p[0], maxY: p[1] }, 0).some((inside) => inside(p));
   const damPoints = index(
     dams.flatMap((line) =>
@@ -180,14 +182,14 @@ function meet(p: Point, q: Point, a: Point, b: Point): { at: Point; proper: bool
   return { at: [p[0] + rx * t, p[1] + ry * t], proper: t > eps && t < 1 - eps && u > eps && u < 1 - eps };
 }
 
-/** Items by the CELL_M squares their boxes touch: near(box, reach) has those whose boxes come within reach of box */
-function index<T>(entries: { item: T; box: Rect }[]): { near: (box: Rect, reach: number) => T[] } {
+/** Items by the squares (CELL_M by default) their boxes touch: near(box, reach) has those whose boxes come within reach of box */
+function index<T>(entries: { item: T; box: Rect }[], cell = CELL_M): { near: (box: Rect, reach: number) => T[] } {
   const cells = new Map<string, { item: T; box: Rect }[]>();
   const range = (box: Rect, reach: number) => ({
-    x0: Math.floor((box.minX - reach) / CELL_M),
-    x1: Math.floor((box.maxX + reach) / CELL_M),
-    y0: Math.floor((box.minY - reach) / CELL_M),
-    y1: Math.floor((box.maxY + reach) / CELL_M),
+    x0: Math.floor((box.minX - reach) / cell),
+    x1: Math.floor((box.maxX + reach) / cell),
+    y0: Math.floor((box.minY - reach) / cell),
+    y1: Math.floor((box.maxY + reach) / cell),
   });
   for (const entry of entries) {
     const { x0, x1, y0, y1 } = range(entry.box, 0);

@@ -14,6 +14,7 @@ import {
   dedupe,
   distanceToRing,
   extent,
+  indexBoxes,
   orientedBox,
   pointInPolygon,
   pointInRing,
@@ -23,6 +24,7 @@ import {
   stitchRings,
   type Point,
   type Polygon,
+  type Rect,
   type Ring,
 } from "./geometry.ts";
 
@@ -1442,19 +1444,26 @@ export interface Passage {
  */
 export function openPassages(buildings: Building[], passages: Passage[], rooms = true): void {
   const roomed = new Set<Building>();
+  const boxes = buildings.map((b) => bounds(b.polygon.outer));
+  const near = indexBoxes(boxes, bounds(passages.flatMap((passage) => passage.line)));
+  const apart = (a: Rect, b: Rect) => a.maxX < b.minX || a.minX > b.maxX || a.maxY < b.minY || a.minY > b.maxY;
   for (const passage of passages) {
     const reach = bounds(passage.line);
-    for (const b of buildings) {
+    const segments = passage.line.slice(1).map((q, k) => bounds([passage.line[k], q]));
+    for (const index of near(reach)) {
+      const b = buildings[index];
       if (b.hasParts || b.shelter !== undefined || b.minHeight > passage.height) {
         continue;
       }
-      const box = bounds(b.polygon.outer);
-      if (box.maxX < reach.minX || box.minX > reach.maxX || box.maxY < reach.minY || box.minY > reach.maxY) {
+      const box = boxes[index];
+      if (apart(box, reach)) {
         continue;
       }
+      // a segment crosses the walls only where its box meets the building's
+      const crossable = segments.flatMap((segment, k) => (apart(segment, box) ? [] : [k]));
       for (const ring of [b.polygon.outer, ...b.polygon.holes]) {
         for (let i = 0; i < ring.length; i++) {
-          for (let k = 0; k + 1 < passage.line.length; k++) {
+          for (const k of crossable) {
             const hit = crossing(ring[i], ring[(i + 1) % ring.length], passage.line[k], passage.line[k + 1], passage.width);
             if (hit) {
               for (const opening of openAlong(ring, i, hit.at, hit.half)) {
@@ -1845,12 +1854,13 @@ function samePoint(a: Point, b: Point | undefined): boolean {
 function raiseRoofsOverRoads(features: MapFeatures): void {
   const roofs = features.buildings.filter((b) => b.shelter !== undefined && b.shelter !== "carport" && b.heightEstimated && b.height < ROOF_OVER_ROAD_M);
   const roads = features.roads.filter((r) => !NOT_FOR_VEHICLES.has(r.kind) && !r.tunnel);
+  const near = indexBoxes(roads.map((road) => bounds(road.line)), bounds(roofs.flatMap((roof) => roof.polygon.outer)));
   for (const roof of roofs) {
     const box = bounds(roof.polygon.outer);
-    const under = roads.some((road) =>
-      road.line.some((p, i) => {
+    const under = near(box).some((index) =>
+      roads[index].line.some((p, i, line) => {
         // the road's points, and points every meter between them
-        const next = road.line[i + 1] ?? p;
+        const next = line[i + 1] ?? p;
         const steps = Math.max(1, Math.ceil(Math.hypot(next[0] - p[0], next[1] - p[1])));
         for (let k = 0; k < steps; k++) {
           const q: Point = [p[0] + ((next[0] - p[0]) * k) / steps, p[1] + ((next[1] - p[1]) * k) / steps];

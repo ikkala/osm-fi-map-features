@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { clipPolyline, clipRing, orientedBox, pointInPolygon, polygonTest, RectGrid, ringArea, simplifyLine, simplifyRing, stitchRings, triangulate, type Point, type Polygon } from "./geometry.ts";
+import { clipPolyline, clipRing, indexBoxes, orientedBox, pointInPolygon, polygonTest, RectGrid, ringArea, simplifyLine, simplifyRing, stitchRings, triangulate, type Point, type Polygon } from "./geometry.ts";
 import { defined } from "./testing.ts";
 
 const rect = { minX: 0, minY: 0, maxX: 10, maxY: 10 };
@@ -73,6 +73,19 @@ test("RectGrid finds the things whose boxes meet a rectangle", () => {
   assert.deepEqual(grid.at([22, 6]), ["long"]);
   assert.deepEqual(new Set(grid.within({ minX: 0, minY: 0, maxX: 30, maxY: 30 })), new Set(["long"]));
   assert.deepEqual(new Set(grid.within({ minX: 15, minY: 0, maxX: 65, maxY: 65 })), new Set(["long", "far"]));
+});
+
+test("indexBoxes gives the boxes that may meet a rectangle once each, in their order", () => {
+  const boxes = [
+    { minX: 200, minY: 0, maxX: 210, maxY: 10 },
+    { minX: 0, minY: 0, maxX: 300, maxY: 5 },
+    { minX: 1000, minY: 1000, maxX: 1010, maxY: 1010 },
+    { minX: 205, minY: 2, maxX: 206, maxY: 3 },
+  ];
+  const near = indexBoxes(boxes, { minX: 0, minY: 0, maxX: 1100, maxY: 1100 });
+  assert.deepEqual(near({ minX: 190, minY: 0, maxX: 220, maxY: 20 }), [0, 1, 3]);
+  assert.deepEqual(near({ minX: 990, minY: 990, maxX: 1020, maxY: 1020 }), [2]);
+  assert.deepEqual(near({ minX: 500, minY: 500, maxX: 510, maxY: 510 }), []);
 });
 
 test("simplifyLine drops points closer than the tolerance", () => {

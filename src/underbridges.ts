@@ -3,7 +3,7 @@
 // under the deck. The deck stays straight; the way goes down into a cut under it instead, ramping down to the
 // floor the room needs and up again.
 import { deckAt } from "./bridges.ts";
-import { distanceToSegment, pointInPolygon, type Point } from "./geometry.ts";
+import { distanceToSegment, indexBoxes, pointInPolygon, type Point } from "./geometry.ts";
 import { bounds, NOT_FOR_VEHICLES, type BridgeOutline, type Rail, type Road } from "./osm.ts";
 
 /** Room a way needs under a deck (m), and the deck's thickness */
@@ -35,9 +35,12 @@ export function decksOver(bridges: Way[], outlines: BridgeOutline[]): (p: Point,
     .filter((b) => b.bridge && b.deck && b.line.length >= 2)
     .map((b) => ({ osm: b.osm, line: b.line, deck: b.deck ?? [], box: bounds(b.line), half: ("width" in b ? b.width : RAIL_WIDTH_M) / 2 + DECK_EDGE_M, layer: Math.max(b.layer, 1) }));
   const shapes = outlines.map((o) => ({ polygon: o.polygon, box: bounds(o.polygon.outer) }));
+  const reaches = spans.map(({ box }) => ({ minX: box.minX - OUTLINE_REACH_M, minY: box.minY - OUTLINE_REACH_M, maxX: box.maxX + OUTLINE_REACH_M, maxY: box.maxY + OUTLINE_REACH_M }));
+  const near = indexBoxes(reaches, bounds(reaches.flatMap((r): Point[] => [[r.minX, r.minY], [r.maxX, r.maxY]])));
   return ([e, n], layer) => {
     let nearest: { d: number; deck: number; osm: string } | undefined;
-    for (const span of spans) {
+    for (const index of near({ minX: e, minY: n, maxX: e, maxY: n })) {
+      const span = spans[index];
       if (span.layer <= layer || e < span.box.minX - OUTLINE_REACH_M || e > span.box.maxX + OUTLINE_REACH_M || n < span.box.minY - OUTLINE_REACH_M || n > span.box.maxY + OUTLINE_REACH_M) {
         continue;
       }

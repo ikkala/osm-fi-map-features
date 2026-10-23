@@ -3,7 +3,7 @@
 // outline is triangulated in short pieces with the deck's heights so the area between the ways, and trees and
 // lamps on it, have a deck.
 import { crests, deckAt, pointAlong, rounded, upperHull } from "./bridges.ts";
-import { dedupe, distanceToSegment, nearestOnLine, nearestOnSegment, nearestPlace, orientedBox, pointInPolygon, pointInRing, ringArea, triangulate, type Point, type Polygon, type Ring } from "./geometry.ts";
+import { dedupe, distanceToSegment, nearestOnLine, nearestOnSegment, nearestPlace, orientedBox, pointInPolygon, pointInRing, ringArea, triangulate, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
 import { bounds, crossing, NOT_FOR_VEHICLES, type BridgeDeck, type BridgeOutline } from "./osm.ts";
 
 /** A road or railway: a bridge's (bridge, deck) or not */
@@ -70,6 +70,8 @@ export function setOutlineDecks<T extends DeckLine>(
   const decks: BridgeDeck[] = [];
   const on = new Set<T>();
   const outlined: { outline: BridgeOutline; members: T[] }[] = [];
+  // every line is looked at for each outline and ramp
+  const boxOf = lineBoxes();
   for (const outline of outlines) {
     const box = bounds(outline.polygon.outer);
     const members = lines.filter((l) => {
@@ -77,7 +79,7 @@ export function setOutlineDecks<T extends DeckLine>(
       if (!l.bridge || !deck || deck.length !== l.line.length || l.line.length < 2) {
         return false;
       }
-      const b = bounds(l.line);
+      const b = boxOf(l.line);
       return b.maxX >= box.minX && b.minX <= box.maxX && b.maxY >= box.minY && b.minY <= box.maxY && insideShare(l.line, outline.polygon) >= ON_OUTLINE_SHARE;
     });
     if (members.length > 0) {
@@ -116,7 +118,7 @@ export function setOutlineDecks<T extends DeckLine>(
       if (on.has(l) || l.lid || l.floor || l.line.length < 2) {
         continue;
       }
-      const b = bounds(l.line);
+      const b = boxOf(l.line);
       if (b.maxX < box.minX - TOUCH_M || b.minX > box.maxX + TOUCH_M || b.maxY < box.minY - TOUCH_M || b.minY > box.maxY + TOUCH_M) {
         continue;
       }
@@ -150,7 +152,7 @@ export function setOutlineDecks<T extends DeckLine>(
         if (done.has(o) || !ground(o)) {
           continue;
         }
-        const b = bounds(o.line);
+        const b = boxOf(o.line);
         if (b.maxX < box.minX - TOUCH_M || b.minX > box.maxX + TOUCH_M || b.maxY < box.minY - TOUCH_M || b.minY > box.maxY + TOUCH_M) {
           continue;
         }
@@ -167,7 +169,7 @@ export function setOutlineDecks<T extends DeckLine>(
   // the pieces, with the deck of the nearest way at their corners; past the ends of the ways on the outline, that of
   // the ways leading on, and none over those on the ground (an outline also over the embankment between two bridges)
   for (const { outline, members, angle } of shaped) {
-    const onward = leadingOn(lines, members, on, bounds(outline.polygon.outer));
+    const onward = leadingOn(lines, members, on, bounds(outline.polygon.outer), boxOf);
     const decked = [...members, ...onward.filter((o) => o.deck)];
     const bare = onward.filter((o) => !o.deck);
     const deckOf = (p: Point) => {
@@ -206,16 +208,29 @@ export function setOutlineDecks<T extends DeckLine>(
   return { decks, ways: on.size };
 }
 
+/** bounds() of lines, each line's points once */
+function lineBoxes(): (line: Point[]) => Rect {
+  const boxes = new WeakMap<Point[], Rect>();
+  return (line) => {
+    let box = boxes.get(line);
+    if (!box) {
+      box = bounds(line);
+      boxes.set(line, box);
+    }
+    return box;
+  };
+}
+
 /**
  * The ways leading on from the ways on an outline, over its box: those ending on them, and on from those end to end
  * (past an approach or a ramp split off before), not those on outlines or tunnels under lids
  */
-function leadingOn<T extends DeckLine>(lines: T[], members: T[], on: Set<T>, box: ReturnType<typeof bounds>): T[] {
+function leadingOn<T extends DeckLine>(lines: T[], members: T[], on: Set<T>, box: Rect, boxOf: (line: Point[]) => Rect): T[] {
   const near = lines.filter((l) => {
     if (on.has(l) || l.lid || l.line.length < 2) {
       return false;
     }
-    const b = bounds(l.line);
+    const b = boxOf(l.line);
     return b.maxX >= box.minX - TOUCH_M && b.minX <= box.maxX + TOUCH_M && b.maxY >= box.minY - TOUCH_M && b.minY <= box.maxY + TOUCH_M;
   });
   const ends = (l: T): Point[] => [l.line[0], l.line[l.line.length - 1]];

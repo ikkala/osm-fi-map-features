@@ -203,22 +203,7 @@ export function stepAtWalls(
   if (!steps.some((s) => s.footOut > 0 || s.topIn > 0)) {
     return heightAt;
   }
-  const cell = (v: number) => Math.floor(v / CELL_M);
-  const cellKey = (x: number, y: number) => (x + 0x8000) * 0x10000 + (y + 0x8000);
-  const cells = new Map<number, GroundStep[]>();
-  for (const step of steps) {
-    const reach = REACH_M;
-    for (let x = cell(Math.min(step.a[0], step.b[0]) - reach); x <= cell(Math.max(step.a[0], step.b[0]) + reach); x++) {
-      for (let y = cell(Math.min(step.a[1], step.b[1]) - reach); y <= cell(Math.max(step.a[1], step.b[1]) + reach); y++) {
-        const list = cells.get(cellKey(x, y));
-        if (list) {
-          list.push(step);
-        } else {
-          cells.set(cellKey(x, y), [step]);
-        }
-      }
-    }
-  }
+  const cells = stepCells(steps);
   return (e, n) => {
     const h = heightAt(e, n);
     const near = h === undefined ? undefined : cells.get(cellKey(cell(e), cell(n)));
@@ -246,4 +231,33 @@ export function stepAtWalls(
     }
     return distance < step.topIn && h < step.top ? h + (step.top - h) * share : h;
   };
+}
+
+const cell = (v: number) => Math.floor(v / CELL_M);
+const cellKey = (x: number, y: number) => (x + 0x8000) * 0x10000 + (y + 0x8000);
+/** The cells' steps, of each list of them once: every tile's ground is stepped at the same ones */
+const stepCellsOf = new WeakMap<readonly GroundStep[], Map<number, GroundStep[]>>();
+
+/** The steps by the CELL_M squares within REACH_M of them */
+function stepCells(steps: readonly GroundStep[]): Map<number, GroundStep[]> {
+  const known = stepCellsOf.get(steps);
+  if (known) {
+    return known;
+  }
+  const cells = new Map<number, GroundStep[]>();
+  for (const step of steps) {
+    const reach = REACH_M;
+    for (let x = cell(Math.min(step.a[0], step.b[0]) - reach); x <= cell(Math.max(step.a[0], step.b[0]) + reach); x++) {
+      for (let y = cell(Math.min(step.a[1], step.b[1]) - reach); y <= cell(Math.max(step.a[1], step.b[1]) + reach); y++) {
+        const list = cells.get(cellKey(x, y));
+        if (list) {
+          list.push(step);
+        } else {
+          cells.set(cellKey(x, y), [step]);
+        }
+      }
+    }
+  }
+  stepCellsOf.set(steps, cells);
+  return cells;
 }

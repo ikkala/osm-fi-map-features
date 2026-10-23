@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
 import { bounds, LEVEL_HEIGHT_M, partOutlines, type Building, type BuildingUse, type GeoBox } from "./osm.ts";
-import { pointInPolygon, pointKey, ringArea, type Point } from "./geometry.ts";
+import { indexBoxes, pointInPolygon, pointKey, ringArea, type Point } from "./geometry.ts";
 import { field, items, optionalNumber, optionalString } from "./json.ts";
 import { inGeoBox } from "./projection.ts";
 import { allows } from "./startDates.ts";
@@ -202,10 +202,12 @@ export function applyRegister(buildings: Building[], register: RegisterBuilding[
   // a register building is the whole building: its parts take after the outline (inheritFromOutlines)
   const inOutline = partOutlines(buildings);
   const boxes = buildings.filter((b) => !inOutline.has(b)).map((b) => ({ b, box: bounds(b.polygon.outer) }));
-  for (const r of register) {
-    const p = toPoint(r);
+  const points = register.map(toPoint);
+  const near = indexBoxes(boxes.map(({ box }) => box), bounds(points));
+  for (const [i, r] of register.entries()) {
+    const p = points[i];
     let found = false;
-    for (const { b, box } of boxes) {
+    for (const { b, box } of near({ minX: p[0], minY: p[1], maxX: p[0], maxY: p[1] }).map((index) => boxes[index])) {
       if (p[0] >= box.minX && p[0] <= box.maxX && p[1] >= box.minY && p[1] <= box.maxY && pointInPolygon(p, b.polygon)) {
         inside.set(b, [...(inside.get(b) ?? []), r]);
         found = true;

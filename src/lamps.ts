@@ -1,7 +1,7 @@
 // Guesses street lamps' heights and facing, which OSM rarely has: a lamp faces the nearest street (or else
 // path) and is as tall as lamps by such a way usually are.
 import { deckAt } from "./bridges.ts";
-import { nearestOnLine, type Point } from "./geometry.ts";
+import { indexBoxes, nearestOnLine, type Point } from "./geometry.ts";
 import { bounds, NOT_FOR_VEHICLES, type Road, type StreetLamp } from "./osm.ts";
 
 /** A lamp faces the nearest street this close to it (m to the centre line), else the nearest path this close */
@@ -30,13 +30,17 @@ interface Nearest {
 export function placeLamps(lamps: StreetLamp[], roads: Road[]): { facing: number; heights: number; onDecks: number } {
   const reach = Math.max(STREET_REACH_M, PATH_REACH_M);
   const candidates = roads.filter((r) => !r.tunnel && r.line.length >= 2).map((road) => ({ road, box: bounds(road.line) }));
+  const near = indexBoxes(
+    candidates.map(({ box }) => ({ minX: box.minX - reach, minY: box.minY - reach, maxX: box.maxX + reach, maxY: box.maxY + reach })),
+    bounds(lamps.map((lamp) => lamp.point)),
+  );
   const counts = { facing: 0, heights: 0, onDecks: 0 };
   for (const lamp of lamps) {
     const [e, n] = lamp.point;
     let street: Nearest | undefined;
     let path: Nearest | undefined;
     let deck: Nearest | undefined;
-    for (const { road, box } of candidates) {
+    for (const { road, box } of near({ minX: e, minY: n, maxX: e, maxY: n }).map((index) => candidates[index])) {
       if (e < box.minX - reach || e > box.maxX + reach || n < box.minY - reach || n > box.maxY + reach) {
         continue;
       }

@@ -357,6 +357,19 @@ export class RectGrid<T> {
   }
 }
 
+/** indexBoxes' cells (m) */
+const BOX_CELL_M = 50;
+
+/**
+ * The indices of the boxes that may meet a rectangle inside `over`, ascending: a loop over them meets the boxes a
+ * loop over all would, in the same order.
+ */
+export function indexBoxes(boxes: readonly Rect[], over: Rect): (rect: Rect) => number[] {
+  const grid = new RectGrid<number>(BOX_CELL_M, over);
+  boxes.forEach((box, index) => grid.add(box, index));
+  return (rect) => [...new Set(grid.within(rect))].sort((a, b) => a - b);
+}
+
 /**
  * Joins open ways into closed rings by matching their endpoints (multipolygon members are split into
  * several ways). Returns the rings and the number of ways that could not be closed.

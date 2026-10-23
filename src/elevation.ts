@@ -78,10 +78,34 @@ export function parseAsciiGrid(text: string): ElevationGrid {
   }
   const values = new Float32Array(cols * rows);
   let count = 0;
-  for (const token of text.slice(pos).split(/\s+/)) {
-    if (token !== "") {
-      values[count++] = Number(token);
+  // read in place, tens of millions of them: a plain decimal's digits over its power of ten is the double Number()
+  // gives, both rounded once from the exact value
+  for (let i = pos; i < text.length; ) {
+    if (text.charCodeAt(i) <= 32) {
+      i++;
+      continue;
     }
+    const start = i;
+    const negative = text.charCodeAt(i) === 45;
+    let digits = 0;
+    let mantissa = 0;
+    let scale = 1;
+    let dot = false;
+    let plain = true;
+    for (i += negative ? 1 : 0; i < text.length && text.charCodeAt(i) > 32; i++) {
+      const c = text.charCodeAt(i);
+      if (c >= 48 && c <= 57) {
+        mantissa = mantissa * 10 + (c - 48);
+        digits++;
+        scale *= dot ? 10 : 1;
+      } else if (c === 46 && !dot) {
+        dot = true;
+      } else {
+        plain = false;
+      }
+    }
+    const exact = plain && digits > 0 && digits <= 15;
+    values[count++] = exact ? (negative ? -mantissa : mantissa) / scale : Number(text.slice(start, i));
   }
   if (count !== cols * rows) {
     throw new Error(`ASCII grid has ${count} values, expected ${cols} x ${rows}`);
