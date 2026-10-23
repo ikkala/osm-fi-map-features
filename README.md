@@ -350,6 +350,11 @@ room and the roof need). Stairs leaving a tunnel from a point it passes rise fro
 its room first (the way's half width and 1 m). Lines are simplified to 0.3 m, but not where other ways join them, so a tunnel's branches
 stay joined to it.
 
+A tunnel's floor known at a point, from a plan or a survey (`tunnelFloors`: a latitude and longitude and the height
+of the way's surface, in the elevation model's N2000), takes the place of the one hung under the ground: the
+tunnel's point nearest it, within 6 m, has that floor, deeper or shallower than the ground asks, and the floors
+around come down to it no steeper than 7 % and keep steady grades to it, as to a portal.
+
 A bridge's ways (the road, its sidewalks, a cycleway) each get a `deck` (`src/bridges.ts`): ways meeting end to end
 are one span, straight from the ground at one end to the other, also over the model's hump under it (the ground
 under a bridge is the gap spanned from the ground around; the terrain is to be kept under the deck). An end that no

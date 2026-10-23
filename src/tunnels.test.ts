@@ -696,3 +696,31 @@ test("a basement's ramp opens a wall as wide as its room, and where its room rea
   // under the footings: whole
   assert.deepEqual(east(100 - CAR_PARK_CLEARANCE_M - WALL_FOOTING_M - 0.5), []);
 });
+
+test("a known floor holds the tunnel's point nearest it, deeper or shallower than the ground asks, the floor around graded to it", () => {
+  // a road tunnel 200 m long under level ground at 100, its portals at 100
+  const floors = (known: { p: Point; floor: number }[]) => {
+    const tunnel = road("w1", [[0, 0], [200, 0]], { tunnel: true, layer: -2 });
+    const map = features([road("w2", [[-50, 0], [0, 0]]), tunnel, road("w3", [[200, 0], [250, 0]])]);
+    const result = setTunnelFloors(map, () => 100, new Map(), () => false, known);
+    return { floor: defined(tunnel.floor), line: tunnel.line, known: result.known };
+  };
+  const plain = floors([]);
+  const middle = plain.line.findIndex(([e]) => e === 100);
+  // 20 m deeper in the middle, 2 m off the line: held there, and no steeper than 7 % around it
+  const deep = floors([{ p: [100, 2], floor: plain.floor[middle] - 20 }]);
+  assert.equal(deep.known, 1);
+  assert.equal(deep.floor[middle], plain.floor[middle] - 20);
+  deep.floor.forEach((f, i) => {
+    assert.ok(f >= deep.floor[middle] - 1e-9 && f <= plain.floor[i] + 1e-9, `${f} at ${deep.line[i][0]}`);
+    if (i > 0) {
+      const grade = Math.abs(f - deep.floor[i - 1]) / (deep.line[i][0] - deep.line[i - 1][0]);
+      assert.ok(grade <= 0.07 + 1e-9 || i === 1 || i === deep.floor.length - 1, `${grade} at ${deep.line[i][0]}`);
+    }
+  });
+  // shallower than the ground asks: held there too
+  const shallow = floors([{ p: [100, 0], floor: 98 }]);
+  assert.equal(shallow.floor[middle], 98);
+  // too far from the tunnel: none
+  assert.equal(floors([{ p: [100, 20], floor: 50 }]).known, 0);
+});
