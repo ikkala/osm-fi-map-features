@@ -248,12 +248,16 @@ function toCorners(rings: Point[][], o: Opening): Opening {
   return o;
 }
 
+/** A building's walls stand on footings this deep under its lowest ground (m) */
+export const WALL_FOOTING_M = 1.2;
+
 /**
  * Opens the walls of the buildings where the tunnels going down from a portal in a building under it (`basements`
  * of setTunnelFloors: a ramp into a car park under a house, and the ways on from it) cross them with their room over
- * the building's lowest ground, which its walls reach down to: at the portal, through the building's front, and
- * wherever else, under another of its walls or into a building a way comes up under. As wide as the way and as tall as
- * its room, from its floor there up, without a room: the tunnel goes on under the building. Returns how many openings.
+ * the bottom of the walls' footings, under the building's lowest ground: at the portal, through the building's front,
+ * and wherever else, under another of its walls or into a building a way comes up under. As wide as the room (the way
+ * and ROOM_SIDE_M on both sides) and as tall, from its floor there up, without a room: the tunnel goes on under the
+ * building. Returns how many openings.
  */
 export function openPortals(buildings: Building[], basements: Road[], roads: Road[], heightAt: (e: number, n: number) => number | undefined): number {
   // the ends of the ways not in a tunnel, and the point next to each
@@ -301,7 +305,7 @@ export function openPortals(buildings: Building[], basements: Road[], roads: Roa
         continue;
       }
       const before = b.passages?.length ?? 0;
-      openPassages([b], [{ line, width: r.width, height: room }], false);
+      openPassages([b], [{ line, width: r.width + 2 * ROOM_SIDE_M, height: room }], false);
       const added = b.passages?.splice(before) ?? [];
       for (const o of added) {
         const at = nearestOnLine(line, [(o.from[0] + o.to[0]) / 2, (o.from[1] + o.to[1]) / 2]);
@@ -309,7 +313,7 @@ export function openPortals(buildings: Building[], basements: Road[], roads: Roa
         const length = Math.hypot(c[0] - a[0], c[1] - a[1]);
         const t = length > 0 ? Math.hypot(at.point[0] - a[0], at.point[1] - a[1]) / length : 0;
         const ground = floors[at.segment] + (floors[at.segment + 1] - floors[at.segment]) * t;
-        if (ground + room > lowest(b)) {
+        if (ground + room > lowest(b) - WALL_FOOTING_M) {
           (b.passages ??= []).push(toCorners([b.polygon.outer, ...b.polygon.holes], { ...o, ground }));
           count++;
         }

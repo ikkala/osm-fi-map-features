@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { Point, Polygon } from "./geometry.ts";
 import type { Building, MapFeatures, Rail, Road } from "./osm.ts";
 import { defined } from "./testing.ts";
-import { BED_M, CAR_PARK_CLEARANCE_M, densify, fitRoomsUnderDecks, openPortals, portalWallsAt, RAIL_CLEARANCE_M, raiseToWalls, ROAD_CLEARANCE_M, roomHeight, ROOF_M, setTunnelFloors, setTunnelRooms, uncoverAtGrade, WATER_DEPTH_M } from "./tunnels.ts";
+import { BED_M, CAR_PARK_CLEARANCE_M, WALL_FOOTING_M, densify, fitRoomsUnderDecks, openPortals, portalWallsAt, RAIL_CLEARANCE_M, raiseToWalls, ROAD_CLEARANCE_M, roomHeight, ROOF_M, setTunnelFloors, setTunnelRooms, uncoverAtGrade, WATER_DEPTH_M } from "./tunnels.ts";
 
 function road(osm: string, line: Point[], extra: Partial<Road> = {}): Road {
   return { osm, kind: "primary", width: 8, layer: 0, bridge: false, tunnel: false, line, ...extra };
@@ -665,4 +665,22 @@ test("the tunnels going down into a car park under a building get a car park's r
   assert.deepEqual(map("service", true), [CAR_PARK_CLEARANCE_M, CAR_PARK_CLEARANCE_M]);
   assert.deepEqual(map("residential", true), [ROAD_CLEARANCE_M, 3]);
   assert.deepEqual(map("service", false), [ROAD_CLEARANCE_M, 3]);
+});
+
+test("a basement's ramp opens a wall as wide as its room, and where its room reaches only the wall's footings", () => {
+  // a house from e = 0 to 20, n = -10 to 10, the ramp in at its west wall and out under its east wall along n = 0
+  const house = (): Building => ({ osm: "w9", kind: "apartments", part: false, hasParts: false, height: 20, minHeight: 0, polygon: { outer: [[0, -10], [20, -10], [20, 10], [0, 10]], holes: [] } });
+  const approach = road("w2", [[-10, 0], [0, 0]], { kind: "service", width: 4 });
+  const east = (floorThere: number) => {
+    const b = house();
+    const ramp = road("w1", [[0, 0], [30, 0]], { kind: "service", width: 4, tunnel: true, layer: -1, room: CAR_PARK_CLEARANCE_M, floor: [100, 100 - (100 - floorThere) * 1.5] });
+    openPortals([b], [ramp], [ramp, approach], () => 100);
+    return (b.passages ?? []).filter((o) => o.from[0] === 20 && o.to[0] === 20);
+  };
+  // the room's top 0.5 m under the lowest ground, over the footings' bottom: open, the room's width
+  const footing = east(100 - CAR_PARK_CLEARANCE_M - 0.5);
+  assert.equal(footing.length, 1);
+  assert.ok(Math.abs(Math.abs(footing[0].to[1] - footing[0].from[1]) - (4 + 2)) < 0.01, JSON.stringify(footing));
+  // under the footings: whole
+  assert.deepEqual(east(100 - CAR_PARK_CLEARANCE_M - WALL_FOOTING_M - 0.5), []);
 });

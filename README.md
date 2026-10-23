@@ -251,8 +251,9 @@ nor on a `level` above, another way goes on from there: steps up under a buildin
 of it is inside buildings. A tunnel going on so into ways indoors under the ground (below) goes into a basement,
 such as a ramp into a car park under a house, and is no passage. Where such a tunnel's portal is in the house's wall
 or inside it, and the tunnel goes in under the house, it and the tunnels on from it open the walls they cross with
-their room over the building's lowest ground (which its walls reach down to): at the portal, under another wall, into
-a building a corridor comes up under; as wide as the tunnel and as tall as its room, from its floor there up, without
+their room over the bottom of the walls' footings, 1.2 m under the building's lowest ground (which its walls reach
+down to): at the portal, under another wall, into a building a corridor comes up under; as wide as the tunnel's room
+(the tunnel and 1 m on both sides) and as tall, from its floor there up, without
 a room, and on to a corner less than 2 m beyond, rather than leave a piece of wall standing like a door ajar. Out of a
 basement, ways indoors only
 on storeys over it go on from a lift, which OSM does not map: they are left out, and the lift's house stays shut.
