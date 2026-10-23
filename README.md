@@ -465,7 +465,7 @@ path or nothing (high masts 20 m, catenary masts 8 m). A lamp on a bridge stands
 Crossings, traffic signals and gates are nodes of the ways they are on (`src/streets.ts`): a crossing
 (`highway=crossing`) is on the street and on the footway across it, so it and a traffic signal
 (`highway=traffic_signals`) are put on the nearest street (not a footway or a path) within 1 m, with the street's
-direction there, kind, width and deck height; a gate (`barrier=gate`) spans the way it is on, or else lies in its
+direction there, kind, width and deck height; a gate (`barrier=gate`) spans the way it is on (the narrowest where ways meet), or else lies in its
 fence or wall, 1.2 m wide unless tagged, and `locked` when it is usually locked (`locked=yes`). Only crossings with markings are kept: not `crossing=unmarked` or
 `crossing:markings=no`, and of the markings only stripes (`zebra`, `yes`, ...). A traffic signal's
 `traffic_signals:direction` (forward or backward along the way) tells which traffic it is for; untagged, one on a

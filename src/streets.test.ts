@@ -67,6 +67,12 @@ test("a gate spans the way it is on, or lies in its fence, and a crossing on a b
   assert.equal(map.crossings[0].base, 105);
 });
 
+test("a gate where ways meet spans the narrowest of them", () => {
+  const map = features([road("w1", "footway", [[0, 0], [10, 0]], { width: 2.5 }), road("w2", "steps", [[0, 0], [0, -6]], { width: 1.4 })], []);
+  placeStreetNodes([{ kind: "gate", point: [0, 0] }], map);
+  assert.deepEqual(map.gates.map((g) => [g.across, g.width]), [[0, 1.4]]);
+});
+
 test("fences open where ways cross them and at their gates, but not for bridges or tunnels", () => {
   const map = features(
     [
