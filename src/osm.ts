@@ -736,6 +736,34 @@ export function parseOverpassResponse(value: unknown): OverpassResponse {
   };
 }
 
+/**
+ * The elements reaching into the box, whole: a node in it, a way or relation whose points' box meets it (or whose
+ * centre is in it, without geometry); one without a place is kept, and the tunnels' ways wherever they are, whose
+ * networks' floors are worked out from end to end.
+ */
+export function elementsWithin(elements: OsmElement[], box: GeoBox): OsmElement[] {
+  return elements.filter((element) => {
+    if (element.type === "way" && layering(element.tags ?? {}).tunnel) {
+      return true;
+    }
+    const points: LatLon[] =
+      element.type === "node"
+        ? element.lat === undefined || element.lon === undefined ? [] : [{ lat: element.lat, lon: element.lon }]
+        : element.type === "way"
+          ? element.geometry ?? []
+          : (element.members ?? []).flatMap((m) => m.geometry ?? (m.lat === undefined || m.lon === undefined ? [] : [{ lat: m.lat, lon: m.lon }]));
+    const placed = points.length > 0 ? points : element.type !== "node" && element.center ? [element.center] : [];
+    if (placed.length === 0) {
+      return true;
+    }
+    let [south, west, north, east] = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const { lat, lon } of placed) {
+      [south, west, north, east] = [Math.min(south, lat), Math.min(west, lon), Math.max(north, lat), Math.max(east, lon)];
+    }
+    return north >= box.south && south <= box.north && east >= box.west && west <= box.east;
+  });
+}
+
 function parseTags(value: unknown): Tags | undefined {
   if (!isObject(value)) {
     return undefined;

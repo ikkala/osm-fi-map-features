@@ -1,7 +1,7 @@
 // OSM parsing and tiling together, on a small hand-made Overpass response.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { areaKind, compassDegrees, inheritFromOutlines, meters, openDoorways, openPassages, openRailHalls, overpassQuery, parseOsm, type Building, type OverpassResponse, type Rail, type Road, type Tree } from "./osm.ts";
+import { areaKind, compassDegrees, elementsWithin, inheritFromOutlines, meters, openDoorways, openPassages, openRailHalls, overpassQuery, parseOsm, type Building, type OverpassResponse, type Rail, type Road, type Tree } from "./osm.ts";
 import type { Point } from "./geometry.ts";
 import { LocalProjection } from "./projection.ts";
 import { cutIntoTiles, tilesCovering } from "./tiles.ts";
@@ -436,6 +436,24 @@ test("areaKind makes a shingle of stones rock, as bare rock and scree, and a bea
   assert.equal(areaKind({ natural: "shingle" }), "rock");
   assert.equal(areaKind({ natural: "bare_rock" }), "rock");
   assert.equal(areaKind({ natural: "beach" }), "sand");
+});
+
+test("elementsWithin keeps the elements reaching into the box, whole, and the tunnels anywhere", () => {
+  const box = { south: 61.5, west: 23.7, north: 61.51, east: 23.71 };
+  const elements: OverpassResponse["elements"] = [
+    { type: "node", id: 1, lat: 61.505, lon: 23.705 },
+    { type: "node", id: 2, lat: 61.6, lon: 23.705 },
+    // across the box without a point in it
+    { type: "way", id: 3, geometry: [{ lat: 61.505, lon: 23.6 }, { lat: 61.505, lon: 23.8 }] },
+    { type: "way", id: 4, geometry: [{ lat: 61.52, lon: 23.6 }, { lat: 61.52, lon: 23.8 }] },
+    { type: "way", id: 5, center: { lat: 61.501, lon: 23.701 } },
+    { type: "relation", id: 6, members: [{ type: "way", role: "outer", geometry: [{ lat: 61.4, lon: 23.6 }, { lat: 61.6, lon: 23.6 }, { lat: 61.6, lon: 23.8 }] }] },
+    { type: "relation", id: 7, members: [{ type: "node", role: "", lat: 61.7, lon: 23.705 }] },
+    { type: "relation", id: 8, members: [] },
+    // a tunnel's way, far off
+    { type: "way", id: 9, tags: { highway: "trunk", tunnel: "yes" }, geometry: [{ lat: 61.52, lon: 23.6 }, { lat: 61.52, lon: 23.8 }] },
+  ];
+  assert.deepEqual(elementsWithin(elements, box).map((e) => e.id), [1, 3, 5, 6, 8, 9]);
 });
 
 test("overpassQuery asks for every area rule key", () => {

@@ -49,6 +49,8 @@ const builder = new MapBuilder({
   // groundCorrection: ([e, n], height) => height,
   // and local edits of the OSM data not uploaded yet, OSM XML as an editor such as JOSM saves it (see below)
   // edits: parseOsmEdits(await readFile("edits.osm", "utf8")),
+  // and only some of the tiles, with the features near them (see below)
+  // part: { tiles: [{ x: 1, y: -4 }, { x: 1, y: -3 }], marginM: 1000 },
 });
 const info = await builder.info(); // tiles, OSM timestamp, attributions
 for (const key of info.tiles) {
@@ -90,6 +92,13 @@ The Overpass server is `https://overpass-api.de/api/interpreter` unless `overpas
 For now the first tile asked for builds the whole area and the rest come from memory: bridge spans, tunnels
 and multipolygons reach over tile edges, so they are worked out over the whole area. The API is a tile at
 a time so that this can change without changing its users.
+
+`part` builds only some of the tiles, much faster, to try a change on a few of them: the sources are asked for the
+whole area as without it (so the cached responses serve), and of what they give only the elements and register
+entries reaching within `marginM` of those tiles are kept, each whole, and the tunnels' ways wherever they are,
+since a network's floors are worked out from end to end. The tiles come out as in the whole map unless something
+else they depend on reaches farther than that, such as a river levelled along its course. `info().tiles` still
+lists the whole map's tiles; `tile()` gives only those built.
 
 ## How the map is built
 

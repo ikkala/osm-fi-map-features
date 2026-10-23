@@ -21,8 +21,8 @@ import { landmarkQuery, moveLandmarksOffWays, parseLandmarks } from "./landmarks
 import { withoutCourseWater } from "./rides.ts";
 import { parsePlayEquipment, placePlayEquipment, playgroundQuery } from "./playgrounds.ts";
 import { fetchRoofColours, ORTHO_ATTRIBUTION } from "./ortho.ts";
-import { bounds, fetchOverpass, inheritFromOutlines, LEVEL_HEIGHT_M, NOT_FOR_VEHICLES, openDoorways, openRailHalls, overpassQuery, parseOsm, type Building, type GeoBox } from "./osm.ts";
-import { LocalProjection, type GeoPoint } from "./projection.ts";
+import { bounds, elementsWithin, fetchOverpass, inheritFromOutlines, LEVEL_HEIGHT_M, NOT_FOR_VEHICLES, openDoorways, openRailHalls, overpassQuery, parseOsm, type Building, type GeoBox, type OsmElement } from "./osm.ts";
+import { inGeoBox, LocalProjection, type GeoPoint } from "./projection.ts";
 import { flightSteps, stepAtFlights, type FlightStep } from "./flights.ts";
 import { groundSteps, stepAtWalls, type GroundStep } from "./retainingWalls.ts";
 import { dropStepsInParts, setStaircaseDecks } from "./stairs.ts";
@@ -77,6 +77,12 @@ export interface MapOptions {
   edits?: OsmEdit[];
   /** Corrects the elevation model's height (m) at a point (m), where the ground has changed since it was scanned */
   groundCorrection?: (point: Point, height: number) => number;
+  /**
+   * Builds only these of the map's tiles: from the whole area's sources (the same requests, so the cached responses
+   * serve), keeping only the features that reach within marginM of the tiles, and the tunnels (elementsWithin). Quick
+   * for a few tiles, and they come out as in the whole map unless something they depend on reaches farther.
+   */
+  part?: { tiles: TileKey[]; marginM: number };
   /** Progress and warnings; console by default */
   logger?: Logger;
 }
@@ -190,19 +196,34 @@ export class MapBuilder {
     const minY = Math.min(...ys) * size - FETCH_MARGIN_M;
     const maxY = (Math.max(...ys) + 1) * size + FETCH_MARGIN_M;
     const corners = [toGeo([minX, minY]), toGeo([minX, maxY]), toGeo([maxX, minY]), toGeo([maxX, maxY])];
-    const fetchBox: GeoBox = {
-      south: Math.min(...corners.map((c) => c.latitude)),
-      west: Math.min(...corners.map((c) => c.longitude)),
-      north: Math.max(...corners.map((c) => c.latitude)),
-      east: Math.max(...corners.map((c) => c.longitude)),
-    };
+    const fetchBox = geoBoxOf(corners);
 
     logger.log(`${keys.length} tiles of ${size} m: x ${Math.min(...xs)} .. ${Math.max(...xs)}, y ${Math.min(...ys)} .. ${Math.max(...ys)}`);
+    const part = this.#options.part;
+    const built = part ? keys.filter((key) => part.tiles.some((tile) => tile.x === key.x && tile.y === key.y)) : keys;
+    if (built.length === 0) {
+      throw new Error("none of the tiles to build is in the map");
+    }
+    const builtRect = {
+      minX: Math.min(...built.map((key) => key.x)) * size,
+      minY: Math.min(...built.map((key) => key.y)) * size,
+      maxX: (Math.max(...built.map((key) => key.x)) + 1) * size,
+      maxY: (Math.max(...built.map((key) => key.y)) + 1) * size,
+    };
+    // the features reaching near the part's tiles, from the whole area's responses
+    let within: GeoBox | undefined;
+    if (part) {
+      const [w, s, e, n] = [builtRect.minX - part.marginM, builtRect.minY - part.marginM, builtRect.maxX + part.marginM, builtRect.maxY + part.marginM];
+      within = geoBoxOf([toGeo([w, s]), toGeo([w, n]), toGeo([e, s]), toGeo([e, n])]);
+      logger.log(`building ${built.length} of the tiles, with the features within ${part.marginM} m of them`);
+    }
+    const near = <T extends GeoPoint>(points: T[]) => (within ? inGeoBox(points, within) : points);
     const edits = this.#options.edits ?? [];
     const overpass = async (query: string, addNew = false) => {
       const fetched = await fetchOverpass(query, { url: overpassUrl, cache, refresh });
+      const kept = (elements: OsmElement[]) => ({ ...fetched, response: { ...fetched.response, elements: within ? elementsWithin(elements, within) : elements } });
       if (edits.length === 0) {
-        return fetched;
+        return within ? kept(fetched.response.elements) : fetched;
       }
       const applied = applyOsmEdits(fetched.response.elements, edits, addNew);
       if (addNew) {
@@ -213,7 +234,7 @@ export class MapBuilder {
             (applied.missing > 0 ? `; ${applied.missing} of the modified or deleted not in the fetched data` : ""),
         );
       }
-      return { ...fetched, response: { ...fetched.response, elements: applied.elements } };
+      return kept(applied.elements);
     };
     const { response, cached } = await overpass(overpassQuery(fetchBox), true);
     const osmTimestamp = response.osm3s?.timestamp_osm_base;
@@ -327,7 +348,7 @@ export class MapBuilder {
     const otherAttributions: string[] = [];
     try {
       const { buildings: register, cached: registerCached } = await fetchBuildingRegister(fetchBox, { cache, refresh });
-      const match = applyRegister(features.buildings, register, (r) => toMeters(r.latitude, r.longitude));
+      const match = applyRegister(features.buildings, near(register), (r) => toMeters(r.latitude, r.longitude));
       logger.log(
         `building register: ${register.length} buildings (${registerCached ? "cached" : "fetched"}), ` +
           `${match.heights} heights, ${match.materials} wall materials and ${match.frames} frame materials set, ${match.unmatched} inside no OSM building, ` +
@@ -467,7 +488,8 @@ export class MapBuilder {
         try {
           const { parts, cached: partsCached } = await fetchRoofTops(source, fetchBox, { cache, refresh });
           const ring = (points: GeoPoint[]) => points.map((p) => toMeters(p.latitude, p.longitude));
-          const match = applyRoofTops(notRaised, parts.map((p) => ({ polygon: { outer: ring(p.outer), holes: p.holes.map(ring) }, top: p.top })));
+          const nearParts = parts.filter((p) => near(p.outer).length > 0);
+          const match = applyRoofTops(notRaised, nearParts.map((p) => ({ polygon: { outer: ring(p.outer), holes: p.holes.map(ring) }, top: p.top })));
           logger.log(
             `${source.title}: ${parts.length} parts (${partsCached ? "cached" : "fetched"}), ${match.heights} buildings' heights measured ` +
               `(${match.roofs} given a hipped roof), ` +
@@ -497,7 +519,7 @@ export class MapBuilder {
       try {
         const { trees, cached: treesCached } = await fetchTreeRegister(source, fetchBox, { cache, refresh });
         logger.log(`${source.title}: ${trees.length} trees and shrubs (${treesCached ? "cached" : "fetched"})`);
-        registerTrees.push(...trees);
+        registerTrees.push(...near(trees));
         if (trees.length > 0) {
           otherAttributions.push(source.attribution);
         }
@@ -531,8 +553,7 @@ export class MapBuilder {
         `(${dropped} on none left out); ${openings} openings cut into fences and walls, ${offDecks} stretches on bridges and lids left out, ` +
         `in ${features.barriers.length} pieces`,
     );
-    const tilesRect = { minX: Math.min(...xs) * size, minY: Math.min(...ys) * size, maxX: (Math.max(...xs) + 1) * size, maxY: (Math.max(...ys) + 1) * size };
-    const planted = plantForests(features, tilesRect);
+    const planted = plantForests(features, builtRect);
     logger.log(`${planted} trees and shrubs planted in woods and scrub`);
     const onDecks = standOnDecks(features.bridgeDecks, features.trees, features.lamps, features.playEquipment, features.landmarks, features.roads, features.rails);
     logger.log(
@@ -558,7 +579,7 @@ export class MapBuilder {
       }
     }
 
-    const tiles = new Map(cutIntoTiles(features, keys, size).map((tile) => [tileName(tile), tile]));
+    const tiles = new Map(cutIntoTiles(features, built, size).map((tile) => [tileName(tile), tile]));
     if (water) {
       cutWaterways(tiles, water.waterways, size);
     }
@@ -568,4 +589,14 @@ export class MapBuilder {
     const attributions = [OSM_ATTRIBUTION, ...(heightAt ? [ELEVATION_ATTRIBUTION] : []), ...otherAttributions];
     return { info: { origin, tileSize: size, tiles: keys, osmTimestamp, attributions }, tiles, heightAt, ground, water };
   }
+}
+
+/** The box around the points */
+function geoBoxOf(points: GeoPoint[]): GeoBox {
+  return {
+    south: Math.min(...points.map((p) => p.latitude)),
+    west: Math.min(...points.map((p) => p.longitude)),
+    north: Math.max(...points.map((p) => p.latitude)),
+    east: Math.max(...points.map((p) => p.longitude)),
+  };
 }
