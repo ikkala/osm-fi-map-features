@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mergeGrids, parseAsciiGrid, sampleElevation, toTm35fin } from "./elevation.ts";
+import { elevationAt, mergeGrids, parseAsciiGrid, sampleElevation, toTm35fin } from "./elevation.ts";
 import { LocalProjection } from "./projection.ts";
 import { latticeProjection, tileHeights } from "./tiles.ts";
 
@@ -89,4 +89,21 @@ test("mergeGrids puts the pieces of a large area where their corners say, leavin
   assert.deepEqual([...grid.values].slice(0, 4), [1, Number.NaN, 3, 4]);
   assert.ok([...grid.values].slice(4).every(Number.isNaN));
   assert.equal(sampleElevation(grid, 1001, 5001), undefined);
+});
+
+test("elevationAt takes a point between two pieces' grids from the one with cells all around it", () => {
+  // the height is the easting of the cell's centre; the grids overlap by two cells
+  const west = parseAsciiGrid("ncols 4\nnrows 2\nxllcorner 1000\nyllcorner 5000\ncellsize 2\n1001 1003 1005 1007\n1001 1003 1005 1007\n");
+  const east = parseAsciiGrid("ncols 4\nnrows 2\nxllcorner 1004\nyllcorner 5000\ncellsize 2\n1005 1007 1009 1011\n1005 1007 1009 1011\n");
+  const at = elevationAt([west, east]);
+  assert.equal(at(1002, 5002), 1002);
+  // in the west grid's outer half cell, where its edge cells would give 1007
+  assert.equal(at(1007.5, 5002), 1007.5);
+  assert.equal(at(1010, 5002), 1010);
+  // after a point in the east grid, a point in the west one's outer half cell still comes from the east one
+  assert.equal(at(1007.5, 5002), 1007.5);
+  // only in the east grid's outer half cell, and off both
+  assert.equal(at(1011.8, 5002), 1011);
+  assert.equal(at(1013, 5002), undefined);
+  assert.equal(elevationAt([west])(1007.5, 5002), 1007);
 });

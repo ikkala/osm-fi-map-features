@@ -764,6 +764,32 @@ export function elementsWithin(elements: OsmElement[], box: GeoBox): OsmElement[
   });
 }
 
+const TYPE_ORDER = { node: 0, way: 1, relation: 2 };
+
+/**
+ * The responses to a query asked of pieces of an area as one response to it over the whole: each element once, in
+ * Overpass' order (nodes, ways, relations, each by id), and the oldest piece's timestamp.
+ */
+export function mergeOverpass(responses: OverpassResponse[]): OverpassResponse {
+  if (responses.length === 1) {
+    return responses[0];
+  }
+  const elements = new Map<string, OsmElement>();
+  for (const response of responses) {
+    for (const element of response.elements) {
+      const key = `${element.type}/${element.id}`;
+      if (!elements.has(key)) {
+        elements.set(key, element);
+      }
+    }
+  }
+  const timestamps = responses.flatMap((r) => (r.osm3s?.timestamp_osm_base === undefined ? [] : [r.osm3s.timestamp_osm_base])).sort();
+  return {
+    ...(timestamps.length > 0 && { osm3s: { timestamp_osm_base: timestamps[0] } }),
+    elements: [...elements.values()].sort((a, b) => TYPE_ORDER[a.type] - TYPE_ORDER[b.type] || a.id - b.id),
+  };
+}
+
 function parseTags(value: unknown): Tags | undefined {
   if (!isObject(value)) {
     return undefined;
