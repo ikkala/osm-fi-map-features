@@ -43,11 +43,12 @@ export function placeStreetNodes(nodes: StreetNode[], features: MapFeatures): { 
         across: (way.along + 90) % 360,
         width: node.width ?? way.width,
         ...(way.base !== undefined && { base: way.base }),
+        ...(node.locked && { locked: node.locked }),
       } satisfies Gate);
     } else if (node.kind === "gate" && inBarrier) {
       const { line } = inBarrier.item;
       const across = direction(line[inBarrier.segment], line[inBarrier.segment + 1]);
-      features.gates.push({ point: node.point, across, width: node.width ?? GATE_WIDTH_M } satisfies Gate);
+      features.gates.push({ point: node.point, across, width: node.width ?? GATE_WIDTH_M, ...(node.locked && { locked: node.locked }) } satisfies Gate);
     } else {
       dropped++;
     }

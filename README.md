@@ -82,7 +82,8 @@ photo, so maps of different places keep theirs; the images are not kept).
 `edits` (`parseOsmEdits` of an OSM XML file) shows edits of the OSM data in the map before they are uploaded: the
 elements the file marks `action="modify"` take its tags (and its geometry when the file has a way's nodes; a way whose
 node moved is edited too), those marked `action="delete"` are left out, and new ones (negative ids) are added to the
-map's features (not to its entrances, businesses or landmarks). A relation's edit changes only its tags (its members
+map's features (not to its entrances, businesses or landmarks), and so is a node the file tags that the fetched data lacks
+(a way's vertex that had no tags). A relation's edit changes only its tags (its members
 are kept) or leaves it out; new relations are not supported. Once uploaded,
 the edits are in the fetched data anyway and the file can go.
 
@@ -465,7 +466,7 @@ Crossings, traffic signals and gates are nodes of the ways they are on (`src/str
 (`highway=crossing`) is on the street and on the footway across it, so it and a traffic signal
 (`highway=traffic_signals`) are put on the nearest street (not a footway or a path) within 1 m, with the street's
 direction there, kind, width and deck height; a gate (`barrier=gate`) spans the way it is on, or else lies in its
-fence or wall, 1.2 m wide unless tagged. Only crossings with markings are kept: not `crossing=unmarked` or
+fence or wall, 1.2 m wide unless tagged, and `locked` when it is usually locked (`locked=yes`). Only crossings with markings are kept: not `crossing=unmarked` or
 `crossing:markings=no`, and of the markings only stripes (`zebra`, `yes`, ...). A traffic signal's
 `traffic_signals:direction` (forward or backward along the way) tells which traffic it is for; untagged, one on a
 one-way street is for that street's traffic. Around the centre of

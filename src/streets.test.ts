@@ -57,13 +57,13 @@ test("a gate spans the way it is on, or lies in its fence, and a crossing on a b
   placeStreetNodes(
     [
       { kind: "gate", point: [0, 30] },
-      { kind: "gate", point: [20, 10], width: 1 },
+      { kind: "gate", point: [20, 10], width: 1, locked: true },
       { kind: "gate", point: [60, 60] },
       { kind: "crossing", point: [50, 50] },
     ],
     map,
   );
-  assert.deepEqual(map.gates.map((g) => [g.point, g.across, g.width]), [[[0, 30], 180, 4], [[20, 10], 90, 1]]);
+  assert.deepEqual(map.gates.map((g) => [g.point, g.across, g.width, g.locked]), [[[0, 30], 180, 4, undefined], [[20, 10], 90, 1, true]]);
   assert.equal(map.crossings[0].base, 105);
 });
 

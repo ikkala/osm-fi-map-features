@@ -139,7 +139,8 @@ function centre(geometry: { lat: number; lon: number }[]): { lat: number; lon: n
 
 /**
  * The elements with the edits applied: a modified element takes the edit's tags (and its position or geometry,
- * when the edit has one), a deleted one is left out, and with `addNew` the new ones are added. A response of
+ * when the edit has one), a deleted one is left out, and with `addNew` the new ones are added, and so are the nodes the
+ * edits tag that the data lacks (a way's vertex, untagged before, is in no response of tagged nodes). A response of
  * centres keeps them, moved with the geometry.
  */
 export function applyOsmEdits(elements: OsmElement[], edits: OsmEdit[], addNew: boolean): AppliedEdits {
@@ -172,6 +173,13 @@ export function applyOsmEdits(elements: OsmElement[], edits: OsmEdit[], addNew: 
   }
   if (addNew) {
     result.push(...edits.filter((edit) => edit.action === "create").map((edit) => edit.element));
+    for (const [k, edit] of changes) {
+      const node = edit.element;
+      if (edit.action === "modify" && !found.has(k) && node.type === "node" && node.lat !== undefined && Object.keys(node.tags ?? {}).length > 0) {
+        result.push(node);
+        found.add(k);
+      }
+    }
   }
   return { elements: result, missing: changes.size - found.size };
 }

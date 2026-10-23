@@ -408,6 +408,8 @@ export interface Gate {
   /** Meters from post to post */
   width: number;
   base?: number;
+  /** Usually locked (locked=yes): closed */
+  locked?: true;
 }
 
 /** Fences, walls, retaining walls and hedges (barrier=*) */
@@ -1196,7 +1198,7 @@ function lamp(tags: Tags, point: Point): StreetLamp {
 export type StreetNode =
   | { kind: "crossing"; point: Point }
   | { kind: "signal"; point: Point; direction?: TrafficSignal["direction"] }
-  | { kind: "gate"; point: Point; width?: number };
+  | { kind: "gate"; point: Point; width?: number; locked?: true };
 
 /**
  * The street nodes that are drawn: crossings with markings (not crossing=unmarked, crossing:markings=no or
@@ -1214,7 +1216,7 @@ function streetNode(tags: Tags, point: Point): StreetNode | undefined {
   }
   if (tags.barrier === "gate") {
     const width = meters(tags.width);
-    return { kind: "gate", point, ...(width !== undefined && width > 0 && { width }) };
+    return { kind: "gate", point, ...(width !== undefined && width > 0 && { width }), ...(tags.locked === "yes" && { locked: true as const }) };
   }
   return undefined;
 }
