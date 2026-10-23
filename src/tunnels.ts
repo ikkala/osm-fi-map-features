@@ -95,8 +95,22 @@ interface Node {
   storeys?: number[];
   /** A portal in a building (a ramp down into a basement under it), which hides the cut a portal in the open has */
   inBuilding?: boolean;
+  /** Its floor is known (KnownFloor) and stays */
+  known?: boolean;
   floor: number;
 }
+
+/**
+ * A tunnel's floor known at a point (m), from a plan or a survey rather than from the ground over it: the height of
+ * its way's surface there
+ */
+export interface KnownFloor {
+  p: Point;
+  floor: number;
+}
+
+/** A known floor is the floor of the tunnel's point nearest it within this far (m) */
+const KNOWN_REACH_M = 6;
 
 /** The ground over a tunnel's end, raised to `top` within `half` of `line` (from the portal in); `round`: around its ends too */
 export interface PortalWall {
@@ -338,7 +352,8 @@ export function setTunnelFloors(
   modelAt: (e: number, n: number) => number | undefined,
   levels: ReadonlyMap<Way, number[]> = new Map(),
   underBridge: (p: Point) => boolean = () => false,
-): { floors: number; ramps: number; walls: PortalWall[]; basements: Road[] } {
+  known: readonly KnownFloor[] = [],
+): { floors: number; ramps: number; walls: PortalWall[]; basements: Road[]; known: number } {
   const tunnels: Way[] = [...features.roads, ...features.rails].filter((w) => w.tunnel && !w.lid && w.line.length >= 2);
   const key = pointKey;
   const nodes = new Map<string, Node>();
@@ -537,6 +552,31 @@ export function setTunnelFloors(
     node.floor = Math.min(node.floor, crossed.get(k) ?? Infinity);
   }
 
+  // floors known from plans or surveys: the tunnel's point nearest each has that floor, deeper or shallower than
+  // the ground asks, and keeps it; the floors around come down to it no steeper than MAX_GRADE
+  const knownAt: [string, number][] = [];
+  for (const { p, floor } of known) {
+    let nearest: { k: string; d: number } | undefined;
+    for (const [k, node] of nodes) {
+      const d = Math.hypot(node.p[0] - p[0], node.p[1] - p[1]);
+      if (d <= KNOWN_REACH_M && (!nearest || d < nearest.d)) {
+        nearest = { k, d };
+      }
+    }
+    const node = nearest && nodes.get(nearest.k);
+    if (nearest && node) {
+      node.floor = floor;
+      node.known = true;
+      knownAt.push([nearest.k, floor]);
+    }
+  }
+  const toKnown = spread(nodes, knownAt, (length) => MAX_GRADE * length);
+  for (const [k, node] of nodes) {
+    if (!node.known) {
+      node.floor = Math.min(node.floor, toKnown.get(k) ?? Infinity);
+    }
+  }
+
   // each group of tunnels that touch goes through the passes on its own, so its floors do not depend on tunnels
   // elsewhere: twice (a pass may undo another's work), and again under the tunnels crossing over, once their
   // floors are set, as long as that lowers any (from there no steeper than MAX_GRADE, as above)
@@ -560,7 +600,9 @@ export function setTunnelFloors(
       }
       const lowered = spread(groupNodes, under, (length) => MAX_GRADE * length);
       for (const [k, node] of groupNodes) {
-        node.floor = Math.min(node.floor, lowered.get(k) ?? Infinity);
+        if (!node.known) {
+          node.floor = Math.min(node.floor, lowered.get(k) ?? Infinity);
+        }
       }
       settle();
     }
@@ -585,7 +627,7 @@ export function setTunnelFloors(
     return { floor: node.floor, level: node.sideStairs ? node.half : 0 };
   };
   const ramps = rampOut(features.roads, inTunnels, portalFloor, heightAt) + rampOut(features.rails, inTunnels, portalFloor, heightAt);
-  return { floors, ramps, walls, basements };
+  return { floors, ramps, walls, basements, known: knownAt.length };
 }
 
 /** The room over a tunnel's floor (m): for people, trains, or vehicles (lower where `setTunnelRooms` set it) */
@@ -1230,7 +1272,7 @@ function rampOut<T extends Way>(
 }
 
 /** No steeper than MAX_GRADE: the floor is lowered toward the low points, but not at the portals (or where `keep` says) */
-function easeToGrade(nodes: Map<string, Node>, keep: (node: Node) => boolean = (node) => node.portal !== undefined): void {
+function easeToGrade(nodes: Map<string, Node>, keep: (node: Node) => boolean = (node) => node.portal !== undefined || node.known === true): void {
   const lowest = spread(
     nodes,
     [...nodes].filter(([, node]) => Number.isFinite(node.floor)).map(([k, node]) => [k, node.floor]),
@@ -1264,7 +1306,7 @@ function easeToGrade(nodes: Map<string, Node>, keep: (node: Node) => boolean = (
  * are, or the stairs would rise steeper; a portal comes down, and the way leading on ramps down to it.
  */
 function levelHalls(tunnels: Way[], nodes: Map<string, Node>): void {
-  const keep = (node: Node) => node.stairs === true || node.sideStairs === true;
+  const keep = (node: Node) => node.stairs === true || node.sideStairs === true || node.known === true;
   const rooms = tunnels.map((way) => ({ way, half: ("width" in way ? way.width : RAIL_WIDTH_M) / 2 + ROOM_SIDE_M, box: bounds(way.line) }));
   // the points with a tunnel beside them, and where on its line: between its points i - 1 and i, t of the way
   const beside: { node: Node; line: Point[]; i: number; t: number }[] = [];
@@ -1317,14 +1359,14 @@ function levelHalls(tunnels: Way[], nodes: Map<string, Node>): void {
 /**
  * Smooths the floors along the tunnels where they follow the ground's humps, lowering them only (deeper is
  * always deep enough): a point more than MAX_BEND_M over the line between its neighbours comes down to it.
- * Portals, stairs' feet and junctions stay where they are.
+ * Portals, stairs' feet, junctions and known floors stay where they are.
  */
 function smoothFloors(nodes: Map<string, Node>): void {
   for (let round = 0; round < SMOOTH_ROUNDS; round++) {
     let moved = 0;
     for (const node of nodes.values()) {
       const [a, b] = node.next.map((n) => nodes.get(n.key));
-      if (node.next.length !== 2 || node.portal !== undefined || node.stairs || !a || !b || ![node.floor, a.floor, b.floor].every(Number.isFinite)) {
+      if (node.next.length !== 2 || node.portal !== undefined || node.stairs || node.known || !a || !b || ![node.floor, a.floor, b.floor].every(Number.isFinite)) {
         continue;
       }
       const [la, lb] = [node.next[0].length, node.next[1].length];
@@ -1456,9 +1498,9 @@ function stretchesBetween(nodes: Map<string, Node>, isKey: (node: Node) => boole
  * the stretch's ends to the deepest points it must reach and stays deep enough everywhere. A hull is no
  * steeper than the floor it is under.
  */
-/** Where steadyGrades' stretches end: at the tunnels' ends and junctions, the portals and the stairs */
+/** Where steadyGrades' stretches end: at the tunnels' ends and junctions, the portals, the stairs and the known floors */
 function stretchEnd(node: Node): boolean {
-  return node.next.length !== 2 || node.portal !== undefined || node.stairs === true || node.sideStairs === true;
+  return node.next.length !== 2 || node.portal !== undefined || node.stairs === true || node.sideStairs === true || node.known === true;
 }
 
 function steadyGrades(nodes: Map<string, Node>): void {
