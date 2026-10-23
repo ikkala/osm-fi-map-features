@@ -120,6 +120,21 @@ test("applyOsmEdits changes, leaves out and adds elements", () => {
   assert.deepEqual(applyOsmEdits(fetched, edits, false).elements.map((e) => e.id), [10, 14, 4, 5]);
 });
 
+test("applyOsmEdits adds, with the new elements, the nodes the edits tag that the data lacks", () => {
+  // a vertex untagged before: not in the fetched data
+  const fetched: OsmElement[] = [{ type: "way", id: 10, tags: { building: "office" }, geometry: [{ lat: 0, lon: 0 }, { lat: 1, lon: 0 }] }];
+  const edits = parseOsmEdits(`<osm>
+    <node id='4' action='modify' lat='61.502' lon='23.702'><tag k='barrier' v='gate' /><tag k='locked' v='yes' /></node>
+    <node id='6' action='modify' lat='61.503' lon='23.703' />
+    <node id='7' action='delete' lat='61.504' lon='23.704'><tag k='amenity' v='bench' /></node>
+  </osm>`);
+  const { elements, missing } = applyOsmEdits(fetched, edits, true);
+  assert.deepEqual(elements.slice(1), [{ type: "node", id: 4, tags: { barrier: "gate", locked: "yes" }, lat: 61.502, lon: 23.702 }]);
+  // the deleted node is still missing
+  assert.equal(missing, 1);
+  assert.equal(applyOsmEdits(fetched, edits, false).elements.length, 1);
+});
+
 test("applyOsmEdits moves the centre of a response of centres", () => {
   const fetched: OsmElement[] = [{ type: "way", id: 10, tags: { shop: "kiosk" }, center: { lat: 0, lon: 0 } }];
   const [way] = applyOsmEdits(fetched, parseOsmEdits(FILE), false).elements;
