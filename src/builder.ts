@@ -219,14 +219,14 @@ export class MapBuilder {
     }
     const near = <T extends GeoPoint>(points: T[]) => (within ? inGeoBox(points, within) : points);
     const edits = this.#options.edits ?? [];
-    const overpass = async (query: string, addNew = false) => {
+    const overpass = async (query: string, addNew = false, report = addNew) => {
       const fetched = await fetchOverpass(query, { url: overpassUrl, cache, refresh });
       const kept = (elements: OsmElement[]) => ({ ...fetched, response: { ...fetched.response, elements: within ? elementsWithin(elements, within) : elements } });
       if (edits.length === 0) {
         return within ? kept(fetched.response.elements) : fetched;
       }
       const applied = applyOsmEdits(fetched.response.elements, edits, addNew);
-      if (addNew) {
+      if (report) {
         const created = edits.filter((edit) => edit.action === "create").length;
         const deleted = edits.filter((edit) => edit.action === "delete").length;
         logger.log(
@@ -433,7 +433,7 @@ export class MapBuilder {
       logger.warn(`warning: no playground equipment: ${err instanceof Error ? err.message : String(err)}`);
     }
     try {
-      const { response: landmarkResponse, cached: landmarksCached } = await overpass(landmarkQuery(fetchBox));
+      const { response: landmarkResponse, cached: landmarksCached } = await overpass(landmarkQuery(fetchBox), true, false);
       const found = parseLandmarks(landmarkResponse.elements, origin);
       Object.assign(features, found);
       const areas = features.areas.length;

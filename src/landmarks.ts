@@ -29,6 +29,10 @@ export interface Landmark {
   material?: string;
   /** A mast's or tower's tower:construction (lattice, freestanding, guyed_tube, ...), when OSM tells */
   construction?: string;
+  /** The way it faces (direction=*), degrees counter-clockwise from east, when OSM tells */
+  facing?: number;
+  /** On a wall (support=wall_mounted) */
+  wallMounted?: true;
   /** A landmark on a bridge: the deck's height (m above sea level) it stands on (see standOnDecks) */
   base?: number;
 }
@@ -327,6 +331,7 @@ function addElement(result: Landmarks, tags: Record<string, string>, shape: Shap
   const landmark = landmarkKind(tags);
   if (landmark) {
     const construction = lower(tags["tower:construction"]);
+    const facing = degreesOf(tags.direction);
     result.landmarks.push({
       osm,
       kind: landmark.kind,
@@ -337,8 +342,24 @@ function addElement(result: Landmarks, tags: Record<string, string>, shape: Shap
       ...(height !== undefined && { height }),
       ...(material && { material }),
       ...(construction && { construction }),
+      ...(facing !== undefined && { facing }),
+      ...(tags.support === "wall_mounted" && { wallMounted: true as const }),
     });
   }
+}
+
+/** The points of the compass direction=* may name, clockwise from north */
+const COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+
+/** direction=* (degrees clockwise from north, or a point of the compass) as degrees counter-clockwise from east */
+export function degreesOf(direction: string | undefined): number | undefined {
+  const value = direction?.trim().toUpperCase();
+  if (!value) {
+    return undefined;
+  }
+  const point = COMPASS.indexOf(value);
+  const clockwise = point >= 0 ? point * 22.5 : /^-?\d+(\.\d+)?$/.test(value) ? Number(value) : undefined;
+  return clockwise === undefined ? undefined : (((90 - clockwise) % 360) + 360) % 360;
 }
 
 /** The kind of a landmark and its own kind, first match decides: a fountain that is an artwork is a fountain */
