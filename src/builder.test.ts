@@ -52,11 +52,15 @@ test("a map fetched in pieces asks two at a time, telling each piece fetched and
     return lines.filter((line) => line.includes("piece "));
   };
   const told = await piecesTold();
+  const pieceOf = (line: string) => line.replace(/^\[ *\d+ %\] /, "");
   assert.deepEqual(
-    told.filter((line) => line.startsWith("OSM elements")).sort(),
+    told.map(pieceOf).filter((line) => line.startsWith("OSM elements")).sort(),
     ["OSM elements: piece 1 of 3 fetched", "OSM elements: piece 2 of 3 fetched", "OSM elements: piece 3 of 3 fetched"],
   );
-  assert.ok(told.includes("OSM entrances: piece 3 of 3 fetched"));
+  assert.ok(told.map(pieceOf).includes("OSM entrances: piece 3 of 3 fetched"));
+  // six Overpass queries and the building register, which fails, of 3 pieces each
+  assert.match(told[0], /^\[  4 %\] /);
+  assert.match(told[told.length - 1], /^\[100 %\] /);
   assert.equal(mostAtOnce, 2);
   assert.deepEqual(await piecesTold(), []);
 });

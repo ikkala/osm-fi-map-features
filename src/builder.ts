@@ -222,10 +222,19 @@ export class MapBuilder {
       const corners = [toGeo([minX, minY]), toGeo([minX, maxY]), toGeo([maxX, minY]), toGeo([maxX, maxY])];
       return { corners, box: geoBoxOf(corners) };
     });
+    const covering = (covers?: GeoBox) => pieces.filter(({ box }) => !covers || overlaps(covers, box));
+    const roofTopSources = (this.#options.roofTops ?? ROOF_TOP_SOURCES).filter((s) => covering(s.covers).length > 0);
+    const treeSources = (this.#options.treeRegisters ?? TREE_REGISTERS).filter((s) => covering(s.covers).length > 0);
+    // a request for each piece: six Overpass queries and the building register, with the elevation model also it, the
+    // waterways' query and the roof tops; and the tree registers
+    const requests =
+      pieces.length * (mmlApiKey ? 9 : 7) +
+      (mmlApiKey ? roofTopSources.reduce((sum, s) => sum + covering(s.covers).length, 0) : 0) +
+      treeSources.reduce((sum, s) => sum + covering(s.covers).length, 0);
 
     logger.log(
       `${keys.length} tiles of ${size} m: x ${Math.min(...xs)} .. ${Math.max(...xs)}, y ${Math.min(...ys)} .. ${Math.max(...ys)}` +
-        (pieces.length > 1 ? `, their sources fetched in ${pieces.length} pieces of up to ${pieceTiles} x ${pieceTiles} tiles` : ""),
+        (pieces.length > 1 ? `, their sources fetched in ${pieces.length} pieces of up to ${pieceTiles} x ${pieceTiles} tiles, ${requests} requests` : ""),
     );
     const part = this.#options.part;
     const built = part ? keys.filter((key) => part.tiles.some((tile) => tile.x === key.x && tile.y === key.y)) : keys;
@@ -247,32 +256,44 @@ export class MapBuilder {
     }
     const near = <T extends GeoPoint>(points: T[]) => (within ? inGeoBox(points, within) : points);
     const edits = this.#options.edits ?? [];
-    // a line for each piece fetched, as fetching many takes a while
+    // a line for each piece fetched, as fetching many takes a while, with how far the requests are
+    let answered = 0;
     const tellFetched = (what: string, index: number, count: number, cached: boolean) => {
+      answered++;
       if (!cached && count > 1) {
-        logger.log(`${what}: piece ${index + 1} of ${count} fetched`);
+        logger.log(`[${String(Math.floor((answered * 100) / requests)).padStart(3)} %] ${what}: piece ${index + 1} of ${count} fetched`);
       }
     };
     // a source's responses for the pieces of the area it covers, in their order, PIECES_AT_ONCE asked at a time
     const inPieces = async <T>(what: string, fetchPiece: (box: GeoBox) => Promise<{ cached: boolean } & T>, covers?: GeoBox): Promise<{ cached: boolean; pieces: T[] }> => {
-      const covering = pieces.filter(({ box }) => !covers || overlaps(covers, box));
+      const asked = covering(covers);
       const fetched: ({ cached: boolean } & T)[] = [];
       let next = 0;
+      let told = 0;
       let failed = false;
       const askInTurn = async () => {
-        while (!failed && next < covering.length) {
+        while (!failed && next < asked.length) {
           const index = next++;
           try {
-            fetched[index] = await fetchPiece(covering[index].box);
+            fetched[index] = await fetchPiece(asked[index].box);
           } catch (err) {
             // the other asker stops too, rather than fetching on while the caller goes on
             failed = true;
             throw err;
           }
-          tellFetched(what, index, covering.length, fetched[index].cached);
+          if (!failed) {
+            tellFetched(what, index, asked.length, fetched[index].cached);
+            told++;
+          }
         }
       };
-      await Promise.all(Array.from({ length: Math.min(PIECES_AT_ONCE, covering.length) }, askInTurn));
+      try {
+        await Promise.all(Array.from({ length: Math.min(PIECES_AT_ONCE, asked.length) }, askInTurn));
+      } catch (err) {
+        // the source's pieces left are not asked: the progress goes past them
+        answered += asked.length - told;
+        throw err;
+      }
       return { cached: fetched.every((f) => f.cached), pieces: fetched };
     };
     const overpass = async (what: string, query: (box: GeoBox) => string, addNew = false, report = addNew) => {
@@ -559,7 +580,7 @@ export class MapBuilder {
       logger.log(`${passagesUpSlopes(features.buildings, heightAt)} passage openings and rooms count from the ground up a slope`);
       // measured tops are above sea level: the buildings must stand at their base first
       const notRaised = features.buildings.filter((b) => !raised.includes(b));
-      for (const source of (this.#options.roofTops ?? ROOF_TOP_SOURCES).filter((s) => pieces.some(({ box }) => overlaps(s.covers, box)))) {
+      for (const source of roofTopSources) {
         try {
           const asked = await inPieces(source.title, (box) => fetchRoofTops(source, box, { cache, refresh }), source.covers);
           const parts = uniques(asked.pieces.map((p) => p.parts));
@@ -592,7 +613,7 @@ export class MapBuilder {
     // register trees replace OSM's where they overlap
     const osmTrees = features.trees.length;
     const registerTrees: RegisterTree[] = [];
-    for (const source of (this.#options.treeRegisters ?? TREE_REGISTERS).filter((s) => pieces.some(({ box }) => overlaps(s.covers, box)))) {
+    for (const source of treeSources) {
       try {
         const asked = await inPieces(source.title, (box) => fetchTreeRegister(source, box, { cache, refresh }), source.covers);
         const trees = uniques(asked.pieces.map((p) => p.trees));
