@@ -11,7 +11,7 @@ import { setOutlineDecks, standOnDecks } from "./decks.ts";
 import { bicycleParkingQuery, parseBicycleParking } from "./bicycleParking.ts";
 import { businessQuery, parseBusinesses, placeBusinesses } from "./businesses.ts";
 import { coverCutTunnels, fitLidsToDecks } from "./cuts.ts";
-import { ELEVATION_ATTRIBUTION, fetchElevation, sampleElevation, toTm35fin, type ElevationGrid } from "./elevation.ts";
+import { elevationAt, ELEVATION_ATTRIBUTION, fetchElevation, toTm35fin, type ElevationGrid } from "./elevation.ts";
 import { assignEntrances, entranceQuery, guessEntrances, parseEntrances } from "./entrances.ts";
 import { estimateCycling, estimateFootfall } from "./footfall.ts";
 import { mergeTrees, moveTreesOffWays, plantForests } from "./forests.ts";
@@ -21,13 +21,13 @@ import { landmarkQuery, moveLandmarksOffWays, parseLandmarks } from "./landmarks
 import { withoutCourseWater } from "./rides.ts";
 import { parsePlayEquipment, placePlayEquipment, playgroundQuery } from "./playgrounds.ts";
 import { fetchRoofColours, ORTHO_ATTRIBUTION } from "./ortho.ts";
-import { bounds, elementsWithin, fetchOverpass, inheritFromOutlines, LEVEL_HEIGHT_M, NOT_FOR_VEHICLES, openDoorways, openRailHalls, overpassQuery, parseOsm, type Building, type GeoBox, type OsmElement } from "./osm.ts";
+import { bounds, elementsWithin, fetchOverpass, inheritFromOutlines, mergeOverpass, LEVEL_HEIGHT_M, NOT_FOR_VEHICLES, openDoorways, openRailHalls, overpassQuery, parseOsm, type Building, type GeoBox, type OsmElement } from "./osm.ts";
 import { inGeoBox, LocalProjection, type GeoPoint } from "./projection.ts";
 import { flightSteps, stepAtFlights, type FlightStep } from "./flights.ts";
 import { groundSteps, stepAtWalls, type GroundStep } from "./retainingWalls.ts";
 import { dropStepsInParts, setStaircaseDecks } from "./stairs.ts";
 import { placeStreetNodes } from "./streets.ts";
-import { cutIntoTiles, latticeProjection, tileHeights, tileName, tilesCovering, type Tile, type TileKey } from "./tiles.ts";
+import { cutIntoTiles, latticeProjection, tileHeights, tileName, tilePieces, tilesCoveringAny, type Tile, type TileKey } from "./tiles.ts";
 import { setPlatformTops } from "./platforms.ts";
 import { applyRoofTops, fetchRoofTops, ROOF_TOP_SOURCES, type RoofTopSource } from "./roofTops.ts";
 import { setTrackBeds } from "./trackbeds.ts";
@@ -59,9 +59,15 @@ export interface Logger {
 export interface MapOptions {
   /** Map coordinates are meters east and north of this point */
   origin: GeoPoint;
-  /** Every tile that touches this box is part of the map */
-  area: GeoBox;
+  /** Every tile that touches this box, or one of these boxes, is part of the map */
+  area: GeoBox | GeoBox[];
   tileSizeM: number;
+  /**
+   * Fetches the sources in pieces, squares of this many tiles a side on a grid from tile 0, 0, each around the map's
+   * tiles in it: no request grows with the map, and none asks for what is between its parts. By default in one piece
+   * around all the tiles.
+   */
+  fetchPieceTiles?: number;
   /** Where the sources' responses are kept */
   cache: SourceCache;
   /** Fetch the sources again instead of using the cache */
@@ -105,7 +111,8 @@ interface Built {
   /** The elevation model, where a point (m) is in its coordinates, stepped at the retaining walls and raised to the portals' walls, for the tiles' heights */
   ground:
     | {
-        grid: ElevationGrid;
+        /** The model's height at a point in its coordinates */
+        elevation: (e: number, n: number) => number | undefined;
         toTm: (e: number, n: number) => [number, number];
         steps: GroundStep[];
         flights: FlightStep[];
@@ -131,10 +138,16 @@ export class MapBuilder {
     this.#options = options;
     this.#projection = new LocalProjection(options.origin);
     this.#logger = options.logger ?? console;
-    const { area } = options;
+    if (options.fetchPieceTiles !== undefined && !(Number.isInteger(options.fetchPieceTiles) && options.fetchPieceTiles > 0)) {
+      throw new Error(`invalid fetch piece: ${options.fetchPieceTiles} tiles`);
+    }
+    const boxes = Array.isArray(options.area) ? options.area : [options.area];
+    if (boxes.length === 0) {
+      throw new Error("no area");
+    }
     const toMeters = (latitude: number, longitude: number) => this.#projection.toMeters({ latitude, longitude });
-    this.tiles = tilesCovering(
-      bounds([toMeters(area.south, area.west), toMeters(area.south, area.east), toMeters(area.north, area.west), toMeters(area.north, area.east)]),
+    this.tiles = tilesCoveringAny(
+      boxes.map((box) => bounds([toMeters(box.south, box.west), toMeters(box.south, box.east), toMeters(box.north, box.west), toMeters(box.north, box.east)])),
       options.tileSizeM,
     );
   }
@@ -150,12 +163,12 @@ export class MapBuilder {
     if (!tile || !built.ground || tile.heights) {
       return tile;
     }
-    const { grid, toTm, steps, flights, buildingSteps: walls, wallsAt } = built.ground;
+    const { elevation, toTm, steps, flights, buildingSteps: walls, wallsAt } = built.ground;
     const at = latticeProjection(tile, this.#options.tileSizeM, TM_LATTICE_M, toTm);
     const water = built.water;
     const model = stepAtWalls(
       stepAtFlights(
-        stepAtWalls((e: number, n: number) => this.#corrected(e, n, sampleElevation(grid, ...at(e, n))), steps),
+        stepAtWalls((e: number, n: number) => this.#corrected(e, n, elevation(...at(e, n))), steps),
         flights,
       ),
       walls,
@@ -191,14 +204,21 @@ export class MapBuilder {
     const keys = this.tiles;
     const xs = keys.map((key) => key.x);
     const ys = keys.map((key) => key.y);
-    const minX = Math.min(...xs) * size - FETCH_MARGIN_M;
-    const maxX = (Math.max(...xs) + 1) * size + FETCH_MARGIN_M;
-    const minY = Math.min(...ys) * size - FETCH_MARGIN_M;
-    const maxY = (Math.max(...ys) + 1) * size + FETCH_MARGIN_M;
-    const corners = [toGeo([minX, minY]), toGeo([minX, maxY]), toGeo([maxX, minY]), toGeo([maxX, maxY])];
-    const fetchBox = geoBoxOf(corners);
+    const pieceTiles = this.#options.fetchPieceTiles;
+    // each piece's corners around its tiles, and its box
+    const pieces = (pieceTiles === undefined ? [keys] : tilePieces(keys, pieceTiles)).map((piece) => {
+      const minX = Math.min(...piece.map((key) => key.x)) * size - FETCH_MARGIN_M;
+      const maxX = (Math.max(...piece.map((key) => key.x)) + 1) * size + FETCH_MARGIN_M;
+      const minY = Math.min(...piece.map((key) => key.y)) * size - FETCH_MARGIN_M;
+      const maxY = (Math.max(...piece.map((key) => key.y)) + 1) * size + FETCH_MARGIN_M;
+      const corners = [toGeo([minX, minY]), toGeo([minX, maxY]), toGeo([maxX, minY]), toGeo([maxX, maxY])];
+      return { corners, box: geoBoxOf(corners) };
+    });
 
-    logger.log(`${keys.length} tiles of ${size} m: x ${Math.min(...xs)} .. ${Math.max(...xs)}, y ${Math.min(...ys)} .. ${Math.max(...ys)}`);
+    logger.log(
+      `${keys.length} tiles of ${size} m: x ${Math.min(...xs)} .. ${Math.max(...xs)}, y ${Math.min(...ys)} .. ${Math.max(...ys)}` +
+        (pieces.length > 1 ? `, their sources fetched in ${pieces.length} pieces of up to ${pieceTiles} x ${pieceTiles} tiles` : ""),
+    );
     const part = this.#options.part;
     const built = part ? keys.filter((key) => part.tiles.some((tile) => tile.x === key.x && tile.y === key.y)) : keys;
     if (built.length === 0) {
@@ -219,8 +239,19 @@ export class MapBuilder {
     }
     const near = <T extends GeoPoint>(points: T[]) => (within ? inGeoBox(points, within) : points);
     const edits = this.#options.edits ?? [];
-    const overpass = async (query: string, addNew = false) => {
-      const fetched = await fetchOverpass(query, { url: overpassUrl, cache, refresh });
+    // a source's responses for the pieces of the area it covers
+    const inPieces = async <T>(fetchPiece: (box: GeoBox) => Promise<{ cached: boolean } & T>, covers?: GeoBox): Promise<{ cached: boolean; pieces: T[] }> => {
+      const fetched = [];
+      for (const { box } of pieces) {
+        if (!covers || overlaps(covers, box)) {
+          fetched.push(await fetchPiece(box));
+        }
+      }
+      return { cached: fetched.every((f) => f.cached), pieces: fetched };
+    };
+    const overpass = async (query: (box: GeoBox) => string, addNew = false) => {
+      const asked = await inPieces((box) => fetchOverpass(query(box), { url: overpassUrl, cache, refresh }));
+      const fetched = { cached: asked.cached, response: mergeOverpass(asked.pieces.map((p) => p.response)) };
       const kept = (elements: OsmElement[]) => ({ ...fetched, response: { ...fetched.response, elements: within ? elementsWithin(elements, within) : elements } });
       if (edits.length === 0) {
         return within ? kept(fetched.response.elements) : fetched;
@@ -236,7 +267,7 @@ export class MapBuilder {
       }
       return kept(applied.elements);
     };
-    const { response, cached } = await overpass(overpassQuery(fetchBox), true);
+    const { response, cached } = await overpass(overpassQuery, true);
     const osmTimestamp = response.osm3s?.timestamp_osm_base;
     logger.log(`${response.elements.length} OSM elements (${cached ? "cached, refresh to fetch again" : "fetched"}), data from ${osmTimestamp ?? "?"}`);
 
@@ -265,20 +296,31 @@ export class MapBuilder {
     let wallStepped: ((e: number, n: number) => number | undefined) | undefined;
     let ground: Built["ground"];
     if (mmlApiKey) {
-      // the corners' TM35FIN box covers the tiles, turned or not
-      const tm = corners.map(toTm35fin);
-      const { grid, cached: elevationCached } = await fetchElevation(
-        {
-          minE: Math.min(...tm.map(([e]) => e)),
-          minN: Math.min(...tm.map(([, n]) => n)),
-          maxE: Math.max(...tm.map(([e]) => e)),
-          maxN: Math.max(...tm.map(([, n]) => n)),
-        },
-        { apiKey: mmlApiKey, cache, refresh },
+      const grids: ElevationGrid[] = [];
+      let elevationCached = true;
+      for (const { corners } of pieces) {
+        // the corners' TM35FIN box covers the piece's tiles, turned or not
+        const tm = corners.map(toTm35fin);
+        const { grid, cached } = await fetchElevation(
+          {
+            minE: Math.min(...tm.map(([e]) => e)),
+            minN: Math.min(...tm.map(([, n]) => n)),
+            maxE: Math.max(...tm.map(([e]) => e)),
+            maxN: Math.max(...tm.map(([, n]) => n)),
+          },
+          { apiKey: mmlApiKey, cache, refresh },
+        );
+        grids.push(grid);
+        elevationCached &&= cached;
+      }
+      const cells = grids.reduce((sum, grid) => sum + grid.cols * grid.rows, 0);
+      logger.log(
+        (grids.length === 1 ? `elevation model ${grids[0].cols} x ${grids[0].rows} cells` : `elevation model in ${grids.length} pieces, ${cells} cells`) +
+          ` of ${grids[0].cellSize} m (${elevationCached ? "cached" : "fetched"})`,
       );
-      logger.log(`elevation model ${grid.cols} x ${grid.rows} cells of ${grid.cellSize} m (${elevationCached ? "cached" : "fetched"})`);
+      const elevation = elevationAt(grids);
       const toTm = (e: number, n: number) => toTm35fin(toGeo([e, n]));
-      const modelAt = (e: number, n: number) => this.#corrected(e, n, sampleElevation(grid, ...toTm(e, n)));
+      const modelAt = (e: number, n: number) => this.#corrected(e, n, elevation(...toTm(e, n)));
       // the model smooths retaining walls into slopes: the ground steps at them again
       const steps = groundSteps(features.barriers, modelAt);
       const stepping = steps.filter((s) => s.footOut > 0 || s.topIn > 0);
@@ -288,7 +330,7 @@ export class MapBuilder {
       logger.log(`${flights.length} flights of steps step the ground the model smooths`);
       heightAt = stepAtFlights(stepAtWalls(modelAt, steps), flights);
       wallStepped = heightAt;
-      ground = { grid, toTm, steps, flights, buildingSteps: [] };
+      ground = { elevation, toTm, steps, flights, buildingSteps: [] };
       logger.log(`${setTunnelRooms(features.roads)} tunnels get a lower room by their maxheight`);
       // tunnels in cuts first: the ways over them become bridges
       const covered = coverCutTunnels(features, heightAt);
@@ -301,7 +343,7 @@ export class MapBuilder {
       // from here on, and in the tiles' heights, the ground over the tunnels' ends is raised to their portals' walls
       const wallsAt = portalWallsAt(tunnels.walls);
       heightAt = raiseToWalls(heightAt, wallsAt);
-      ground = { grid, toTm, steps, flights, buildingSteps: [], wallsAt };
+      ground = { elevation, toTm, steps, flights, buildingSteps: [], wallsAt };
       // before cutting into tiles, so a bridge's deck goes from end to end
       const ramps = (lines: { bridge: boolean; deck?: number[] }[]) => lines.filter((l) => l.deck && !l.bridge).length;
       const stepped = setBridgeDecks(features.roads, heightAt, indoors, throughBuildings) + setBridgeDecks(features.rails, heightAt, indoors);
@@ -347,7 +389,9 @@ export class MapBuilder {
 
     const otherAttributions: string[] = [];
     try {
-      const { buildings: register, cached: registerCached } = await fetchBuildingRegister(fetchBox, { cache, refresh });
+      const asked = await inPieces((box) => fetchBuildingRegister(box, { cache, refresh }));
+      const register = uniques(asked.pieces.map((p) => p.buildings));
+      const registerCached = asked.cached;
       const match = applyRegister(features.buildings, near(register), (r) => toMeters(r.latitude, r.longitude));
       logger.log(
         `building register: ${register.length} buildings (${registerCached ? "cached" : "fetched"}), ` +
@@ -398,7 +442,7 @@ export class MapBuilder {
     logger.log(`${windowed} of ${features.buildings.filter((b) => !b.hasParts).length} buildings get windows`);
     // OSM entrances, and guessed doors for buildings with windows but none
     try {
-      const { response: entranceResponse, cached: entrancesCached } = await overpass(entranceQuery(fetchBox));
+      const { response: entranceResponse, cached: entrancesCached } = await overpass(entranceQuery);
       const entrances = parseEntrances(entranceResponse.elements, origin);
       const placed = assignEntrances(features.buildings, entrances);
       const guessed = guessEntrances(features.buildings, features.roads);
@@ -411,7 +455,7 @@ export class MapBuilder {
     }
     // businesses after the entrances they show at
     try {
-      const { response: businessResponse, cached: businessesCached } = await overpass(businessQuery(fetchBox));
+      const { response: businessResponse, cached: businessesCached } = await overpass(businessQuery);
       const businesses = parseBusinesses(businessResponse.elements, origin);
       const placed = placeBusinesses(features.buildings, businesses, features.roads);
       logger.log(
@@ -422,7 +466,7 @@ export class MapBuilder {
       logger.warn(`warning: no businesses: ${err instanceof Error ? err.message : String(err)}`);
     }
     try {
-      const { response: playResponse, cached: playCached } = await overpass(playgroundQuery(fetchBox));
+      const { response: playResponse, cached: playCached } = await overpass(playgroundQuery);
       const placed = placePlayEquipment(parsePlayEquipment(playResponse.elements, origin), playgrounds);
       features.playEquipment = placed.equipment;
       logger.log(
@@ -433,7 +477,7 @@ export class MapBuilder {
       logger.warn(`warning: no playground equipment: ${err instanceof Error ? err.message : String(err)}`);
     }
     try {
-      const { response: landmarkResponse, cached: landmarksCached } = await overpass(landmarkQuery(fetchBox));
+      const { response: landmarkResponse, cached: landmarksCached } = await overpass(landmarkQuery);
       const found = parseLandmarks(landmarkResponse.elements, origin);
       Object.assign(features, found);
       const areas = features.areas.length;
@@ -449,7 +493,7 @@ export class MapBuilder {
       logger.warn(`warning: no landmarks: ${err instanceof Error ? err.message : String(err)}`);
     }
     try {
-      const { response: parkingResponse, cached: parkingCached } = await overpass(bicycleParkingQuery(fetchBox));
+      const { response: parkingResponse, cached: parkingCached } = await overpass(bicycleParkingQuery);
       features.bicycleParkings = parseBicycleParking(parkingResponse.elements, origin);
       const capacity = features.bicycleParkings.reduce((sum, p) => sum + (p.capacity ?? 0), 0);
       logger.log(`${features.bicycleParkings.length} bicycle parkings (${parkingCached ? "cached" : "fetched"}), ${capacity} places where OSM tells`);
@@ -484,9 +528,11 @@ export class MapBuilder {
       logger.log(`${passagesUpSlopes(features.buildings, heightAt)} passage openings and rooms count from the ground up a slope`);
       // measured tops are above sea level: the buildings must stand at their base first
       const notRaised = features.buildings.filter((b) => !raised.includes(b));
-      for (const source of (this.#options.roofTops ?? ROOF_TOP_SOURCES).filter((s) => overlaps(s.covers, fetchBox))) {
+      for (const source of (this.#options.roofTops ?? ROOF_TOP_SOURCES).filter((s) => pieces.some(({ box }) => overlaps(s.covers, box)))) {
         try {
-          const { parts, cached: partsCached } = await fetchRoofTops(source, fetchBox, { cache, refresh });
+          const asked = await inPieces((box) => fetchRoofTops(source, box, { cache, refresh }), source.covers);
+          const parts = uniques(asked.pieces.map((p) => p.parts));
+          const partsCached = asked.cached;
           const ring = (points: GeoPoint[]) => points.map((p) => toMeters(p.latitude, p.longitude));
           const nearParts = parts.filter((p) => near(p.outer).length > 0);
           const match = applyRoofTops(notRaised, nearParts.map((p) => ({ polygon: { outer: ring(p.outer), holes: p.holes.map(ring) }, top: p.top })));
@@ -515,9 +561,11 @@ export class MapBuilder {
     // register trees replace OSM's where they overlap
     const osmTrees = features.trees.length;
     const registerTrees: RegisterTree[] = [];
-    for (const source of (this.#options.treeRegisters ?? TREE_REGISTERS).filter((s) => overlaps(s.covers, fetchBox))) {
+    for (const source of (this.#options.treeRegisters ?? TREE_REGISTERS).filter((s) => pieces.some(({ box }) => overlaps(s.covers, box)))) {
       try {
-        const { trees, cached: treesCached } = await fetchTreeRegister(source, fetchBox, { cache, refresh });
+        const asked = await inPieces((box) => fetchTreeRegister(source, box, { cache, refresh }), source.covers);
+        const trees = uniques(asked.pieces.map((p) => p.trees));
+        const treesCached = asked.cached;
         logger.log(`${source.title}: ${trees.length} trees and shrubs (${treesCached ? "cached" : "fetched"})`);
         registerTrees.push(...near(trees));
         if (trees.length > 0) {
@@ -567,7 +615,7 @@ export class MapBuilder {
     let water: WaterLevels | undefined;
     if (heightAt) {
       try {
-        const { response: waterResponse, cached: waterCached } = await overpass(waterwayQuery(fetchBox));
+        const { response: waterResponse, cached: waterCached } = await overpass(waterwayQuery);
         const lines = parseWaterways(waterResponse.elements, origin);
         water = setWaterLevels(features.areas, lines, heightAt);
         logger.log(
@@ -589,6 +637,36 @@ export class MapBuilder {
     const attributions = [OSM_ATTRIBUTION, ...(heightAt ? [ELEVATION_ATTRIBUTION] : []), ...otherAttributions];
     return { info: { origin, tileSize: size, tiles: keys, osmTimestamp, attributions }, tiles, heightAt, ground, water };
   }
+}
+
+/**
+ * The pieces' register entries as from one request: an entry as many times as in the piece that has it most often
+ * (neighbouring pieces' responses have those between them alike, and a register may list one twice), in the order of
+ * their JSON, so that it does not hang on the pieces'.
+ */
+function uniques<T>(pieces: T[][]): T[] {
+  if (pieces.length === 1) {
+    return pieces[0];
+  }
+  const most = new Map<string, T[]>();
+  for (const piece of pieces) {
+    const alike = new Map<string, T[]>();
+    for (const item of piece) {
+      const key = JSON.stringify(item);
+      const items = alike.get(key);
+      if (items) {
+        items.push(item);
+      } else {
+        alike.set(key, [item]);
+      }
+    }
+    for (const [key, items] of alike) {
+      if (items.length > (most.get(key)?.length ?? 0)) {
+        most.set(key, items);
+      }
+    }
+  }
+  return [...most].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).flatMap(([, items]) => items);
 }
 
 /** The box around the points */
