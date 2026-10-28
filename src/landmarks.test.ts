@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Point } from "./geometry.ts";
-import { DAM_WIDTH_M, landmarkQuery, moveLandmarksOffWays, parseLandmarks, PIER_WIDTH_M, type Landmark, type LandmarkKind } from "./landmarks.ts";
+import { DAM_WIDTH_M, degreesOf, landmarkQuery, moveLandmarksOffWays, parseLandmarks, PIER_WIDTH_M, type Landmark, type LandmarkKind } from "./landmarks.ts";
 import type { Area, MapFeatures, OverpassResponse, Rail, Road } from "./osm.ts";
 import { LocalProjection } from "./projection.ts";
 import { setCourseHeights, withoutCourseWater, type Ride } from "./rides.ts";
@@ -76,6 +76,25 @@ test("seamarks, and masts, flagpoles, stones, fountains, artworks, memorials and
   const fountain = defined(byOsm.get("w5"));
   near(fountain.point, [32, 32]);
   assert.equal(defined(fountain.outline).length, 4);
+});
+
+test("a landmark faces its direction, and tells when it is on a wall", () => {
+  const found = parseLandmarks(
+    [
+      node(1, [0, 0], { historic: "memorial", memorial: "cannon", direction: "SE", support: "wall_mounted" }),
+      node(2, [1, 1], { historic: "memorial", direction: "north-ish" }),
+    ],
+    ORIGIN,
+  );
+  assert.deepEqual(
+    found.landmarks.map((l) => [l.type, l.facing, l.wallMounted]),
+    [
+      ["cannon", 315, true],
+      [undefined, undefined, undefined],
+    ],
+  );
+  // degrees clockwise from north, or a point of the compass, to counter-clockwise from east
+  assert.deepEqual(["0", "90", "135", "270.5", "nnw", "W", "", undefined].map(degreesOf), [90, 0, 315, 179.5, 112.5, 180, undefined, undefined]);
 });
 
 test("piers and dams as lines with a width or as outlines", () => {

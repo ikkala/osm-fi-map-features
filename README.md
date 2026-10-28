@@ -85,7 +85,8 @@ photo, so maps of different places keep theirs; the images are not kept).
 `edits` (`parseOsmEdits` of an OSM XML file) shows edits of the OSM data in the map before they are uploaded: the
 elements the file marks `action="modify"` take its tags (and its geometry when the file has a way's nodes; a way whose
 node moved is edited too), those marked `action="delete"` are left out, and new ones (negative ids) are added to the
-map's features (not to its entrances, businesses or landmarks). A relation's edit changes only its tags (its members
+map's features and landmarks (not to its entrances or businesses), and so is a node the file tags that the fetched data lacks
+(a way's vertex that had no tags). A relation's edit changes only its tags (its members
 are kept) or leaves it out; new relations are not supported. Once uploaded,
 the edits are in the fetched data anyway and the file can go.
 
@@ -478,8 +479,8 @@ path or nothing (high masts 20 m, catenary masts 8 m). A lamp on a bridge stands
 Crossings, traffic signals and gates are nodes of the ways they are on (`src/streets.ts`): a crossing
 (`highway=crossing`) is on the street and on the footway across it, so it and a traffic signal
 (`highway=traffic_signals`) are put on the nearest street (not a footway or a path) within 1 m, with the street's
-direction there, kind, width and deck height; a gate (`barrier=gate`) spans the way it is on, or else lies in its
-fence or wall, 1.2 m wide unless tagged. Only crossings with markings are kept: not `crossing=unmarked` or
+direction there, kind, width and deck height; a gate (`barrier=gate`) spans the way it is on (the narrowest where ways meet), or else lies in its
+fence or wall, 1.2 m wide unless tagged, and `locked` when it is usually locked (`locked=yes`). Only crossings with markings are kept: not `crossing=unmarked` or
 `crossing:markings=no`, and of the markings only stripes (`zebra`, `yes`, ...). A traffic signal's
 `traffic_signals:direction` (forward or backward along the way) tells which traffic it is for; untagged, one on a
 one-way street is for that street's traffic. Around the centre of
@@ -532,7 +533,8 @@ Landmarks come from a query of their own (`src/landmarks.ts`); the tiles have th
 - `landmarks`: masts (`man_made=mast`, with `tower:type` and `tower:construction`), towers mapped as a node (as
   a way they are buildings), flagpoles, boulders (`natural=stone`), fountains, artworks (`tourism=artwork`, with
   `artwork_type`), memorials and monuments (`historic=memorial` with `memorial=*`, `historic=monument`) and power
-  towers and poles, each with its `name`, `height` and `material`, and a way's outline; a fountain that is an
+  towers and poles, each with its `name`, `height` and `material`, the way it faces (`direction`, degrees or a point
+  of the compass), whether it is on a wall (`support=wall_mounted`), and a way's outline; a fountain that is an
   artwork is a fountain. Around Tampere about 900 flagpoles (none with a height), 200 masts, 230 power supports and
   180 fountains, artworks and memorials. A node's landmark on the ground keeps 0.5 m clear of the roads for vehicles
   and the railways (3 m wide) on the ground: OSM maps a work at a stop on the platform's edge by the street, and a

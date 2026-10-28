@@ -6,6 +6,8 @@ import { bounds, NOT_FOR_VEHICLES, type Crossing, type Gate, type MapFeatures, t
 
 /** A node this close (m) to a way's line is on it */
 const ON_WAY_M = 1;
+/** Ways passing this close (m) alike to a node meet at it */
+const MEET_M = 0.01;
 /** A gate in a fence or a wall, on no way, is this wide (m) unless OSM says */
 const GATE_WIDTH_M = 1.2;
 
@@ -27,7 +29,8 @@ export function placeStreetNodes(nodes: StreetNode[], features: MapFeatures): { 
   const barriers = candidates(features.barriers);
   let dropped = 0;
   for (const node of nodes) {
-    const onStreet = nearest(node.kind === "gate" ? roads : streets, node.point);
+    // a gate where ways meet closes the narrowest
+    const onStreet = node.kind === "gate" ? nearest(roads, node.point, (road) => road.width) : nearest(streets, node.point);
     const inBarrier = node.kind === "gate" && !onStreet ? nearest(barriers, node.point) : undefined;
     if (node.kind === "crossing" && onStreet) {
       features.crossings.push(wayPoint(onStreet.item, onStreet.segment, node.point) satisfies Crossing);
@@ -43,11 +46,12 @@ export function placeStreetNodes(nodes: StreetNode[], features: MapFeatures): { 
         across: (way.along + 90) % 360,
         width: node.width ?? way.width,
         ...(way.base !== undefined && { base: way.base }),
+        ...(node.locked && { locked: node.locked }),
       } satisfies Gate);
     } else if (node.kind === "gate" && inBarrier) {
       const { line } = inBarrier.item;
       const across = direction(line[inBarrier.segment], line[inBarrier.segment + 1]);
-      features.gates.push({ point: node.point, across, width: node.width ?? GATE_WIDTH_M } satisfies Gate);
+      features.gates.push({ point: node.point, across, width: node.width ?? GATE_WIDTH_M, ...(node.locked && { locked: node.locked }) } satisfies Gate);
     } else {
       dropped++;
     }
@@ -55,15 +59,23 @@ export function placeStreetNodes(nodes: StreetNode[], features: MapFeatures): { 
   return { dropped };
 }
 
-/** The item whose line passes within ON_WAY_M of p nearest to it, and the segment it passes on */
-function nearest<T>(candidates: Candidate<T>[], p: Point): { item: T; segment: number } | undefined {
+/**
+ * The item whose line passes within ON_WAY_M of p nearest to it, and the segment it passes on; of items meeting at p,
+ * the narrowest when `width` is given
+ */
+function nearest<T>(candidates: Candidate<T>[], p: Point, width?: (item: T) => number): { item: T; segment: number } | undefined {
   let best: { item: T; segment: number; distance: number } | undefined;
   for (const { item, line, box } of candidates) {
     if (p[0] < box.minX - ON_WAY_M || p[0] > box.maxX + ON_WAY_M || p[1] < box.minY - ON_WAY_M || p[1] > box.maxY + ON_WAY_M) {
       continue;
     }
     const { distance, segment } = nearestOnLine(line, p);
-    if (distance <= ON_WAY_M && (!best || distance < best.distance)) {
+    if (distance > ON_WAY_M) {
+      continue;
+    }
+    const nearer = !best || distance < best.distance - MEET_M;
+    const narrower = best !== undefined && width !== undefined && distance <= best.distance + MEET_M && width(item) < width(best.item);
+    if (nearer || narrower) {
       best = { item, segment, distance };
     }
   }

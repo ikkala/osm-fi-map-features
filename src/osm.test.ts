@@ -368,7 +368,7 @@ test("parseOsm reads the painted crossings, traffic signals and gates, and fence
       { type: "node", id: 62, tags: { highway: "crossing", crossing: "unmarked" }, ...at(3, 0) },
       { type: "node", id: 63, tags: { highway: "crossing", "crossing:markings": "no" }, ...at(4, 0) },
       { type: "node", id: 64, tags: { highway: "traffic_signals", "traffic_signals:direction": "backward" }, ...at(5, 0) },
-      { type: "node", id: 65, tags: { barrier: "gate", width: "4" }, ...at(6, 0) },
+      { type: "node", id: 65, tags: { barrier: "gate", width: "4", locked: "yes" }, ...at(6, 0) },
       { type: "way", id: 66, tags: { barrier: "fence", fence_type: "Wood" }, geometry: [at(0, 10), at(20, 10)] },
       { type: "way", id: 67, tags: { barrier: "wall", wall: "noise_barrier" }, geometry: [at(0, 20), at(20, 20)] },
       { type: "way", id: 68, tags: { barrier: "hedge", height: "2" }, geometry: [at(0, 30), at(20, 30)] },
@@ -383,6 +383,7 @@ test("parseOsm reads the painted crossings, traffic signals and gates, and fence
     [["crossing", "1.0"], ["crossing", "2.0"], ["signal", "5.0"], ["gate", "6.0"]],
   );
   assert.deepEqual([streetNodes[2], streetNodes[3]].map((s) => (s.kind === "signal" ? s.direction : s.kind === "gate" ? s.width : undefined)), ["backward", 4]);
+  assert.equal(streetNodes[3].kind === "gate" ? streetNodes[3].locked : undefined, true);
   assert.deepEqual(
     features.barriers.map((b) => [b.osm, b.kind, b.height, b.heightEstimated, b.material]),
     [
