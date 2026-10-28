@@ -136,6 +136,48 @@ export function sampleElevation(grid: ElevationGrid, e: number, n: number): numb
   return top + (bottom - top) * tr;
 }
 
+/**
+ * The height at a TM35FIN point from the grids of the pieces of an area: from one with the cell centres all around the
+ * point, which give the same height in any of them on the model's lattice, else from the edge cells of one
+ * (sampleElevation).
+ */
+export function elevationAt(grids: ElevationGrid[]): (e: number, n: number) => number | undefined {
+  if (grids.length === 1) {
+    const [grid] = grids;
+    return (e, n) => sampleElevation(grid, e, n);
+  }
+  // neighbouring points are mostly in the same grid
+  let last = grids[0];
+  const within = (grid: ElevationGrid, e: number, n: number) => (between(grid, e, n) ? sampleElevation(grid, e, n) : undefined);
+  return (e, n) => {
+    const height = within(last, e, n);
+    if (height !== undefined) {
+      return height;
+    }
+    for (const grid of grids) {
+      const height = within(grid, e, n);
+      if (height !== undefined) {
+        last = grid;
+        return height;
+      }
+    }
+    for (const grid of grids) {
+      const height = sampleElevation(grid, e, n);
+      if (height !== undefined) {
+        return height;
+      }
+    }
+    return undefined;
+  };
+}
+
+/** Whether a TM35FIN point is within the centres of the grid's outer cells */
+function between(grid: ElevationGrid, e: number, n: number): boolean {
+  const fc = (e - grid.west) / grid.cellSize - 0.5;
+  const fr = (grid.south + grid.rows * grid.cellSize - n) / grid.cellSize - 0.5;
+  return fc >= 0 && fr >= 0 && fc <= grid.cols - 1 && fr <= grid.rows - 1;
+}
+
 export interface ElevationFetchOptions extends CacheOptions {
   apiKey: string;
 }

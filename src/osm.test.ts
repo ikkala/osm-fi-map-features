@@ -1,10 +1,10 @@
 // OSM parsing and tiling together, on a small hand-made Overpass response.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { areaKind, compassDegrees, elementsWithin, inheritFromOutlines, meters, openDoorways, openPassages, openRailHalls, overpassQuery, parseOsm, type Building, type OverpassResponse, type Rail, type Road, type Tree } from "./osm.ts";
+import { areaKind, compassDegrees, elementsWithin, inheritFromOutlines, meters, mergeOverpass, openDoorways, openPassages, openRailHalls, overpassQuery, parseOsm, type Building, type OverpassResponse, type Rail, type Road, type Tree } from "./osm.ts";
 import type { Point } from "./geometry.ts";
 import { LocalProjection } from "./projection.ts";
-import { cutIntoTiles, tilesCovering } from "./tiles.ts";
+import { cutIntoTiles, tilePieces, tilesCovering, tilesCoveringAny } from "./tiles.ts";
 import { defined } from "./testing.ts";
 
 const origin = { latitude: 61.5, longitude: 23.75 };
@@ -455,6 +455,37 @@ test("elementsWithin keeps the elements reaching into the box, whole, and the tu
     { type: "way", id: 9, tags: { highway: "trunk", tunnel: "yes" }, geometry: [{ lat: 61.52, lon: 23.6 }, { lat: 61.52, lon: 23.8 }] },
   ];
   assert.deepEqual(elementsWithin(elements, box).map((e) => e.id), [1, 3, 5, 6, 8, 9]);
+});
+
+test("mergeOverpass gives the pieces' elements once each, in Overpass' order, with the oldest timestamp", () => {
+  const west: OverpassResponse = {
+    osm3s: { timestamp_osm_base: "2026-10-20T10:00:00Z" },
+    elements: [
+      { type: "node", id: 5, lat: 61.5, lon: 23.7 },
+      { type: "way", id: 3, geometry: [{ lat: 61.5, lon: 23.7 }, { lat: 61.5, lon: 23.8 }] },
+      { type: "relation", id: 1, members: [] },
+    ],
+  };
+  const east: OverpassResponse = {
+    osm3s: { timestamp_osm_base: "2026-10-20T09:59:00Z" },
+    elements: [
+      { type: "node", id: 2, lat: 61.5, lon: 23.8 },
+      // across the pieces' edge, in both
+      { type: "way", id: 3, geometry: [{ lat: 61.5, lon: 23.7 }, { lat: 61.5, lon: 23.8 }] },
+      { type: "way", id: 1, geometry: [{ lat: 61.5, lon: 23.8 }, { lat: 61.6, lon: 23.8 }] },
+    ],
+  };
+  const merged = mergeOverpass([west, east]);
+  assert.deepEqual(merged.elements.map((e) => `${e.type}/${e.id}`), ["node/2", "node/5", "way/1", "way/3", "relation/1"]);
+  assert.equal(merged.osm3s?.timestamp_osm_base, "2026-10-20T09:59:00Z");
+  assert.equal(mergeOverpass([west]), west);
+});
+
+test("tilesCoveringAny gives each tile of overlapping rectangles once, and tilePieces groups them on a grid", () => {
+  const tiles = tilesCoveringAny([{ minX: -50, minY: -50, maxX: 150, maxY: 50 }, { minX: 50, minY: 0, maxX: 250, maxY: 150 }], 100);
+  assert.deepEqual(tiles.map((t) => `${t.x}_${t.y}`), ["-1_-1", "0_-1", "1_-1", "-1_0", "0_0", "1_0", "2_0", "0_1", "1_1", "2_1"]);
+  const pieces = tilePieces(tiles, 2);
+  assert.deepEqual(pieces.map((piece) => piece.map((t) => `${t.x}_${t.y}`)), [["-1_-1"], ["0_-1", "1_-1"], ["-1_0"], ["0_0", "1_0", "0_1", "1_1"], ["2_0", "2_1"]]);
 });
 
 test("overpassQuery asks for every area rule key", () => {

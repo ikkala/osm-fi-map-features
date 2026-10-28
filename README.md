@@ -34,9 +34,12 @@ import { fileCache, MapBuilder } from "osm-fi-map-features";
 
 const builder = new MapBuilder({
   origin: { latitude: 61.4981, longitude: 23.7610 },
-  // south, west, north, east: every tile touching this box is part of the map
+  // south, west, north, east: every tile touching this box is part of the map; or a list of boxes, overlapping or not,
+  // for a map of another shape: every tile touching one of them
   area: { south: 61.488, west: 23.725, north: 61.512, east: 23.795 },
   tileSizeM: 250,
+  // optional: fetch the sources in pieces of up to this many tiles a side (see below)
+  // fetchPieceTiles: 20,
   // the sources' responses are kept here, one file each
   cache: fileCache(".cache"),
   mmlApiKey: process.env.MML_API_KEY,
@@ -86,6 +89,13 @@ map's features and landmarks (not to its entrances or businesses), and so is a n
 (a way's vertex that had no tags). A relation's edit changes only its tags (its members
 are kept) or leaves it out; new relations are not supported. Once uploaded,
 the edits are in the fetched data anyway and the file can go.
+
+The sources are asked for a box around all the map's tiles, unless `fetchPieceTiles` is given: then for each piece of
+the map, a square of that many tiles a side on a grid from tile `0, 0`, a box around the map's tiles in it. No request
+then grows with the map, nor asks for what lies between its parts, and a piece's responses stay cached while the map
+changes elsewhere. The pieces' responses are put together as one: an Overpass element in several of them (a way
+across a piece's edge) once, in Overpass' order, so that the map comes out as from one request; a register's entries
+alike once; and the elevation model's heights from a piece's grid, where it has the cells all around the point.
 
 The Overpass server is `https://overpass-api.de/api/interpreter` unless `overpassUrl` is given; mind its
 [usage policy](https://wiki.openstreetmap.org/wiki/Overpass_API#Public_Overpass_API_instances).
@@ -252,8 +262,9 @@ nor on a `level` above, another way goes on from there: steps up under a buildin
 of it is inside buildings. A tunnel going on so into ways indoors under the ground (below) goes into a basement,
 such as a ramp into a car park under a house, and is no passage. Where such a tunnel's portal is in the house's wall
 or inside it, and the tunnel goes in under the house, it and the tunnels on from it open the walls they cross with
-their room over the building's lowest ground (which its walls reach down to): at the portal, under another wall, into
-a building a corridor comes up under; as wide as the tunnel and as tall as its room, from its floor there up, without
+their room over the bottom of the walls' footings, 1.2 m under the building's lowest ground (which its walls reach
+down to): at the portal, under another wall, into a building a corridor comes up under; as wide as the tunnel's room
+(the tunnel and 1 m on both sides) and as tall, from its floor there up, without
 a room, and on to a corner less than 2 m beyond, rather than leave a piece of wall standing like a door ajar. Out of a
 basement, ways indoors only
 on storeys over it go on from a lift, which OSM does not map: they are left out, and the lift's house stays shut.
@@ -293,6 +304,9 @@ A tile has these stretches (`buildingSteps`), its buildings' and those of the bu
 A road tunnel for vehicles gets a room (`room`) lower than a road's 4.8 m where `maxheight` is lower, at least
 2.2 m: the tallest `maxheight` among the vehicles' tunnels joined to it at their points, so a car park's aisles behind
 its entrances' signs, and tunnels sharing a hall, share it; so does a walkway's tunnel meeting one or beside it.
+Tunnels going down into a basement from a portal in a house (a ramp into a car park under it), joined at their points,
+whose vehicles' ways are all service roads, are a car park: their room is at most 2.5 m, a car park's clear height,
+and a service road of it with `lanes` (a ramp with a lane each way) is as wide as its lanes, 3.25 m each.
 
 Other tunnels get heights from the elevation model, which has the bare ground over them. A tunnel (`layer` -1 or above)
 whose ground rises nowhere more than 3 m over its ends runs at the ground under something built over it, which the
@@ -316,7 +330,7 @@ hill or a lake, gets its floor (`floor`, with a point every 10 m): straight betw
 lowest within 4 m outside, along the ways leading on and on past a short one, since at the portal the model has
 the top of its wall), a junction underground
 hanging between its branches' ends by distance, but at least room and a 1 m roof under the ground (3 m of
-room for people, 4.8 m for vehicles or lower by `maxheight`, 6 m for trains; reached 30 m in from a portal; under water areas 5 m more, the water's 3 m, since the model has its surface, and 2 m of its bed over the roof, wherever water is over the room's width) and no
+room for people, 4.8 m for vehicles or lower by `maxheight`, 2.5 m in a car park, 6 m for trains; reached 30 m in from a portal, from a portal in a house only under that house, beyond whose walls the ground over the tunnel is the open ground; under water areas 5 m more, the water's 3 m, since the model has its surface, and 2 m of its bed over the roof, wherever water is over the room's width) and no
 steeper than 7 %, but from a portal in a house that the tunnel goes in under (a ramp down into a basement, with no cut
 in front of it) at one steady grade down to where it must be, however steep. The model smooths a portal's wall into a slope over the tunnel's end, so the ground over the
 room (in the tiles' heights too) is raised from the portal 6 m in to the ground there, and so is the ground under a

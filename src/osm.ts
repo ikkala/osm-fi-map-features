@@ -79,6 +79,8 @@ export interface Road {
   service?: string;
   /** Roads for vehicles: the height a vehicle may have (maxheight=*, m), when OSM tells */
   maxHeight?: number;
+  /** Roads for vehicles: how many lanes it has (lanes=*), when OSM tells */
+  lanes?: number;
   /** Tunnels: the room over the floor (m) where lower than its kind's, from maxheight=* (see tunnels.ts) */
   room?: number;
   /** Roads for vehicles: whether buses may drive on it, from bus=* or psv=*, when OSM tells (e.g. designated on a bus lane closed to others) */
@@ -543,7 +545,7 @@ const ROAD_WIDTHS: Record<string, number> = {
   corridor: 3,
 };
 
-const LANE_WIDTH_M = 3.25;
+export const LANE_WIDTH_M = 3.25;
 
 /** Trees in a natural=tree_row stand this far apart (OSM has only the row's line) */
 const TREE_ROW_SPACING_M = 8;
@@ -766,6 +768,32 @@ export function elementsWithin(elements: OsmElement[], box: GeoBox): OsmElement[
   });
 }
 
+const TYPE_ORDER = { node: 0, way: 1, relation: 2 };
+
+/**
+ * The responses to a query asked of pieces of an area as one response to it over the whole: each element once, in
+ * Overpass' order (nodes, ways, relations, each by id), and the oldest piece's timestamp.
+ */
+export function mergeOverpass(responses: OverpassResponse[]): OverpassResponse {
+  if (responses.length === 1) {
+    return responses[0];
+  }
+  const elements = new Map<string, OsmElement>();
+  for (const response of responses) {
+    for (const element of response.elements) {
+      const key = `${element.type}/${element.id}`;
+      if (!elements.has(key)) {
+        elements.set(key, element);
+      }
+    }
+  }
+  const timestamps = responses.flatMap((r) => (r.osm3s?.timestamp_osm_base === undefined ? [] : [r.osm3s.timestamp_osm_base])).sort();
+  return {
+    ...(timestamps.length > 0 && { osm3s: { timestamp_osm_base: timestamps[0] } }),
+    elements: [...elements.values()].sort((a, b) => TYPE_ORDER[a.type] - TYPE_ORDER[b.type] || a.id - b.id),
+  };
+}
+
 function parseTags(value: unknown): Tags | undefined {
   if (!isObject(value)) {
     return undefined;
@@ -909,7 +937,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
           ...layering(road),
           ...optionalName(road),
           ...oneway(road),
-          ...(walkway ? (road.footway ? { footway: road.footway } : {}) : { ...sidewalks(road), ...motorAccess(road), ...maxHeight(road) }),
+          ...(walkway ? (road.footway ? { footway: road.footway } : {}) : { ...sidewalks(road), ...motorAccess(road), ...maxHeight(road), ...lanesOf(road) }),
           ...access(road),
           ...(road.highway === "steps" ? stepping(road) : {}),
           ...surfaceOf(road),
@@ -2248,6 +2276,12 @@ export function motorAccess(tags: Tags): { motorVehicle?: string; service?: stri
     ...(tags.highway === "service" && tags.service && { service: tags.service }),
     ...((bay === "left" || bay === "right" || bay === "both") && { busBay: bay }),
   };
+}
+
+/** A road's lanes=*, when OSM tells a whole number of them */
+function lanesOf(tags: Tags): { lanes?: number } {
+  const lanes = number(tags.lanes);
+  return lanes !== undefined && Number.isInteger(lanes) && lanes > 0 ? { lanes } : {};
 }
 
 /** A road's maxheight=* in meters, when OSM tells one */
