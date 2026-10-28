@@ -44,6 +44,8 @@ export const DEFAULT_OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 
 /** Fetch this much around the tiles, so a long road segment crossing a tile corner is not missed. */
 const FETCH_MARGIN_M = 50;
+/** A source's pieces fetched at once: the public Overpass servers give an address two slots */
+const PIECES_AT_ONCE = 2;
 /** Roads and rails are simplified to this many meters */
 const LINE_TOLERANCE_M = 0.3;
 /** Ground height grid spacing; the elevation model has 2 m cells */
@@ -251,15 +253,26 @@ export class MapBuilder {
         logger.log(`${what}: piece ${index + 1} of ${count} fetched`);
       }
     };
-    // a source's responses for the pieces of the area it covers
+    // a source's responses for the pieces of the area it covers, in their order, PIECES_AT_ONCE asked at a time
     const inPieces = async <T>(what: string, fetchPiece: (box: GeoBox) => Promise<{ cached: boolean } & T>, covers?: GeoBox): Promise<{ cached: boolean; pieces: T[] }> => {
       const covering = pieces.filter(({ box }) => !covers || overlaps(covers, box));
-      const fetched = [];
-      for (const [index, { box }] of covering.entries()) {
-        const piece = await fetchPiece(box);
-        tellFetched(what, index, covering.length, piece.cached);
-        fetched.push(piece);
-      }
+      const fetched: ({ cached: boolean } & T)[] = [];
+      let next = 0;
+      let failed = false;
+      const askInTurn = async () => {
+        while (!failed && next < covering.length) {
+          const index = next++;
+          try {
+            fetched[index] = await fetchPiece(covering[index].box);
+          } catch (err) {
+            // the other asker stops too, rather than fetching on while the caller goes on
+            failed = true;
+            throw err;
+          }
+          tellFetched(what, index, covering.length, fetched[index].cached);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(PIECES_AT_ONCE, covering.length) }, askInTurn));
       return { cached: fetched.every((f) => f.cached), pieces: fetched };
     };
     const overpass = async (what: string, query: (box: GeoBox) => string, addNew = false, report = addNew) => {

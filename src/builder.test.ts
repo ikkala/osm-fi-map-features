@@ -26,15 +26,23 @@ test("a map needs an area and whole tiles for its fetch pieces", () => {
   assert.throws(() => new MapBuilder({ origin, area, tileSizeM: 250, fetchPieceTiles: 0.5, cache: memoryCache() }), /invalid fetch piece/);
 });
 
-test("a map fetched in pieces tells each piece fetched, and none cached", async (t) => {
-  // Overpass answers with nothing, the registers not at all
-  t.mock.method(globalThis, "fetch", async (input: string | URL | Request) =>
-    String(input) === DEFAULT_OVERPASS_URL ? new Response('{"elements":[]}') : new Response("", { status: 500 }),
-  );
+test("a map fetched in pieces asks two at a time, telling each piece fetched and none cached", async (t) => {
+  // Overpass answers with nothing in a moment, the registers not at all
+  let asking = 0;
+  let mostAtOnce = 0;
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
+    if (String(input) !== DEFAULT_OVERPASS_URL) {
+      return new Response("", { status: 500 });
+    }
+    mostAtOnce = Math.max(mostAtOnce, ++asking);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    asking--;
+    return new Response('{"elements":[]}');
+  });
   const projection = new LocalProjection(origin);
-  // the tiles 0_0 and 1_0, a piece each
+  // the tiles 0_0, 1_0 and 2_0, a piece each
   const sw = projection.toGeo([10, 10]);
-  const ne = projection.toGeo([400, 150]);
+  const ne = projection.toGeo([650, 150]);
   const area = { south: sw.latitude, west: sw.longitude, north: ne.latitude, east: ne.longitude };
   const cache = memoryCache();
   const piecesTold = async () => {
@@ -44,7 +52,11 @@ test("a map fetched in pieces tells each piece fetched, and none cached", async 
     return lines.filter((line) => line.includes("piece "));
   };
   const told = await piecesTold();
-  assert.deepEqual(told.slice(0, 2), ["OSM elements: piece 1 of 2 fetched", "OSM elements: piece 2 of 2 fetched"]);
-  assert.ok(told.includes("OSM entrances: piece 2 of 2 fetched"));
+  assert.deepEqual(
+    told.filter((line) => line.startsWith("OSM elements")).sort(),
+    ["OSM elements: piece 1 of 3 fetched", "OSM elements: piece 2 of 3 fetched", "OSM elements: piece 3 of 3 fetched"],
+  );
+  assert.ok(told.includes("OSM entrances: piece 3 of 3 fetched"));
+  assert.equal(mostAtOnce, 2);
   assert.deepEqual(await piecesTold(), []);
 });
