@@ -81,6 +81,12 @@ export interface MapOptions {
   roofTops?: RoofTopSource[];
   /** Local edits of the OSM data, not uploaded (yet): applied to what is fetched, new elements to the map's features only */
   edits?: OsmEdit[];
+  /**
+   * Tunnels' floors known at points, from plans or surveys (the height of the way's surface, m, in the elevation
+   * model's system, N2000): the tunnel's point nearest each, within a few meters, has that floor, in place of one hung
+   * under the ground over it
+   */
+  tunnelFloors?: { at: GeoPoint; floor: number }[];
   /** Corrects the elevation model's height (m) at a point (m), where the ground has changed since it was scanned */
   groundCorrection?: (point: Point, height: number) => number;
   /**
@@ -336,8 +342,12 @@ export class MapBuilder {
       const covered = coverCutTunnels(features, heightAt);
       logger.log(`${covered.tunnels} tunnels in cuts get lids, ${covered.crossings} ways over them become bridges`);
       logger.log(`${uncoverAtGrade(features, heightAt)} tunnels run at the ground under buildings`);
-      const tunnels = setTunnelFloors(features, heightAt, levels, underBridges([...features.roads, ...features.rails], bridgeOutlines));
+      const knownFloors = (this.#options.tunnelFloors ?? []).map(({ at, floor }) => ({ p: projection.toMeters(at), floor }));
+      const tunnels = setTunnelFloors(features, heightAt, levels, underBridges([...features.roads, ...features.rails], bridgeOutlines), knownFloors);
       logger.log(`${tunnels.floors} tunnel ways under hills and lakes get floors, ${tunnels.ramps} ways out of their portals ramps, ${tunnels.walls.length} stretches of ground raised over portals`);
+      if (knownFloors.length > 0) {
+        logger.log(`${tunnels.known} of ${knownFloors.length} known tunnel floors on a tunnel`);
+      }
       const opened = openPortals(features.buildings, tunnels.basements, features.roads, heightAt);
       logger.log(`${tunnels.basements.length} tunnel ways go down into basements from portals in buildings, opening ${opened} walls`);
       // from here on, and in the tiles' heights, the ground over the tunnels' ends is raised to their portals' walls
