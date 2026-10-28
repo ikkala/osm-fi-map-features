@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MapBuilder } from "./builder.ts";
+import { DEFAULT_OVERPASS_URL, MapBuilder } from "./builder.ts";
 import { memoryCache } from "./cache.ts";
 import { LocalProjection } from "./projection.ts";
 import { tileName } from "./tiles.ts";
@@ -24,4 +24,27 @@ test("a map needs an area and whole tiles for its fetch pieces", () => {
   const area = { south: 61.5, west: 23.75, north: 61.501, east: 23.751 };
   assert.throws(() => new MapBuilder({ origin, area: [], tileSizeM: 250, cache: memoryCache() }), /no area/);
   assert.throws(() => new MapBuilder({ origin, area, tileSizeM: 250, fetchPieceTiles: 0.5, cache: memoryCache() }), /invalid fetch piece/);
+});
+
+test("a map fetched in pieces tells each piece fetched, and none cached", async (t) => {
+  // Overpass answers with nothing, the registers not at all
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request) =>
+    String(input) === DEFAULT_OVERPASS_URL ? new Response('{"elements":[]}') : new Response("", { status: 500 }),
+  );
+  const projection = new LocalProjection(origin);
+  // the tiles 0_0 and 1_0, a piece each
+  const sw = projection.toGeo([10, 10]);
+  const ne = projection.toGeo([400, 150]);
+  const area = { south: sw.latitude, west: sw.longitude, north: ne.latitude, east: ne.longitude };
+  const cache = memoryCache();
+  const piecesTold = async () => {
+    const lines: string[] = [];
+    const logger = { log: (line: string) => lines.push(line), warn: () => {} };
+    await new MapBuilder({ origin, area, tileSizeM: 250, fetchPieceTiles: 1, cache, logger, roofTops: [], treeRegisters: [] }).info();
+    return lines.filter((line) => line.includes("piece "));
+  };
+  const told = await piecesTold();
+  assert.deepEqual(told.slice(0, 2), ["OSM elements: piece 1 of 2 fetched", "OSM elements: piece 2 of 2 fetched"]);
+  assert.ok(told.includes("OSM entrances: piece 2 of 2 fetched"));
+  assert.deepEqual(await piecesTold(), []);
 });

@@ -245,18 +245,25 @@ export class MapBuilder {
     }
     const near = <T extends GeoPoint>(points: T[]) => (within ? inGeoBox(points, within) : points);
     const edits = this.#options.edits ?? [];
+    // a line for each piece fetched, as fetching many takes a while
+    const tellFetched = (what: string, index: number, count: number, cached: boolean) => {
+      if (!cached && count > 1) {
+        logger.log(`${what}: piece ${index + 1} of ${count} fetched`);
+      }
+    };
     // a source's responses for the pieces of the area it covers
-    const inPieces = async <T>(fetchPiece: (box: GeoBox) => Promise<{ cached: boolean } & T>, covers?: GeoBox): Promise<{ cached: boolean; pieces: T[] }> => {
+    const inPieces = async <T>(what: string, fetchPiece: (box: GeoBox) => Promise<{ cached: boolean } & T>, covers?: GeoBox): Promise<{ cached: boolean; pieces: T[] }> => {
+      const covering = pieces.filter(({ box }) => !covers || overlaps(covers, box));
       const fetched = [];
-      for (const { box } of pieces) {
-        if (!covers || overlaps(covers, box)) {
-          fetched.push(await fetchPiece(box));
-        }
+      for (const [index, { box }] of covering.entries()) {
+        const piece = await fetchPiece(box);
+        tellFetched(what, index, covering.length, piece.cached);
+        fetched.push(piece);
       }
       return { cached: fetched.every((f) => f.cached), pieces: fetched };
     };
-    const overpass = async (query: (box: GeoBox) => string, addNew = false, report = addNew) => {
-      const asked = await inPieces((box) => fetchOverpass(query(box), { url: overpassUrl, cache, refresh }));
+    const overpass = async (what: string, query: (box: GeoBox) => string, addNew = false, report = addNew) => {
+      const asked = await inPieces(what, (box) => fetchOverpass(query(box), { url: overpassUrl, cache, refresh }));
       const fetched = { cached: asked.cached, response: mergeOverpass(asked.pieces.map((p) => p.response)) };
       const kept = (elements: OsmElement[]) => ({ ...fetched, response: { ...fetched.response, elements: within ? elementsWithin(elements, within) : elements } });
       if (edits.length === 0) {
@@ -273,7 +280,7 @@ export class MapBuilder {
       }
       return kept(applied.elements);
     };
-    const { response, cached } = await overpass(overpassQuery, true);
+    const { response, cached } = await overpass("OSM elements", overpassQuery, true);
     const osmTimestamp = response.osm3s?.timestamp_osm_base;
     logger.log(`${response.elements.length} OSM elements (${cached ? "cached, refresh to fetch again" : "fetched"}), data from ${osmTimestamp ?? "?"}`);
 
@@ -304,7 +311,7 @@ export class MapBuilder {
     if (mmlApiKey) {
       const grids: ElevationGrid[] = [];
       let elevationCached = true;
-      for (const { corners } of pieces) {
+      for (const [index, { corners }] of pieces.entries()) {
         // the corners' TM35FIN box covers the piece's tiles, turned or not
         const tm = corners.map(toTm35fin);
         const { grid, cached } = await fetchElevation(
@@ -316,6 +323,7 @@ export class MapBuilder {
           },
           { apiKey: mmlApiKey, cache, refresh },
         );
+        tellFetched("elevation model", index, pieces.length, cached);
         grids.push(grid);
         elevationCached &&= cached;
       }
@@ -399,7 +407,7 @@ export class MapBuilder {
 
     const otherAttributions: string[] = [];
     try {
-      const asked = await inPieces((box) => fetchBuildingRegister(box, { cache, refresh }));
+      const asked = await inPieces("building register", (box) => fetchBuildingRegister(box, { cache, refresh }));
       const register = uniques(asked.pieces.map((p) => p.buildings));
       const registerCached = asked.cached;
       const match = applyRegister(features.buildings, near(register), (r) => toMeters(r.latitude, r.longitude));
@@ -452,7 +460,7 @@ export class MapBuilder {
     logger.log(`${windowed} of ${features.buildings.filter((b) => !b.hasParts).length} buildings get windows`);
     // OSM entrances, and guessed doors for buildings with windows but none
     try {
-      const { response: entranceResponse, cached: entrancesCached } = await overpass(entranceQuery);
+      const { response: entranceResponse, cached: entrancesCached } = await overpass("OSM entrances", entranceQuery);
       const entrances = parseEntrances(entranceResponse.elements, origin);
       const placed = assignEntrances(features.buildings, entrances);
       const guessed = guessEntrances(features.buildings, features.roads);
@@ -465,7 +473,7 @@ export class MapBuilder {
     }
     // businesses after the entrances they show at
     try {
-      const { response: businessResponse, cached: businessesCached } = await overpass(businessQuery);
+      const { response: businessResponse, cached: businessesCached } = await overpass("OSM businesses", businessQuery);
       const businesses = parseBusinesses(businessResponse.elements, origin);
       const placed = placeBusinesses(features.buildings, businesses, features.roads);
       logger.log(
@@ -476,7 +484,7 @@ export class MapBuilder {
       logger.warn(`warning: no businesses: ${err instanceof Error ? err.message : String(err)}`);
     }
     try {
-      const { response: playResponse, cached: playCached } = await overpass(playgroundQuery);
+      const { response: playResponse, cached: playCached } = await overpass("playground equipment", playgroundQuery);
       const placed = placePlayEquipment(parsePlayEquipment(playResponse.elements, origin), playgrounds);
       features.playEquipment = placed.equipment;
       logger.log(
@@ -487,7 +495,7 @@ export class MapBuilder {
       logger.warn(`warning: no playground equipment: ${err instanceof Error ? err.message : String(err)}`);
     }
     try {
-      const { response: landmarkResponse, cached: landmarksCached } = await overpass(landmarkQuery, true, false);
+      const { response: landmarkResponse, cached: landmarksCached } = await overpass("landmarks", landmarkQuery, true, false);
       const found = parseLandmarks(landmarkResponse.elements, origin);
       Object.assign(features, found);
       const areas = features.areas.length;
@@ -503,7 +511,7 @@ export class MapBuilder {
       logger.warn(`warning: no landmarks: ${err instanceof Error ? err.message : String(err)}`);
     }
     try {
-      const { response: parkingResponse, cached: parkingCached } = await overpass(bicycleParkingQuery);
+      const { response: parkingResponse, cached: parkingCached } = await overpass("bicycle parkings", bicycleParkingQuery);
       features.bicycleParkings = parseBicycleParking(parkingResponse.elements, origin);
       const capacity = features.bicycleParkings.reduce((sum, p) => sum + (p.capacity ?? 0), 0);
       logger.log(`${features.bicycleParkings.length} bicycle parkings (${parkingCached ? "cached" : "fetched"}), ${capacity} places where OSM tells`);
@@ -540,7 +548,7 @@ export class MapBuilder {
       const notRaised = features.buildings.filter((b) => !raised.includes(b));
       for (const source of (this.#options.roofTops ?? ROOF_TOP_SOURCES).filter((s) => pieces.some(({ box }) => overlaps(s.covers, box)))) {
         try {
-          const asked = await inPieces((box) => fetchRoofTops(source, box, { cache, refresh }), source.covers);
+          const asked = await inPieces(source.title, (box) => fetchRoofTops(source, box, { cache, refresh }), source.covers);
           const parts = uniques(asked.pieces.map((p) => p.parts));
           const partsCached = asked.cached;
           const ring = (points: GeoPoint[]) => points.map((p) => toMeters(p.latitude, p.longitude));
@@ -573,7 +581,7 @@ export class MapBuilder {
     const registerTrees: RegisterTree[] = [];
     for (const source of (this.#options.treeRegisters ?? TREE_REGISTERS).filter((s) => pieces.some(({ box }) => overlaps(s.covers, box)))) {
       try {
-        const asked = await inPieces((box) => fetchTreeRegister(source, box, { cache, refresh }), source.covers);
+        const asked = await inPieces(source.title, (box) => fetchTreeRegister(source, box, { cache, refresh }), source.covers);
         const trees = uniques(asked.pieces.map((p) => p.trees));
         const treesCached = asked.cached;
         logger.log(`${source.title}: ${trees.length} trees and shrubs (${treesCached ? "cached" : "fetched"})`);
@@ -625,7 +633,7 @@ export class MapBuilder {
     let water: WaterLevels | undefined;
     if (heightAt) {
       try {
-        const { response: waterResponse, cached: waterCached } = await overpass(waterwayQuery);
+        const { response: waterResponse, cached: waterCached } = await overpass("OSM waterways", waterwayQuery);
         const lines = parseWaterways(waterResponse.elements, origin);
         water = setWaterLevels(features.areas, lines, heightAt);
         logger.log(
