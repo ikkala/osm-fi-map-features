@@ -1337,8 +1337,10 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
   const heightFromLevels = height === undefined && !heightEstimated;
   const chimney = tags.man_made === "chimney" || kind === "chimney";
   const structure = tags.man_made !== undefined && STRUCTURES.has(tags.man_made);
+  // a building of another kind tagged as a tower is that building with its tower: as tall as its kind
+  const ofType = structure && (tags.man_made !== "tower" || kind === "yes") ? (tags.man_made ?? kind) : kind;
   // a church's parts are its tower, nave, ... (a chimney part is a chimney)
-  const byType = heightEstimated && (!part || chimney) ? HEIGHTS_BY_TYPE.get(structure ? (tags.man_made ?? kind) : kind) : undefined;
+  const byType = heightEstimated && (!part || chimney) ? HEIGHTS_BY_TYPE.get(ofType) : undefined;
   if (byType) {
     height = Math.max(LEVEL_HEIGHT_M, Math.min(byType.max, byType.perWidth * orientedBox(polygon.outer).length));
   }

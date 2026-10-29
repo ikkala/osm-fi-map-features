@@ -954,6 +954,12 @@ test("towers, tanks and churches without a height are guessed by type and width,
       { type: "way", id: 55, tags: { building: "yes", amenity: "place_of_worship" }, geometry: square(150, 0, 30) },
       // a ventilation shaft has no type height: a storey
       { type: "way", id: 56, tags: { man_made: "ventilation_shaft" }, geometry: square(200, 0, 3) },
+      // a tower as tall as a tower, a shop with its tower as a shop, a bell tower as a bell tower
+      { type: "way", id: 57, tags: { building: "yes", man_made: "tower" }, geometry: square(250, 0, 5) },
+      { type: "way", id: 58, tags: { building: "retail", man_made: "tower" }, geometry: square(300, 0, 20) },
+      { type: "way", id: 59, tags: { building: "bell_tower", man_made: "tower" }, geometry: square(350, 0, 5) },
+      // an industrial building tagged as a tank is a tank
+      { type: "way", id: 60, tags: { building: "industrial", man_made: "storage_tank" }, geometry: square(400, 0, 10) },
     ],
     origin,
   );
@@ -961,7 +967,7 @@ test("towers, tanks and churches without a height are guessed by type and width,
     const b = defined(features.buildings.find((b) => b.osm === osm));
     return [b.kind, Math.round(b.height), b.heightByType, b.roofShape];
   };
-  assert.deepEqual(["w50", "w51", "w52", "w53", "w54", "w55", "w56"].map(guess), [
+  assert.deepEqual(["w50", "w51", "w52", "w53", "w54", "w55", "w56", "w57", "w58", "w59", "w60"].map(guess), [
     ["ventilation_shaft", 40, undefined, undefined],
     ["yes", 26, true, undefined],
     ["storage_tank", 15, true, undefined],
@@ -970,6 +976,10 @@ test("towers, tanks and churches without a height are guessed by type and width,
     ["church", 9, undefined, "gabled"],
     ["yes", 9, undefined, undefined],
     ["ventilation_shaft", 3, undefined, undefined],
+    ["yes", 20, true, undefined],
+    ["retail", 9, undefined, undefined],
+    ["bell_tower", 20, true, undefined],
+    ["industrial", 8, true, undefined],
   ]);
 });
 
