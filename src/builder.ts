@@ -86,9 +86,9 @@ export interface MapOptions {
   /**
    * Tunnels' floors known at points, from plans or surveys (the height of the way's surface, m, in the elevation
    * model's system, N2000): the tunnel's point nearest each, within a few meters, has that floor, in place of one hung
-   * under the ground over it
+   * under the ground over it; with a `name`, the nearest point of the tunnels of that name=*
    */
-  tunnelFloors?: { at: GeoPoint; floor: number }[];
+  tunnelFloors?: { at: GeoPoint; floor: number; name?: string }[];
   /** Corrects the elevation model's height (m) at a point (m), where the ground has changed since it was scanned */
   groundCorrection?: (point: Point, height: number) => number;
   /**
@@ -384,7 +384,7 @@ export class MapBuilder {
       const covered = coverCutTunnels(features, heightAt);
       logger.log(`${covered.tunnels} tunnels in cuts get lids, ${covered.crossings} ways over them become bridges`);
       logger.log(`${uncoverAtGrade(features, heightAt)} tunnels run at the ground under buildings`);
-      const knownFloors = (this.#options.tunnelFloors ?? []).map(({ at, floor }) => ({ p: projection.toMeters(at), floor }));
+      const knownFloors = (this.#options.tunnelFloors ?? []).map(({ at, floor, name }) => ({ p: projection.toMeters(at), floor, name }));
       const tunnels = setTunnelFloors(features, heightAt, levels, underBridges([...features.roads, ...features.rails], bridgeOutlines), knownFloors);
       logger.log(`${tunnels.floors} tunnel ways under hills and lakes get floors, ${tunnels.ramps} ways out of their portals ramps, ${tunnels.walls.length} stretches of ground raised over portals`);
       if (knownFloors.length > 0) {

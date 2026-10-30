@@ -512,6 +512,17 @@ test("tunnels side by side in one hall get one floor, the lower, at their portal
   assert.equal(round(apart)?.[0], 100.3);
 });
 
+test("a tunnel of two ways, one going on from the other, gets the floors it gets as one way: they are not side by side", () => {
+  // under ground rising from 100 to 110 m along e, from a portal at either end
+  const ground = (e: number) => 100 + Math.min(Math.max(e, 0), 200) / 20;
+  const floors = (lines: Point[][]) => {
+    const ways = lines.map((line, i) => road(`w${i + 1}`, line, { kind: "trunk", width: 10, tunnel: true, layer: -1 }));
+    setTunnelFloors(features([road("w8", [[-20, 0], [0, 0]]), ...ways, road("w9", [[200, 0], [220, 0]])]), ground);
+    return round(ways.flatMap((way, i) => defined(way.floor).slice(i > 0 ? 1 : 0)));
+  };
+  assert.deepEqual(floors([[[0, 0], [100, 0]], [[100, 0], [200, 0]]]), floors([[[0, 0], [100, 0], [200, 0]]]));
+});
+
 test("stairs' feet in one hall stay where they are, so their stairs rise no steeper", () => {
   // two underpasses side by side from portals at 100 and 100.3, under a yard at 106, each up stairs at its end
   const pair = (gap: number) => {
@@ -723,4 +734,37 @@ test("a known floor holds the tunnel's point nearest it, deeper or shallower tha
   assert.equal(shallow.floor[middle], 98);
   // too far from the tunnel: none
   assert.equal(floors([{ p: [100, 20], floor: 50 }]).known, 0);
+});
+
+test("a known floor with the tunnel's name holds that tunnel's point, not another tunnel's passing nearer", () => {
+  // a road tunnel under level ground at 100 m, and a service tunnel crossing it half a meter off its point at 100 m
+  const floorAt100 = (name?: string) => {
+    const main = road("w1", [[0, 0], [200, 0]], { tunnel: true, layer: -2, name: "Main" });
+    const service = road("w4", [[100.5, -30], [100.5, 30]], { kind: "service", width: 4, tunnel: true, layer: -1 });
+    const map = features([road("w2", [[-50, 0], [0, 0]]), main, road("w3", [[200, 0], [250, 0]]), road("w5", [[100.5, -80], [100.5, -30]]), service, road("w6", [[100.5, 30], [100.5, 80]])]);
+    setTunnelFloors(map, () => 100, new Map(), () => false, [{ p: [100.6, 0.5], floor: 80, name }]);
+    return defined(main.floor)[main.line.findIndex(([e]) => e === 100)];
+  };
+  assert.notEqual(floorAt100(), 80);
+  assert.equal(floorAt100("Main"), 80);
+});
+
+test("between two known floors of a tunnel's name, and on to its portals, the floor runs straight, past a junction too", () => {
+  // a road tunnel of two ways, one going on from the other, under level ground at 100 m, and a branch out of it at
+  // 100 m to a portal of its own
+  const west = road("w1", [[0, 0], [100, 0]], { tunnel: true, layer: -2, name: "Main" });
+  const east = road("w9", [[100, 0], [200, 0]], { tunnel: true, layer: -2, name: "Main" });
+  const branch = road("w7", [[100, 0], [100, -60]], { kind: "trunk_link", width: 6, tunnel: true, layer: -2 });
+  const map = features([road("w2", [[-50, 0], [0, 0]]), west, east, road("w3", [[200, 0], [250, 0]]), branch, road("w8", [[100, -60], [100, -110]])]);
+  setTunnelFloors(map, () => 100, new Map(), () => false, [
+    { p: [50, 0], floor: 80, name: "Main" },
+    { p: [150, 0], floor: 84, name: "Main" },
+  ]);
+  const line = [...west.line, ...east.line.slice(1)];
+  const floor = [...defined(west.floor), ...defined(east.floor).slice(1)];
+  const [first, last] = [floor[0], floor[floor.length - 1]];
+  line.forEach(([e], i) => {
+    const straight = e <= 50 ? first + ((80 - first) * e) / 50 : e <= 150 ? 80 + (4 * (e - 50)) / 100 : 84 + ((last - 84) * (e - 150)) / 50;
+    assert.ok(Math.abs(floor[i] - straight) < 1e-6, `${floor[i]} at ${e}`);
+  });
 });

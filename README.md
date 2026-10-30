@@ -365,7 +365,11 @@ stay joined to it.
 A tunnel's floor known at a point, from a plan or a survey (`tunnelFloors`: a latitude and longitude and the height
 of the way's surface, in the elevation model's N2000), takes the place of the one hung under the ground: the
 tunnel's point nearest it, within 6 m, has that floor, deeper or shallower than the ground asks, and the floors
-around come down to it no steeper than 7 % and keep steady grades to it, as to a portal.
+around come down to it no steeper than 7 % and keep steady grades to it, as to a portal. With the tunnel's `name`,
+only the points of the tunnels of that name are looked at, so that another tunnel passing over or beside it, nearer
+the point, does not take its floor; and from one known floor of a name to the next along its ways, and from the last
+to the tunnel's portal, the floor runs straight between them, past junctions and under the ways crossing over too,
+unless another tunnel under one asks it lower.
 
 A bridge's ways (the road, its sidewalks, a cycleway) each get a `deck` (`src/bridges.ts`): ways meeting end to end
 are one span, straight from the ground at one end to the other, also over the model's hump under it (the ground

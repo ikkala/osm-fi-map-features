@@ -75,6 +75,8 @@ const UNDER_TUNNEL_ROUNDS = 5;
 /** Tunnels whose rooms overlap with floors less than this apart (m) are one hall, with one floor; levelled this many rounds at most */
 const ONE_HALL_M = 1;
 const HALL_ROUNDS = 50;
+/** A point this far (m) past the end of another tunnel's line is on a way going on from it, not beside it */
+const PAST_END_M = 0.5;
 
 type Way = Road | Rail;
 
@@ -95,7 +97,7 @@ interface Node {
   storeys?: number[];
   /** A portal in a building (a ramp down into a basement under it), which hides the cut a portal in the open has */
   inBuilding?: boolean;
-  /** Its floor is known (KnownFloor) and stays */
+  /** Its floor is known (KnownFloor), or runs straight between known floors, and stays */
   known?: boolean;
   floor: number;
 }
@@ -107,6 +109,11 @@ interface Node {
 export interface KnownFloor {
   p: Point;
   floor: number;
+  /**
+   * The tunnel's name=*: only its ways' points are looked at, so that another tunnel passing nearer does not take it,
+   * and between two known floors of one name the floor runs straight along its ways
+   */
+  name?: string;
 }
 
 /** A known floor is the floor of the tunnel's point nearest it within this far (m) */
@@ -553,13 +560,17 @@ export function setTunnelFloors(
   }
 
   // floors known from plans or surveys: the tunnel's point nearest each has that floor, deeper or shallower than
-  // the ground asks, and keeps it; the floors around come down to it no steeper than MAX_GRADE
+  // the ground asks, and keeps it; between two of a tunnel's name, and from the last to its portal, the floor runs
+  // straight, at its junctions and under the ways crossing over too; elsewhere the floors around come down to them no
+  // steeper than MAX_GRADE
   const knownAt: [string, number][] = [];
-  for (const { p, floor } of known) {
+  const knownByName = new Map<string, [string, number][]>();
+  const named = (k: string, name: string | undefined) => name === undefined || (through.get(k) ?? []).some((way) => "name" in way && way.name === name);
+  for (const { p, floor, name } of known) {
     let nearest: { k: string; d: number } | undefined;
     for (const [k, node] of nodes) {
       const d = Math.hypot(node.p[0] - p[0], node.p[1] - p[1]);
-      if (d <= KNOWN_REACH_M && (!nearest || d < nearest.d)) {
+      if (d <= KNOWN_REACH_M && (!nearest || d < nearest.d) && named(k, name)) {
         nearest = { k, d };
       }
     }
@@ -568,11 +579,34 @@ export function setTunnelFloors(
       node.floor = floor;
       node.known = true;
       knownAt.push([nearest.k, floor]);
+      if (name !== undefined) {
+        knownByName.set(name, [...(knownByName.get(name) ?? []), [nearest.k, floor]]);
+      }
     }
   }
   const toKnown = spread(nodes, knownAt, (length) => MAX_GRADE * length);
+  // the portals first, which the floors run straight to from the last known floor
   for (const [k, node] of nodes) {
-    if (!node.known) {
+    if (node.portal !== undefined && !node.known) {
+      node.floor = Math.min(node.floor, toKnown.get(k) ?? Infinity);
+    }
+  }
+  const between = new Map<string, number>();
+  for (const [name, at] of knownByName) {
+    for (const [k, floor] of betweenKnown(nodes, at, (q) => named(q, name))) {
+      between.set(k, floor);
+    }
+  }
+  for (const [k, node] of nodes) {
+    const straight = between.get(k);
+    if (node.known) {
+      continue;
+    }
+    if (straight !== undefined) {
+      // as known as the floors it runs between: the passes after keep it
+      node.floor = straight;
+      node.known = true;
+    } else {
       node.floor = Math.min(node.floor, toKnown.get(k) ?? Infinity);
     }
   }
@@ -1302,8 +1336,9 @@ function easeToGrade(nodes: Map<string, Node>, keep: (node: Node) => boolean = (
 /**
  * Gives tunnels side by side in one hall (their rooms overlapping, their floors less than ONE_HALL_M apart) one
  * floor: each point comes down to the floor of the tunnel beside it, lowering only (deeper is always deep enough),
- * and the floors around are eased to MAX_GRADE and smoothed again, until they agree. Stairs' feet stay where they
- * are, or the stairs would rise steeper; a portal comes down, and the way leading on ramps down to it.
+ * and the floors around are eased to MAX_GRADE and smoothed again, until they agree; beside a known floor it takes
+ * that floor, up or down. A way going on from another's end is not beside it. Stairs' feet and known floors stay
+ * where they are, or the stairs would rise steeper; a portal comes down, and the way leading on ramps down to it.
  */
 function levelHalls(tunnels: Way[], nodes: Map<string, Node>): void {
   const keep = (node: Node) => node.stairs === true || node.sideStairs === true || node.known === true;
@@ -1319,17 +1354,20 @@ function levelHalls(tunnels: Way[], nodes: Map<string, Node>): void {
       const line = b.way.line;
       for (const p of a.way.line) {
         const node = nodes.get(pointKey(p));
-        let nearest = { distance: Infinity, i: 0, t: 0 };
+        let nearest = { distance: Infinity, i: 0, t: 0, past: false };
         for (let i = 1; i < line.length; i++) {
           const [dx, dy] = [line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]];
           const lengthSq = dx * dx + dy * dy;
-          const t = lengthSq > 0 ? Math.min(Math.max(((p[0] - line[i - 1][0]) * dx + (p[1] - line[i - 1][1]) * dy) / lengthSq, 0), 1) : 0;
+          const along = lengthSq > 0 ? ((p[0] - line[i - 1][0]) * dx + (p[1] - line[i - 1][1]) * dy) / lengthSq : 0;
+          const t = Math.min(Math.max(along, 0), 1);
           const distance = Math.hypot(line[i - 1][0] + dx * t - p[0], line[i - 1][1] + dy * t - p[1]);
           if (distance < nearest.distance) {
-            nearest = { distance, i, t };
+            const length = Math.sqrt(lengthSq);
+            const past = (i === 1 && -along * length > PAST_END_M) || (i === line.length - 1 && (along - 1) * length > PAST_END_M);
+            nearest = { distance, i, t, past };
           }
         }
-        if (node && nearest.distance < reach) {
+        if (node && nearest.distance < reach && !nearest.past) {
           beside.push({ node, line, i: nearest.i, t: nearest.t });
         }
       }
@@ -1339,12 +1377,15 @@ function levelHalls(tunnels: Way[], nodes: Map<string, Node>): void {
     const [u, v] = [nodes.get(pointKey(line[i - 1]))?.floor, nodes.get(pointKey(line[i]))?.floor];
     return u !== undefined && v !== undefined ? u + (v - u) * t : undefined;
   };
+  // beside a tunnel whose floor is known there, the hall's floor is its, up or down
+  const knownAt = ({ line, i }: { line: Point[]; i: number }) =>
+    nodes.get(pointKey(line[i - 1]))?.known === true && nodes.get(pointKey(line[i]))?.known === true;
   for (let round = 0; round < HALL_ROUNDS; round++) {
     let moved = 0;
     for (const b of beside) {
       const floor = floorAt(b);
-      if (floor !== undefined && floor < b.node.floor && b.node.floor - floor < ONE_HALL_M && !keep(b.node)) {
-        moved = Math.max(moved, b.node.floor - floor);
+      if (floor !== undefined && (floor < b.node.floor || knownAt(b)) && Math.abs(b.node.floor - floor) < ONE_HALL_M && !keep(b.node)) {
+        moved = Math.max(moved, Math.abs(b.node.floor - floor));
         b.node.floor = floor;
       }
     }
@@ -1535,6 +1576,51 @@ function steadyGrades(nodes: Map<string, Node>): void {
       }
     }
   }
+}
+
+/**
+ * The floors straight between known floors along a tunnel (`on`: its points), by the length along it: at each point on
+ * the shortest way from one known floor to another, or to the tunnel's portal, with none between, the floor on the
+ * line from one to the other (of the shortest such way, where a point is on several)
+ */
+function betweenKnown(nodes: Map<string, Node>, known: [string, number][], on: (k: string) => boolean): Map<string, number> {
+  const portals: [string, number][] = [...nodes]
+    .filter(([k, node]) => node.portal !== undefined && !node.stairs && Number.isFinite(node.floor) && on(k))
+    .map(([k, node]) => [k, node.floor]);
+  const isKnown = new Set(known.map(([k]) => k));
+  const found = new Map<string, { floor: number; span: number }>();
+  for (const [start, from] of known) {
+    const best = new Map<string, number>([[start, 0]]);
+    const previous = new Map<string, string>();
+    const heap = new MinHeap<string>();
+    heap.push(start, 0);
+    for (let top = heap.pop(); top; top = heap.pop()) {
+      // on to the next known floor, not past it
+      if (top.value > (best.get(top.item) ?? Infinity) || (top.item !== start && isKnown.has(top.item))) {
+        continue;
+      }
+      for (const { key: k, length } of nodes.get(top.item)?.next ?? []) {
+        const value = top.value + length;
+        if (on(k) && value < (best.get(k) ?? Infinity)) {
+          best.set(k, value);
+          previous.set(k, top.item);
+          heap.push(k, value);
+        }
+      }
+    }
+    for (const [end, to] of [...known, ...portals]) {
+      const span = best.get(end);
+      if (end === start || span === undefined || span === 0) {
+        continue;
+      }
+      for (let k = previous.get(end); k !== undefined && k !== start; k = previous.get(k)) {
+        if (span < (found.get(k)?.span ?? Infinity)) {
+          found.set(k, { floor: from + ((to - from) * (best.get(k) ?? 0)) / span, span });
+        }
+      }
+    }
+  }
+  return new Map([...found].map(([k, { floor }]) => [k, floor]));
 }
 
 /** Shortest-path search: the least start + cost(meters along the tunnels) at every node reached */
