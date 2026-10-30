@@ -32,10 +32,11 @@ interface Way {
 /**
  * The stretches of the buildings' walls where the ground steps down outside them, from a to b with the building on
  * the left (its low side the right, so that the ground on the wall's line is the outside's). Left out: buildings
- * that do not stand on walls (shelters, lattices, those raised off the ground and building parts, whose outline's
- * walls count), stretches with another building outside, stretches where a way goes through the wall, and those
- * whose slope's foot is in the water (one of the water areas) or by it, a bank, or that have a dam (its line or
- * outline) or steps (highway=steps) within the slope's reach: the dam stands on that ground, and the steps climb it.
+ * that do not stand on walls (shelters, lattices, those raised off the ground and building parts in an outline, whose
+ * walls count; a part in none stands on its own), stretches with another building outside, stretches where a way goes
+ * through the wall, and those whose slope's foot is in the water (one of the water areas) or by it, a bank, or that
+ * have a dam (its line or outline) or steps (highway=steps) within the slope's reach: the dam stands on that ground,
+ * and the steps climb it.
  */
 export function buildingSteps(
   buildings: readonly Building[],
@@ -67,8 +68,19 @@ export function buildingSteps(
   const damNear = (p: Point, reach: number) =>
     damPoints.near({ minX: p[0], minY: p[1], maxX: p[0], maxY: p[1] }, reach).some((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) <= reach);
   const outlines = buildings.filter((b) => !b.part);
-  const standing = outlines.filter((b) => b.shelter === undefined && !b.lattice && !(b.minHeight > 0));
-  const others = index(outlines.map((b) => ({ item: b, box: bounds(b.polygon.outer) })));
+  const byOutline = index(outlines.map((b) => ({ item: b, box: bounds(b.polygon.outer) })));
+  // a part in no outline (its vertices' middle in none) stands on its walls as an outline does
+  const orphans = buildings.filter((b) => {
+    if (!b.part) {
+      return false;
+    }
+    const outer = b.polygon.outer;
+    const middle: Point = [outer.reduce((sum, p) => sum + p[0], 0) / outer.length, outer.reduce((sum, p) => sum + p[1], 0) / outer.length];
+    return !byOutline.near({ minX: middle[0], minY: middle[1], maxX: middle[0], maxY: middle[1] }, 0).some((o) => pointInPolygon(middle, o.polygon));
+  });
+  const walled = [...outlines, ...orphans];
+  const standing = walled.filter((b) => b.shelter === undefined && !b.lattice && !(b.minHeight > 0));
+  const others = index(walled.map((b) => ({ item: b, box: bounds(b.polygon.outer) })));
   const segments = index(
     ways.flatMap((way) =>
       way.line.slice(1).map((q, i) => {

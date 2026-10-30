@@ -297,9 +297,10 @@ on into the building (0.2 m over its first meter), is lowered to that foot, also
 inside is left as it is (`src/buildingSteps.ts`). A building on the edge of a bank, its ground level inside, steps
 nothing, nor does a wall whose slope falls to the water (a water area within 2 m past its foot), has a dam on it or
 steps (`highway=steps`) climbing it, which tell it is the ground's. Neither do walls not standing on the ground
-(shelters, lattice towers, buildings raised off it; a building's parts count their outline's walls), nor a wall's
-stretches with another building outside them or within a meter beyond the half width of a way going through the
-wall. The buildings stand at the base the ground had before, their walls reaching down to the stepped ground (`low`).
+(shelters, lattice towers, buildings raised off it; a building's parts count their outline's walls, and a part in no
+outline its own), nor a wall's stretches with another building outside them or within a meter beyond the half width
+of a way going through the wall. The buildings stand at the base the ground had before, their walls reaching down to
+the stepped ground (`low`).
 A tile has these stretches (`buildingSteps`), its buildings' and those of the buildings around it within 8 m of it.
 
 A road tunnel for vehicles gets a room (`room`) lower than a road's 4.8 m where `maxheight` is lower, at least

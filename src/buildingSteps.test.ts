@@ -68,6 +68,14 @@ test("walls not standing on the ground step nothing: shelters, lattices, raised 
   assert.deepEqual(steps, []);
 });
 
+test("a part in no outline stands on its own walls; one in an outline steps nothing, the outline's walls do", () => {
+  const ground = stepAtWalls(hill, buildingSteps([building("w5", box, { part: true })], [], hill));
+  assert.deepEqual([-1, 0].map((n) => round(ground(20, n))), [80, 80]);
+  const held = buildingSteps([building("w6", box), building("w7", [[5, 0], [35, 0], [35, 10], [5, 10]], { part: true })], [], hill);
+  assert.ok(held.length > 0);
+  assert.deepEqual([...new Set(held.map((step) => step.wall))], ["w6"]);
+});
+
 test("a wall is not stepped where a way goes through it, nor where another building stands outside it", () => {
   // a passage of 4 m through the building at e = 10, a footway ending at the wall at e = 30
   const ways = [
