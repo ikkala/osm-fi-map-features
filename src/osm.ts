@@ -4,6 +4,7 @@ import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
 import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
 import type { Dam, Landmark, Pier, Piste, PowerLine } from "./landmarks.ts";
+import type { Pitch, PitchOutline } from "./pitches.ts";
 import type { Ride } from "./rides.ts";
 import type { Seamark } from "./seamarks.ts";
 import { field, isObject, items, optionalNumber, optionalString } from "./json.ts";
@@ -292,7 +293,7 @@ export interface Area {
   cover?: "trees" | "shrubs";
   /** Woods of conifers or of broadleaved trees alone (leaf_type); unset in mixed woods and where not known */
   leafType?: "needleleaved" | "broadleaved";
-  /** A platform's top, meters above sea level (see platforms.ts) */
+  /** A platform's top, or a level pitch's or paved area's ground, meters above sea level (see platforms.ts, pitches.ts) */
   top?: number;
   /** A tram stop's platform rising with the tramway beside it: its top (m above sea level) at the two ends of its long
    * side's middle line, and along that line between them, level across; top is the lower one (see platforms.ts) */
@@ -496,6 +497,8 @@ export interface MapFeatures {
   pistes?: Piste[];
   /** Bicycle parking, of a query of its own (bicycleParking.ts), when it was had */
   bicycleParkings?: BicycleParking[];
+  /** Pitches outdoors mapped as rectangles (pitches.ts) */
+  pitches?: Pitch[];
 }
 
 /**
@@ -854,6 +857,8 @@ export interface ParseResult {
   bridgeOutlines: BridgeOutline[];
   /** Playgrounds' outlines (leisure=playground), which their equipment lines up with (playgrounds.ts) */
   playgrounds: Polygon[];
+  /** Pitches' outlines (leisure=pitch), still to get their boxes (pitches.ts) */
+  pitches: PitchOutline[];
   /** Problems worth reporting, such as multipolygons with rings that do not close */
   warnings: string[];
   /** The storeys (level=*) of the roads and rails that OSM tells them for, to tell where tunnels come out */
@@ -889,6 +894,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   const streetNodes: StreetNode[] = [];
   const bridgeOutlines: BridgeOutline[] = [];
   const playgrounds: Polygon[] = [];
+  const pitches: PitchOutline[] = [];
   const passages: Passage[] = [];
   // tunnels and covered ways (arcades too) that may be passages through buildings tagged otherwise
   const maybePassages: { road: Road; passage: Passage; arcade: boolean }[] = [];
@@ -983,7 +989,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
         features.barriers.push(barrier(osm, kind, tags, points));
       }
       if (closed && points.length >= 3) {
-        addPolygonFeature(features, bridgeOutlines, playgrounds, osm, tags, polygon());
+        addPolygonFeature(features, bridgeOutlines, playgrounds, pitches, osm, tags, polygon());
       }
     } else if (element.type === "relation" && tags.type === "multipolygon") {
       const osm = `r${element.id}`;
@@ -1001,7 +1007,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
       const holes = inner.rings.map((ring) => dedupe(ring.map(toPoint))).filter((ring) => ring.length >= 3);
       for (const ring of outers) {
         const polygon = normalize({ outer: ring, holes: holes.filter((hole) => pointInRing(hole[0], ring)) });
-        addPolygonFeature(features, bridgeOutlines, playgrounds, osm, tags, polygon);
+        addPolygonFeature(features, bridgeOutlines, playgrounds, pitches, osm, tags, polygon);
       }
     }
   }
@@ -1094,6 +1100,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
     streetNodes,
     bridgeOutlines,
     playgrounds,
+    pitches,
     warnings,
     levels,
     covered: covered.filter((r) => !found.has(r)),
@@ -1102,9 +1109,23 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   };
 }
 
-function addPolygonFeature(features: MapFeatures, bridgeOutlines: BridgeOutline[], playgrounds: Polygon[], osm: string, tags: Tags, polygon: Polygon): void {
+/** A pitch's sports (sport=*, a list), surface and whether it is indoors or covered */
+function pitchOutline(osm: string, tags: Tags, polygon: Polygon): PitchOutline {
+  const sports = (tags.sport ?? "")
+    .toLowerCase()
+    .split(";")
+    .map((sport) => sport.trim())
+    .filter((sport) => sport !== "");
+  const indoor = (tags.indoor !== undefined && tags.indoor !== "no") || tags.covered === "yes" || tags.location === "indoor" || tags.location === "underground";
+  return { osm, sports, ...(tags.surface && { surface: tags.surface }), indoor, polygon };
+}
+
+function addPolygonFeature(features: MapFeatures, bridgeOutlines: BridgeOutline[], playgrounds: Polygon[], pitches: PitchOutline[], osm: string, tags: Tags, polygon: Polygon): void {
   if (tags.leisure === "playground") {
     playgrounds.push(polygon);
+  }
+  if (tags.leisure === "pitch") {
+    pitches.push(pitchOutline(osm, tags, polygon));
   }
   if (tags.man_made === "bridge") {
     const { bridgeStructure, bridgeColour } = bridgeLooks({ ...tags, bridge: "yes" });

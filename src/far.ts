@@ -1,5 +1,5 @@
 // A tile seen from afar: a coarse ground cover picture, coarse heights and every building as a box.
-import { orientedBox, triangulate, type Point } from "./geometry.ts";
+import { boxCentre, orientedBox, triangulate, type Point } from "./geometry.ts";
 import type { AreaKind } from "./osm.ts";
 import { tileRect, type Heights, type Tile } from "./tiles.ts";
 
@@ -181,18 +181,8 @@ function boxes(tile: Tile, minArea: number): FarBox[] {
     if (length * width < minArea) {
       continue;
     }
-    // the box's centre: halfway between the outline's extremes along and across its long side
-    const along: Point = [Math.cos(angle), Math.sin(angle)];
-    const across: Point = [-along[1], along[0]];
-    let [u0, u1, v0, v1] = [Infinity, -Infinity, Infinity, -Infinity];
-    for (const [e, n] of outer) {
-      const u = e * along[0] + n * along[1];
-      const v = e * across[0] + n * across[1];
-      [u0, u1, v0, v1] = [Math.min(u0, u), Math.max(u1, u), Math.min(v0, v), Math.max(v1, v)];
-    }
-    const [u, v] = [(u0 + u1) / 2, (v0 + v1) / 2];
     const box: FarBox = {
-      center: [u * along[0] + v * across[0], u * along[1] + v * across[1]],
+      center: boxCentre(outer, angle),
       angle,
       length,
       width,

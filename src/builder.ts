@@ -29,6 +29,7 @@ import { dropStepsInParts, setStaircaseDecks } from "./stairs.ts";
 import { placeStreetNodes } from "./streets.ts";
 import { cutIntoTiles, latticeProjection, tileHeights, tileName, tilePieces, tilesCoveringAny, type Tile, type TileKey } from "./tiles.ts";
 import { setPlatformTops } from "./platforms.ts";
+import { pitchBoxes, setLevelTops } from "./pitches.ts";
 import { applyRoofTops, fetchRoofTops, ROOF_TOP_SOURCES, type RoofTopSource } from "./roofTops.ts";
 import { setTrackBeds } from "./trackbeds.ts";
 import { decksOver, lowerUnderBridges, tramBedCeiling, underBridges } from "./underbridges.ts";
@@ -318,7 +319,7 @@ export class MapBuilder {
     const osmTimestamp = response.osm3s?.timestamp_osm_base;
     logger.log(`${response.elements.length} OSM elements (${cached ? "cached, refresh to fetch again" : "fetched"}), data from ${osmTimestamp ?? "?"}`);
 
-    const { features, streetNodes, bridgeOutlines, playgrounds, warnings, levels, covered, indoors, throughBuildings } = parseOsm(response.elements, origin);
+    const { features, streetNodes, bridgeOutlines, playgrounds, pitches, warnings, levels, covered, indoors, throughBuildings } = parseOsm(response.elements, origin);
     for (const warning of warnings) {
       logger.warn(`warning: ${warning}`);
     }
@@ -435,9 +436,12 @@ export class MapBuilder {
       );
       logger.log(`${beds} railway lines get smoothed track beds`);
       logger.log(`${setPlatformTops(features.areas, heightAt, features.rails)} railway platforms get their top`);
+      logger.log(`${setLevelTops(features.areas, heightAt)} pitches and paved areas are level and get their top`);
     } else {
       logger.log("no MML API key: the tiles get no ground heights");
     }
+    features.pitches = pitchBoxes(pitches, features.areas, features.buildings);
+    logger.log(`${features.pitches.length} of ${pitches.length} pitches outdoors mapped as rectangles`);
 
     const otherAttributions: string[] = [];
     try {

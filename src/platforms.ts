@@ -3,7 +3,7 @@
 // platform is as high over the tramways passing it instead, over their lowest bed beside it, so that a tram's
 // floor clears it all along; where the tramway rises along it, as a street on a hill does, the platform rises with
 // it, level across.
-import { distanceToRing, orientedBox, pointInPolygon, ringCentroid, type Point } from "./geometry.ts";
+import { distanceToRing, orientedBox, pointInPolygon, ringCentroid, type Point, type Polygon } from "./geometry.ts";
 import { bounds, type Area, type Rail } from "./osm.ts";
 
 /** The ground inside a platform, and a tramway beside one, is sampled this often (m) */
@@ -29,18 +29,7 @@ export function setPlatformTops(areas: Area[], heightAt: (e: number, n: number) 
     if (area.kind !== "platform") {
       continue;
     }
-    const box = bounds(area.polygon.outer);
-    const heights: number[] = [];
-    for (let e = box.minX + SAMPLE_M / 2; e < box.maxX; e += SAMPLE_M) {
-      for (let n = box.minY + SAMPLE_M / 2; n < box.maxY; n += SAMPLE_M) {
-        const p: Point = [e, n];
-        const h = pointInPolygon(p, area.polygon) ? heightAt(e, n) : undefined;
-        if (h !== undefined) {
-          heights.push(h);
-        }
-      }
-    }
-    heights.sort((a, b) => a - b);
+    const heights = groundInside(area.polygon, heightAt);
     const median = heights.length > 0 ? heights[Math.floor(heights.length / 2)] : undefined;
     // a tramway beside it, not one under or over it: a top near the ground's
     const beds = bedsBeside(area, trams, (h) => median === undefined || Math.abs(h + TRAM_PLATFORM_M - median) <= TRAM_FROM_GROUND_M);
@@ -59,6 +48,22 @@ export function setPlatformTops(areas: Area[], heightAt: (e: number, n: number) 
     }
   }
   return count;
+}
+
+/** The ground's heights inside a polygon, sampled every SAMPLE_M, lowest first */
+export function groundInside(polygon: Polygon, heightAt: (e: number, n: number) => number | undefined): number[] {
+  const box = bounds(polygon.outer);
+  const heights: number[] = [];
+  for (let e = box.minX + SAMPLE_M / 2; e < box.maxX; e += SAMPLE_M) {
+    for (let n = box.minY + SAMPLE_M / 2; n < box.maxY; n += SAMPLE_M) {
+      const p: Point = [e, n];
+      const h = pointInPolygon(p, polygon) ? heightAt(e, n) : undefined;
+      if (h !== undefined) {
+        heights.push(h);
+      }
+    }
+  }
+  return heights.sort((a, b) => a - b);
 }
 
 /** A platform's top at p: a rising one's along its slope, as far as p is along the line between its ends */

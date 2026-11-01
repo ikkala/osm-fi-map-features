@@ -82,6 +82,7 @@ export type {
   WayPoint,
   WindowStyle,
 } from "./osm.ts";
+export type { Pitch } from "./pitches.ts";
 export { isValidGeoPoint, LocalProjection, type GeoPoint } from "./projection.ts";
 export type { Ride } from "./rides.ts";
 export type { RoofFaces } from "./roofRidges.ts";

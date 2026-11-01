@@ -222,6 +222,20 @@ export function orientedBox(ring: Ring): { angle: number; length: number; width:
   return { ...best, angle };
 }
 
+/** The centre of a box around a ring turned to angle: halfway between the ring's extremes along and across it */
+export function boxCentre(ring: Ring, angle: number): Point {
+  const along: Point = [Math.cos(angle), Math.sin(angle)];
+  const across: Point = [-along[1], along[0]];
+  let [u0, u1, v0, v1] = [Infinity, -Infinity, Infinity, -Infinity];
+  for (const [e, n] of ring) {
+    const u = e * along[0] + n * along[1];
+    const v = e * across[0] + n * across[1];
+    [u0, u1, v0, v1] = [Math.min(u0, u), Math.max(u1, u), Math.min(v0, v), Math.max(v1, v)];
+  }
+  const [u, v] = [(u0 + u1) / 2, (v0 + v1) / 2];
+  return [u * along[0] + v * across[0], u * along[1] + v * across[1]];
+}
+
 /** Distance from a point to the nearest edge of a ring. */
 export function distanceToRing(point: Point, ring: Ring): number {
   let best = Infinity;

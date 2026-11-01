@@ -58,7 +58,7 @@ const builder = new MapBuilder({
 const info = await builder.info(); // tiles, OSM timestamp, attributions
 for (const key of info.tiles) {
   const tile = await builder.tile(key); // roads, rails, buildings, areas, trees, lamps, crossings, signals, gates, barriers, playEquipment, bridgeDecks,
-  // seamarks, landmarks, piers, dams, rides, powerLines, pistes, waterways, heights
+  // seamarks, landmarks, piers, dams, rides, powerLines, pistes, bicycleParkings, pitches, waterways, heights
 
 }
 ```
@@ -66,9 +66,9 @@ for (const key of info.tiles) {
 Coordinates are meters east (first) and north (second) of the origin. Tile `x, y` covers east `x * size ..
 (x + 1) * size` and north `y * size .. (y + 1) * size`. Roads, rails and areas are cut at tile edges; a
 building belongs whole to the tile its centroid is in, a tree to the tile of its trunk, a lamp to the tile of
-its foot and a piece of playground equipment, a bicycle parking or a landmark to the tile of its middle; landmarks drawn as lines
+its foot and a piece of playground equipment, a bicycle parking, a landmark or a pitch's box to the tile of its middle; landmarks drawn as lines
 (piers, dams, rides' courses, power lines, pistes) are cut at tile edges. The types are in
-`src/osm.ts` (`MapFeatures`, `Building`, ...), `src/landmarks.ts`, `src/seamarks.ts`, `src/rides.ts` and
+`src/osm.ts` (`MapFeatures`, `Building`, ...), `src/landmarks.ts`, `src/seamarks.ts`, `src/rides.ts`, `src/pitches.ts` and
 `src/tiles.ts` (`Tile`, `Heights`).
 
 ### Sources and the cache
@@ -447,6 +447,15 @@ of the beds and its lower end no higher than over the lowest of them (where a st
 than the bed), `slope.tops` are 0.4 m over that line at the two ends of the side's middle line through its centroid,
 `slope.ends`, its top along that line between them, and `top` the lower one (a level top at the lowest bed left one
 end of a stop 1 to 2 m under the street).
+
+Pitches (`leisure=pitch`) are areas of kind `pitch`. A pitch or a paved area (parking, a square, `area:highway`) whose
+ground is level within 0.6 m (sampled every 2 m, the highest and lowest 5 % left out) gets a `top` as a platform does,
+the ground's median inside it, while one on a slope (a ski jump's, a sloping square) gets none. Around Tampere half
+the pitches' ground lies within 0.2 m, and half the surface parking lots' within 0.6 m. A pitch
+outdoors (not tagged `indoor`, `covered=yes` or `location=indoor`, nor with its middle in a building) whose outline
+fills at least 85 % of the smallest box around it (with a side along one of its edges) and that is at least 4 m long
+is also in the tiles' `pitches` (`src/pitches.ts`): its `sports` (`sport=*`, a list, in lower case), `surface`, the
+box's middle `point`, `angle`, `length` and `width`, and the `top`.
 
 Neither OSM nor the register has windows, so ordinary buildings get guessed ones: a row per storey (from
 `building:levels` or the register's storeys, else about every 3 m) and spaced by the kind of building. Houses get
