@@ -262,9 +262,10 @@ process `laserkeilausaineisto_05_karttalehti`: the newest point cloud of each 1:
 (`MIN_ABOVE_SHARE`): where they are not, the building is newer than the scanning.
 
 From Lielahti to Hervanta about 18 000 buildings get a measured height (half of them from 1.4 m lower to 1.2 m
-higher than before) and 126 of them a hipped roof, such as the main building of Juhannuskylän koulu (1907,
+higher than before) and 126 of them a hipped roof, such as the main building of Tampereen klassillinen lukio (1907,
 `height=16` in OSM), 16 m tall with a flat roof before and now 14.0 m of walls under an 8.4 m hipped roof up to its
-ridge (its part's top, 3.3 m higher, a small lantern's on the ridge, brought down by the laser scanning), and the
+ridge (its part's top, 3.3 m higher, a small round structure's at the ridge's end, brought down by the laser
+scanning), and the
 wooden villas of the 1920s in Pyynikki, 6.4 m tall before and now under roofs 5–7 m tall. The laser scanning brings
 about 150 tops down (October 2026), most of them by 1–2 m, a chimney's, and a few by up to 9 m, where a small part of
 the roof rises far over the rest, such as Napparin talo's (1920), 16.2 m tall under a hipped roof before and now 7.2 m.
