@@ -665,7 +665,7 @@ export function estimatedLevels(kind: string, area: number): number {
 }
 
 export function overpassQuery(box: GeoBox): string {
-  const selectors = ["way[highway]", "way[railway]", "way[building]", "way[\"building:part\"]", "node[natural~\"^(tree|shrub)$\"]", "way[natural=tree_row]", "node[highway=street_lamp]",
+  const selectors = ["way[highway]", "way[railway]", "way[building]", "way[\"building:part\"]", "way[amenity=shelter][shelter_type=public_transport]", "node[natural~\"^(tree|shrub)$\"]", "way[natural=tree_row]", "node[highway=street_lamp]",
     "node[highway~\"^(crossing|traffic_signals)$\"]", "node[barrier=gate]", "way[barrier~\"^(fence|wall|retaining_wall|hedge)$\"]", "way[man_made=bridge]", `way[man_made~"^(${[...STRUCTURES].join("|")})$"]`, "way[\"roof:ridge\"=yes]"];
   const relations = ["relation[building][type=multipolygon]", "relation[\"building:part\"][type=multipolygon]", "relation[man_made=bridge][type=multipolygon]"];
   const byKey = new Map<string, string[]>();
@@ -1115,8 +1115,11 @@ function addPolygonFeature(features: MapFeatures, bridgeOutlines: BridgeOutline[
   const buildingTag = tags.building === "construction" && tags.construction ? tags.construction : tags.building;
   const buildingKind = buildingTag && buildingTag !== "no" ? buildingTag : undefined;
   const partKind = tags["building:part"] && tags["building:part"] !== "no" ? tags["building:part"] : undefined;
-  // many chimneys, tanks and towers are mapped as man_made=* alone
-  const buildingOrPart = partKind ?? buildingKind ?? (tags.man_made !== undefined && STRUCTURES.has(tags.man_made) ? tags.man_made : undefined);
+  // many chimneys, tanks and towers are mapped as man_made=* alone, and stop shelters as amenity=shelter alone: an
+  // open roof
+  const structure = tags.man_made !== undefined && STRUCTURES.has(tags.man_made) ? tags.man_made : undefined;
+  const stopShelter = tags.amenity === "shelter" && tags.shelter_type === "public_transport" && tags.building !== "no" ? "roof" : undefined;
+  const buildingOrPart = partKind ?? buildingKind ?? structure ?? stopShelter;
   if (buildingOrPart) {
     if (!underground(tags)) {
       features.buildings.push(building(osm, tags, buildingOrPart, partKind !== undefined, polygon));

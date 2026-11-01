@@ -138,7 +138,8 @@ floor area tells the height better than the count there. A guessed pitched roof 
 has `building:material` or `material`, the material of their load-bearing frame (`frameMaterial`: wood, brick, concrete
 or steel; `kantavien_rakenteiden_rakennusaine`), also where the facade is not known, and their main use (`use`, see windows below). The rest get a guess: one storey for sheds
 and anything under 40 m², two for houses and anything under 150 m², three otherwise. Chimneys, towers, water towers,
-silos, tanks, gasometers and ventilation shafts (`man_made=*`) are buildings even without `building`. These and
+silos, tanks, gasometers and ventilation shafts (`man_made=*`) are buildings even without `building`, and so is a
+stop shelter mapped as `amenity=shelter` with `shelter_type=public_transport` alone, as an open roof (`roof`). These and
 churches, whose storeys say little about their height, are guessed by type from the base's longest side instead
 (a chimney 12 times as tall, a water tower 1.3 times, a church 0.45 times, ..., see `HEIGHTS_BY_TYPE`), and the
 register's storeys do not replace that. A building of another kind tagged `man_made=tower` (`building=retail`, a

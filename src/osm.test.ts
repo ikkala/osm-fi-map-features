@@ -799,6 +799,22 @@ test("an open roof over a road is lifted above vehicles, but not a carport; stop
   assert.equal(defined(features.buildings.find((b) => b.osm === "w25")).shelter, "public_transport");
 });
 
+test("a stop shelter mapped as amenity=shelter alone is an open roof with a stop shelter's height; other shelters not", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 27, tags: { amenity: "shelter", shelter_type: "public_transport", bench: "yes" }, geometry: square(0, 0, 3) },
+      { type: "way", id: 28, tags: { amenity: "shelter", shelter_type: "public_transport", building: "no" }, geometry: square(10, 0, 3) },
+      { type: "way", id: 29, tags: { amenity: "shelter", shelter_type: "gazebo" }, geometry: square(20, 0, 3) },
+    ],
+    origin,
+  );
+  assert.deepEqual(
+    features.buildings.map((b) => [b.osm, b.kind, b.shelter, b.height]),
+    [["w27", "roof", "public_transport", 2.7]],
+  );
+  assert.match(overpassQuery({ south: 0, west: 0, north: 1, east: 1 }), /way\[amenity=shelter\]\[shelter_type=public_transport\];/);
+});
+
 test("wall material comes from building:material or material, and an untagged chimney is taken for brick", () => {
   const { features } = parseOsm(
     [
