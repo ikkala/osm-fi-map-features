@@ -494,6 +494,16 @@ test("a way beside a portal, only its width reaching over the room, keeps its gr
   assert.deepEqual([at(38, 0), at(36, 5.5), at(30, 5.5), at(45, 5.5)], [104, 103, 103, 103]);
 });
 
+test("a levelled way falls evenly to the model where its reach ends with the ground lower still, not in a step", () => {
+  // a street across the portal, the ground beside the tunnel a little lower than over it, the cut in front
+  const ground = (e: number, n: number) => (Math.abs(n) > 3 ? 102 : e <= 36 ? 104 : e >= 40 ? 100 : 104 - (e - 36));
+  const street = road("w4", [[38, -30], [38, 30]]);
+  const map = features([road("w2", [[-20, 0], [0, 0]]), underpass(), stub(), road("w5", [[40.5, 0], [80, 0]]), street]);
+  const at = raiseToWalls(ground, portalWallsAt(setTunnelFloors(map, ground).walls));
+  // level where its width is over the wall (6.25 m either side), then down over the reach's 10 m, the model beyond
+  assert.deepEqual([at(38, 0), at(38, -6), at(38, -11), at(38, -16), at(38, -18), at(38, 11), at(38, 18)], [104, 104, 103, 102, 102, 103, 102]);
+});
+
 test("a levelled way's ground is raised around its ends too, a portal's wall only from its face in", () => {
   const walls = [
     { line: [[40, 0], [34, 0]] satisfies Point[], half: 2, top: 104 },

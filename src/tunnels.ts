@@ -119,12 +119,16 @@ export interface KnownFloor {
 /** A known floor is the floor of the tunnel's point nearest it within this far (m) */
 const KNOWN_REACH_M = 6;
 
-/** The ground over a tunnel's end, raised to `top` within `half` of `line` (from the portal in); `round`: around its ends too */
+/**
+ * The ground over a tunnel's end, raised to `top` within `half` of `line` (from the portal in); `round`: around its
+ * ends too; `tops`: the height at each of the line's points instead, evenly between them, `top` the highest
+ */
 export interface PortalWall {
   line: Point[];
   half: number;
   top: number;
   round?: boolean;
+  tops?: number[];
 }
 
 /**
@@ -813,7 +817,8 @@ function inFromPortal(nodes: Map<string, Node>, start: string, length: number): 
 /**
  * The ground under the ways over the portals' walls, raised to the wall's top under their width as far as the
  * model has it lower, the cut in front of a portal being often wider than the tunnel: up to LEVEL_REACH_M either
- * way along the way. Ways meeting the tunnels and ways in front of a portal are not over its wall, nor a way beside
+ * way along the way, and where the model is lower still past that, falling evenly to it over that reach rather than
+ * in a step. Ways meeting the tunnels and ways in front of a portal are not over its wall, nor a way beside
  * it whose width only reaches over the room: the ground over the tunnel may be higher than a street along it.
  */
 function levelWaysOver(roads: Road[], tunnels: Way[], walls: PortalWall[], modelAt: (e: number, n: number) => number | undefined): PortalWall[] {
@@ -852,17 +857,38 @@ function levelWaysOver(roads: Road[], tunnels: Way[], walls: PortalWall[], model
         const h = p && modelAt(...p);
         return h !== undefined && h < wall.top - RAMP_TOLERANCE_M;
       };
-      let [from, to] = [onWall[0], onWall[onWall.length - 1]];
-      while (from > 0 && onWall[0] - from < LEVEL_REACH_M && lower(from - LEVEL_STEP_M)) {
+      const [first, last] = [onWall[0], onWall[onWall.length - 1]];
+      let [from, to] = [first, last];
+      while (from > 0 && first - from < LEVEL_REACH_M && lower(from - LEVEL_STEP_M)) {
         from = Math.max(0, from - LEVEL_STEP_M);
       }
-      while (to < length && to - onWall[onWall.length - 1] < LEVEL_REACH_M && lower(to + LEVEL_STEP_M)) {
+      while (to < length && to - last < LEVEL_REACH_M && lower(to + LEVEL_STEP_M)) {
         to = Math.min(length, to + LEVEL_STEP_M);
       }
-      const line = stretchOf(road.line, from, to);
-      if (line.length >= 2) {
-        levelled.push({ line, half, top: wall.top, round: true });
+      // the model's height at the reach's end d, beyond: the next point on, when the model is lower there still
+      const lowAt = (d: number, beyond: number) => {
+        const reached = Math.abs(d - (beyond < d ? first : last)) >= LEVEL_REACH_M;
+        const p = reached && beyond >= 0 && beyond <= length && lower(beyond) ? pointAlong(road.line, d) : undefined;
+        const h = p && modelAt(...p);
+        return h === undefined ? wall.top : h;
+      };
+      const [lowFrom, lowTo] = [lowAt(from, from - LEVEL_STEP_M), lowAt(to, to + LEVEL_STEP_M)];
+      if (lowFrom === wall.top && lowTo === wall.top) {
+        const line = stretchOf(road.line, from, to);
+        if (line.length >= 2) {
+          levelled.push({ line, half, top: wall.top, round: true });
+        }
+        continue;
       }
+      const line = [...stretchOf(road.line, from, first), ...stretchOf(road.line, first, last).slice(1), ...stretchOf(road.line, last, to).slice(1)];
+      const along = [from];
+      for (let i = 1; i < line.length; i++) {
+        along.push(along[i - 1] + Math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]));
+      }
+      const tops = along.map((d) =>
+        d < first ? lowFrom + ((wall.top - lowFrom) * (d - from)) / (first - from) : d > last ? lowTo + ((wall.top - lowTo) * (to - d)) / (to - last) : wall.top,
+      );
+      levelled.push({ line, half, top: wall.top, round: true, tops });
     }
   }
   return levelled;
@@ -908,26 +934,45 @@ export function portalWallsAt(walls: readonly PortalWall[]): (e: number, n: numb
       }
     }
   }
-  // over the room: beside a stretch of the line, not beyond the portal or the wall's inner end (unless round)
-  const over = (wall: PortalWall, e: number, n: number) =>
-    wall.line.some((a, i) => {
+  // the wall's height over the room: beside a stretch of the line, not beyond the portal or the wall's inner end
+  // (unless round); undefined off it
+  const over = (wall: PortalWall, e: number, n: number) => {
+    const at = (i: number) => wall.tops?.[i] ?? wall.top;
+    let top: number | undefined;
+    const raise = (h: number) => {
+      top = Math.max(top ?? -Infinity, h);
+    };
+    wall.line.forEach((a, i) => {
       const c = wall.line[i + 1];
       if (!c) {
-        return false;
+        return;
       }
       const [dx, dy] = [c[0] - a[0], c[1] - a[1]];
       const lengthSq = dx * dx + dy * dy;
       const t = lengthSq > 0 ? ((e - a[0]) * dx + (n - a[1]) * dy) / lengthSq : -1;
       if (t >= 0 && t <= 1) {
-        return Math.abs((e - a[0]) * dy - (n - a[1]) * dx) <= wall.half * Math.sqrt(lengthSq);
+        if (Math.abs((e - a[0]) * dy - (n - a[1]) * dx) <= wall.half * Math.sqrt(lengthSq)) {
+          raise(at(i) + (at(i + 1) - at(i)) * t);
+        }
+      } else if (wall.round === true) {
+        if (Math.hypot(e - a[0], n - a[1]) <= wall.half) {
+          raise(at(i));
+        }
+        if (Math.hypot(e - c[0], n - c[1]) <= wall.half) {
+          raise(at(i + 1));
+        }
       }
-      return wall.round === true && Math.min(Math.hypot(e - a[0], n - a[1]), Math.hypot(e - c[0], n - c[1])) <= wall.half;
     });
+    return top;
+  };
   return (e, n) => {
     let top: number | undefined;
     for (const wall of cells.get(cellKey(cell(e), cell(n))) ?? []) {
-      if (wall.top > (top ?? -Infinity) && over(wall, e, n)) {
-        top = wall.top;
+      if (wall.top > (top ?? -Infinity)) {
+        const h = over(wall, e, n);
+        if (h !== undefined && h > (top ?? -Infinity)) {
+          top = h;
+        }
       }
     }
     return top;
