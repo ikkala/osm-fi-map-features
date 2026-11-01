@@ -159,7 +159,10 @@ as a canopy is (`shelter`), but stands at its highest ground as a building does,
 slope, and is not lifted over vehicles on a road under it. A building under construction (`building=construction`)
 is drawn as the building it will be when `construction=*` tells, as a road under construction is: a roof being built
 over a way is an open roof, not a closed body over it. Parts without a frame or roof material take their outline's. Ways and ground areas
-carry their `surface` (asphalt, paving_stones, fine_gravel, artificial_turf, clay, ...) when OSM has one.
+carry their `surface` (asphalt, paving_stones, fine_gravel, artificial_turf, clay, ...) when OSM has one. A car park
+in the open (`amenity=parking`, not `parking=underground`, `multi-storey` or `rooftop`, nor below the ground) is
+`parking`, and a road for vehicles drawn as an area (`highway=service` with `area=yes`, `area:highway=residential`,
+..., not a footway, a pedestrian street, a traffic island or a platform) a `carriageway`.
 
 The register used to come from the City of Tampere's own
 [building register](https://data.tampere.fi/data/dataset/tampereen-rakennukset), which is the same national register.

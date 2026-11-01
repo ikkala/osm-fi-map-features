@@ -884,6 +884,47 @@ test("ways and areas carry their surface, buildings their roof material, and a c
   assert.deepEqual([building("w75").shelter, building("w75").roofShape], ["carport", undefined]);
 });
 
+test("a car park on the ground is parking, one under it, in a garage or on a roof is not", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 1, tags: { amenity: "parking" }, geometry: square(0, 0, 20) },
+      { type: "way", id: 2, tags: { amenity: "parking", parking: "surface", surface: "paving_stones" }, geometry: square(30, 0, 20) },
+      { type: "way", id: 3, tags: { amenity: "parking", parking: "street_side" }, geometry: square(60, 0, 20) },
+      { type: "way", id: 4, tags: { amenity: "parking", parking: "underground" }, geometry: square(0, 30, 20) },
+      { type: "way", id: 5, tags: { amenity: "parking", parking: "multi-storey" }, geometry: square(30, 30, 20) },
+      { type: "way", id: 6, tags: { amenity: "parking", parking: "rooftop" }, geometry: square(60, 30, 20) },
+      { type: "way", id: 7, tags: { amenity: "parking", layer: "-1" }, geometry: square(0, 60, 20) },
+      { type: "way", id: 8, tags: { place: "square" }, geometry: square(30, 60, 20) },
+    ],
+    origin,
+  );
+  const area = (osm: string) => defined(features.areas.find((a) => a.osm === osm));
+  assert.deepEqual(
+    ["w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8"].map((osm) => [area(osm).kind, area(osm).parking === true]),
+    [["paved", true], ["paved", true], ["paved", true], ["paved", false], ["paved", false], ["paved", false], ["paved", false], ["paved", false]],
+  );
+  assert.equal(area("w2").surface, "paving_stones");
+});
+
+test("a road for vehicles drawn as an area is a carriageway, a way for people, an island or a platform is not", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 1, tags: { highway: "service", area: "yes" }, geometry: square(0, 0, 20) },
+      { type: "way", id: 2, tags: { "area:highway": "residential" }, geometry: square(30, 0, 20) },
+      { type: "way", id: 3, tags: { highway: "pedestrian", area: "yes" }, geometry: square(60, 0, 20) },
+      { type: "way", id: 4, tags: { "area:highway": "footway" }, geometry: square(0, 30, 20) },
+      { type: "way", id: 5, tags: { "area:highway": "traffic_island" }, geometry: square(30, 30, 20) },
+      { type: "way", id: 6, tags: { highway: "platform", area: "yes" }, geometry: square(60, 30, 20) },
+    ],
+    origin,
+  );
+  const area = (osm: string) => defined(features.areas.find((a) => a.osm === osm));
+  assert.deepEqual(
+    ["w1", "w2", "w3", "w4", "w5", "w6"].map((osm) => [area(osm).kind, area(osm).carriageway === true]),
+    [["paved", true], ["paved", true], ["paved", false], ["paved", false], ["paved", false], ["paved", false]],
+  );
+});
+
 test("parts take the frame and roof material of their outline", () => {
   const outline: Building = {
     osm: "w1", kind: "church", part: false, hasParts: true, height: 20, minHeight: 0, frameMaterial: "brick", roofMaterial: "copper",

@@ -302,6 +302,10 @@ export interface Area {
   surface?: string;
   /** Water that flows: a river, canal or stream mapped as an area, not a lake or pond */
   flowing?: boolean;
+  /** A car park in the open: amenity=parking on the ground, not under it, in a parking garage or on a roof */
+  parking?: boolean;
+  /** A road for vehicles drawn as an area: highway=* with area=yes, or area:highway=*, of a kind not for people alone */
+  carriageway?: boolean;
   polygon: Polygon;
 }
 
@@ -934,7 +938,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
       const road = tags.highway === "construction" && tags.construction ? { ...tags, highway: tags.construction } : tags;
       if (road.highway && closed && road.area === "yes") {
         // a square or a plaza drawn as an area, not a line
-        addArea(features, osm, "paved", polygon(), { surface: road.surface });
+        addArea(features, osm, "paved", polygon(), { surface: road.surface, carriageway: forVehicles(road.highway) });
       } else if (road.highway && ROAD_WIDTHS[road.highway] !== undefined) {
         const width = roadWidth(road);
         const walkway = NOT_FOR_VEHICLES.has(road.highway);
@@ -1155,13 +1159,49 @@ function addPolygonFeature(features: MapFeatures, bridgeOutlines: BridgeOutline[
   // a river's bed that is dry most of the time is its stones
   const kind = tagged === "water" && flowingWater(tags) && tags.intermittent === "yes" ? "rock" : tagged;
   if (kind) {
-    addArea(features, osm, kind, polygon, { cover: areaCover(tags), leafType: woodsLeafType(tags), surface: tags.surface, flowing: kind === "water" && flowingWater(tags) });
+    addArea(features, osm, kind, polygon, {
+      cover: areaCover(tags),
+      leafType: woodsLeafType(tags),
+      surface: tags.surface,
+      flowing: kind === "water" && flowingWater(tags),
+      parking: kind === "paved" && openParking(tags),
+      carriageway: kind === "paved" && forVehicles(tags["area:highway"]),
+    });
   }
 }
 
-function addArea(features: MapFeatures, osm: string, kind: AreaKind, polygon: Polygon, extra: Pick<Area, "cover" | "leafType" | "surface" | "flowing"> = {}): void {
-  const { cover, leafType, surface, flowing } = extra;
-  features.areas.push({ osm, kind, ...(cover && { cover }), ...(leafType && { leafType }), ...(surface && { surface }), ...(flowing && { flowing }), polygon });
+function addArea(features: MapFeatures, osm: string, kind: AreaKind, polygon: Polygon, extra: Pick<Area, "cover" | "leafType" | "surface" | "flowing" | "parking" | "carriageway"> = {}): void {
+  const { cover, leafType, surface, flowing, parking, carriageway } = extra;
+  features.areas.push({
+    osm,
+    kind,
+    ...(cover && { cover }),
+    ...(leafType && { leafType }),
+    ...(surface && { surface }),
+    ...(flowing && { flowing }),
+    ...(parking && { parking }),
+    ...(carriageway && { carriageway }),
+    polygon,
+  });
+}
+
+/** Whether highway=* is a road for vehicles, not a way for people alone, a traffic island or a platform */
+function forVehicles(highway: string | undefined): boolean {
+  return highway !== undefined && ROAD_WIDTHS[highway] !== undefined && !NOT_FOR_VEHICLES.has(highway);
+}
+
+const PARKING_OFF_THE_GROUND = new Set(["underground", "multi-storey", "rooftop"]);
+
+/** A car park in the open: amenity=parking not under the ground, in a parking garage or on a roof */
+function openParking(tags: Tags): boolean {
+  const layer = number(tags.layer);
+  return (
+    tags.amenity === "parking" &&
+    !PARKING_OFF_THE_GROUND.has(tags.parking ?? "") &&
+    tags.location !== "underground" &&
+    tags.location !== "rooftop" &&
+    !(layer !== undefined && layer < 0)
+  );
 }
 
 const FLOWING_WATERS = new Set(["river", "canal", "stream", "rapids", "ditch", "drain", "fish_pass", "lock"]);
