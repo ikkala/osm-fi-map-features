@@ -1225,3 +1225,16 @@ test("a bridge way keeps its bridge:structure and colour, a way on the ground ne
   );
   assert.deepEqual(features.roads.map((r) => [r.osm, r.bridgeStructure, r.bridgeColour]), [["w1", "truss", "maroon"], ["w2", undefined, undefined]]);
 });
+
+test("a boardwalk (bridge=boardwalk) is a bridge that says so, another bridge or one in a tunnel not", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 1, tags: { highway: "path", bridge: "boardwalk", surface: "wood" }, geometry: [at(0, 0), at(30, 0)] },
+      { type: "way", id: 2, tags: { highway: "path", bridge: "yes", layer: "1" }, geometry: [at(0, 10), at(30, 10)] },
+      // under another bridge
+      { type: "way", id: 3, tags: { highway: "path", bridge: "boardwalk", tunnel: "yes", layer: "-1" }, geometry: [at(0, 20), at(30, 20)] },
+    ],
+    origin,
+  );
+  assert.deepEqual(features.roads.map((r) => [r.osm, r.bridge, r.boardwalk]), [["w1", true, true], ["w2", true, undefined], ["w3", true, undefined]]);
+});

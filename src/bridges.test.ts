@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { deckAt, setBridgeDecks, type BridgeLine } from "./bridges.ts";
 import type { Point } from "./geometry.ts";
+import { defined } from "./testing.ts";
 
 // a river 10 m below the banks between e = 10 and e = 30
 const heightAt = (e: number) => (e > 10 && e < 30 ? 90 : e <= 10 ? 100 : 104);
@@ -222,4 +223,54 @@ test("the end of a way above the ground that a way on the ground passes through 
   setBridgeDecks([street, straight, spiral], ground);
   assert.deepEqual(straight.deck?.map((h) => Math.round(h * 100) / 100), [103.2, 101.99]);
   assert.equal(street.deck, undefined);
+});
+
+test("a boardwalk's deck follows the ground a little over it, not straight from one end to the other", () => {
+  // a hollow 2 m deep and 20 m across at its bottom, much wider than the boardwalk keeps level over
+  const ground = (e: number) => (e <= 10 || e >= 40 ? 100 : e < 15 ? 100 - (2 * (e - 10)) / 5 : e > 35 ? 100 - (2 * (40 - e)) / 5 : 98);
+  const boardwalk: BridgeLine = { bridge: true, boardwalk: true, line: [[0, 0], [50, 0]] };
+  const path: BridgeLine = { bridge: false, line: [[50, 0], [60, 0]] };
+  setBridgeDecks([boardwalk, path], ground);
+  const deck = defined(boardwalk.deck);
+  const at = (e: number) => Math.round(deckAt(boardwalk.line, deck, [e, 0]) * 100) / 100;
+  assert.deepEqual([at(0), at(5), at(12.5), at(25), at(37.5), at(50)], [100.3, 100.3, 99.3, 98.3, 99.3, 100.3]);
+  // points where it bends, and none along its level stretches
+  assert.ok(boardwalk.line.length > 2 && boardwalk.line.length < 12);
+  assert.equal(path.deck, undefined);
+});
+
+test("a boardwalk keeps level over a ditch narrower than it spans", () => {
+  const ditch = (e: number) => (e > 18 && e < 22 ? 99 : 100);
+  const boardwalk: BridgeLine = { bridge: true, boardwalk: true, line: [[0, 0], [20, 0], [40, 0]] };
+  setBridgeDecks([boardwalk], ditch);
+  assert.deepEqual(boardwalk.deck, [100.3, 100.3, 100.3]);
+  assert.equal(boardwalk.line.length, 3);
+});
+
+test("a bridge way ending on another bridge's inner point takes the deck's height there, not the ground's under it", () => {
+  // the ground 100 at the bridge's ends, 80 under it and where the way leaving it mid-span comes down
+  const ground = (e: number) => (e <= 0 || e >= 100 ? 100 : 80);
+  const bridge: BridgeLine = { bridge: true, line: [[0, 0], [50, 0], [100, 0]] };
+  const leaving: BridgeLine = { bridge: true, line: [[50, 0], [50, 30]] };
+  // listed first, so its deck waits for the one it ends on
+  setBridgeDecks([leaving, bridge], ground);
+  assert.deepEqual(bridge.deck, [100, 100, 100]);
+  assert.deepEqual(leaving.deck, [100, 80]);
+});
+
+test("a bridge ending on a boardwalk starts at the boardwalk's deck", () => {
+  // a footbridge over a brook at e = 25 on from a boardwalk
+  const ground = (e: number) => (e > 22 && e < 28 ? 97 : 100);
+  const boardwalk: BridgeLine = { bridge: true, boardwalk: true, line: [[0, 0], [20, 0]] };
+  const footbridge: BridgeLine = { bridge: true, line: [[20, 0], [30, 0]] };
+  setBridgeDecks([footbridge, boardwalk], ground);
+  assert.deepEqual(footbridge.deck, [100.3, 100]);
+  assert.deepEqual(boardwalk.deck, [100.3, 100.3]);
+});
+
+test("a boardwalk with a floor (a ramp down to a tunnel) is decked as a bridge, its points kept, and no longer told a boardwalk", () => {
+  const ground = () => 100;
+  const ramp: BridgeLine = { bridge: true, boardwalk: true, floor: [100, 99], line: [[0, 0], [20, 0]] };
+  setBridgeDecks([ramp], ground);
+  assert.deepEqual([ramp.line, ramp.deck, ramp.boardwalk], [[[0, 0], [20, 0]], [100, 100], undefined]);
 });

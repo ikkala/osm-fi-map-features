@@ -1,11 +1,14 @@
 // Bridge deck heights. The elevation model is bare ground, so a deck instead runs from the ground at
 // one end of a span (bridge ways joined end to end) to the other, through the heights steps up to it
 // tell, bending one way only. The model smooths the cut under a bridge into a wider hollow, so ends
-// are taken where the approach stops rising steeply.
+// are taken where the approach stops rising steeply. A boardwalk lies on the ground instead: its deck
+// follows it.
 import type { Point } from "./geometry.ts";
 
 export interface BridgeLine {
   bridge: boolean;
+  /** A boardwalk: planks laid on the ground, no span */
+  boardwalk?: boolean;
   line: Point[];
   /** Deck height (meters above sea level) at every point of line; set by setBridgeDecks */
   deck?: number[];
@@ -15,6 +18,8 @@ export interface BridgeLine {
   /** OSM's layer: over 0, above the ground (a bridge, or a way on a structure that is not tagged one) */
   layer?: number;
   tunnel?: boolean;
+  /** A tunnel's or a ramp's floor at every point of line, set before the decks */
+  floor?: number[];
 }
 
 /** The approach is walked this often, and at most this far from the bridge's end (m) */
@@ -33,6 +38,12 @@ const CREST_STEP_M = 2;
 const LIFT_M = 0.5;
 /** Maximum rounds of junction height averaging */
 const JUNCTION_ROUNDS = 1000;
+/** A boardwalk's deck is this far (m) over the ground, level over a dip narrower than BOARDWALK_SPAN_M */
+const BOARDWALK_OVER_M = 0.3;
+const BOARDWALK_SPAN_M = 6;
+/** The ground under a boardwalk is looked at this often (m), and its deck gets a point where it bends more than BOARDWALK_STRAIGHT_M */
+const BOARDWALK_STEP_M = 2;
+const BOARDWALK_STRAIGHT_M = 0.05;
 
 /**
  * Sets `deck` on every bridge line: straight along each span between its ends, also over the model's hump under
@@ -49,6 +60,9 @@ const JUNCTION_ROUNDS = 1000;
  * more than LIFT_M over the ground there, no line on the ground meets them, and its other end is a dead end or meets a
  * line on the ground no lower than that (stairs down from a street to where a spiral goes on down, a landing at a
  * door): a dead end takes no height from the ground, and the lines meeting such a line are not raised as approaches.
+ * A boardwalk is no span: its deck follows the ground BOARDWALK_OVER_M over it, level over dips narrower than
+ * BOARDWALK_SPAN_M, its line getting points where the deck bends. A span's end on a boardwalk, or on another bridge
+ * line's inner point (a way leaving a bridge mid-span), takes that deck's height there, not the ground's.
  */
 export function setBridgeDecks<T extends BridgeLine>(
   lines: T[],
@@ -57,7 +71,19 @@ export function setBridgeDecks<T extends BridgeLine>(
   through: (line: T) => boolean = () => false,
 ): number {
   const key = (p: Point) => `${p[0]},${p[1]}`;
-  const bridgeEnds = new Set(lines.filter((l) => l.bridge && l.line.length >= 2).flatMap((l) => [key(l.line[0]), key(l.line[l.line.length - 1])]));
+  // a boardwalk in a tunnel or ramping down to one goes as a bridge: its line keeps its points
+  const boardwalk = (l: T) => l.bridge && l.boardwalk === true && !l.tunnel && l.floor === undefined;
+  const boardwalks = lines.filter((l) => boardwalk(l) && l.line.length >= 2);
+  for (const b of boardwalks) {
+    setBoardwalkDeck(b, heightAt);
+  }
+  for (const l of lines) {
+    if (l.boardwalk === true && !boardwalk(l)) {
+      delete l.boardwalk;
+    }
+  }
+  const spanning = (l: T) => l.bridge && l.boardwalk !== true;
+  const bridgeEnds = new Set(lines.filter((l) => spanning(l) && l.line.length >= 2).flatMap((l) => [key(l.line[0]), key(l.line[l.line.length - 1])]));
   const carried = new Set(
     lines.filter((l) => !l.bridge && l.line.length >= 2 && through(l) && bridgeEnds.has(key(l.line[0])) && bridgeEnds.has(key(l.line[l.line.length - 1]))),
   );
@@ -104,7 +130,7 @@ export function setBridgeDecks<T extends BridgeLine>(
       return !l.bridge && !carried.has(l) && !l.tunnel && (l.layer ?? 0) > 0 && l.line.length >= 2 && (lifted(l, a, b) || lifted(l, b, a));
     }),
   );
-  const spanned = (l: T) => l.bridge || carried.has(l) || elevated.has(l);
+  const spanned = (l: T) => spanning(l) || carried.has(l) || elevated.has(l);
   const bridges = lines.filter((l) => spanned(l) && l.line.length >= 2);
   // the lines leading on from bridges, by their ends
   const onward = new Map<string, T[]>();
@@ -220,11 +246,26 @@ export function setBridgeDecks<T extends BridgeLine>(
     }
   }
 
+  // the decks a span may end on: the boardwalks' points and the other bridge lines' inner points
+  const hostsAt = new Map<string, T[]>();
+  const host = (p: Point, l: T) => hostsAt.set(key(p), [...(hostsAt.get(key(p)) ?? []), l]);
+  for (const b of boardwalks) {
+    b.line.forEach((p) => host(p, b));
+  }
+  for (const b of bridges) {
+    b.line.slice(1, -1).forEach((p) => host(p, b));
+  }
+  const hostsOf = (p: Point, own: Set<T>) => (hostsAt.get(key(p)) ?? []).filter((h) => !own.has(h));
+  const hostedAt = (p: Point, own: Set<T>) => {
+    const heights = hostsOf(p, own).flatMap((h) => (h.deck ? [deckAt(h.line, h.deck, p)] : []));
+    return heights.length > 0 ? Math.max(...heights) : undefined;
+  };
   let told = 0;
-  for (const { span, points, distances } of spans) {
+  const deckSpan = ({ span, points, distances }: (typeof spans)[number]) => {
+    const own = new Set(span.map((s) => s.bridge));
     const total = distances[distances.length - 1];
-    const first = heightOf(key(points[0].p));
-    const last = heightOf(key(points[points.length - 1].p));
+    const first = hostedAt(points[0].p, own) ?? heightOf(key(points[0].p));
+    const last = hostedAt(points[points.length - 1].p, own) ?? heightOf(key(points[points.length - 1].p));
     // the known heights along the span: its ends, and where steps come up to it; an end without one is level
     const known: { d: number; h: number }[] = points.flatMap(({ p, owner }, i) => {
       const h = toldAt(p, owner);
@@ -260,6 +301,18 @@ export function setBridgeDecks<T extends BridgeLine>(
       bridge.line = line;
       bridge.deck = deck;
     }
+  };
+  // a span ending on a deck waits for it; spans ending on each other take the heights they have
+  const waits = ({ span, points }: (typeof spans)[number]) => {
+    const own = new Set(span.map((s) => s.bridge));
+    return [points[0].p, points[points.length - 1].p].some((p) => hostsOf(p, own).some((h) => h.deck === undefined && h.boardwalk !== true));
+  };
+  let pending = spans;
+  while (pending.length > 0) {
+    const ready = pending.filter((s) => !waits(s));
+    const now = new Set(ready.length > 0 ? ready : pending);
+    now.forEach(deckSpan);
+    pending = pending.filter((s) => !now.has(s));
   }
   for (const end of ends.values()) {
     for (const a of end.approaches) {
@@ -268,6 +321,73 @@ export function setBridgeDecks<T extends BridgeLine>(
       }
     }
   }  return told;
+}
+
+/**
+ * A boardwalk's deck: BOARDWALK_OVER_M over the ground, which it follows but over dips narrower than
+ * BOARDWALK_SPAN_M (the lowest of the highest grounds of the stretches that long around each point), its line
+ * getting points where the deck bends. A boardwalk with no ground under it gets none.
+ */
+function setBoardwalkDeck(boardwalk: BridgeLine, heightAt: (e: number, n: number) => number | undefined): void {
+  // the ground every step along the line, its points among them
+  const samples: { p: Point; d: number; point: boolean }[] = [];
+  let d = 0;
+  boardwalk.line.forEach((p, i) => {
+    if (i > 0) {
+      const q = boardwalk.line[i - 1];
+      const length = Math.hypot(p[0] - q[0], p[1] - q[1]);
+      const steps = Math.ceil(length / BOARDWALK_STEP_M);
+      for (let k = 1; k < steps; k++) {
+        samples.push({ p: [q[0] + ((p[0] - q[0]) * k) / steps, q[1] + ((p[1] - q[1]) * k) / steps], d: d + (length * k) / steps, point: false });
+      }
+      d += length;
+    }
+    samples.push({ p, d, point: true });
+  });
+  const measured = samples.map((s) => heightAt(...s.p));
+  if (measured.every((h) => h === undefined)) {
+    return;
+  }
+  // where the model has no ground, the nearest sample's
+  const ground = measured.map((h, i) => {
+    if (h !== undefined) {
+      return h;
+    }
+    const nearest = measured.flatMap((m, j) => (m === undefined ? [] : [{ m, far: Math.abs(samples[j].d - samples[i].d) }])).sort((a, b) => a.far - b.far)[0];
+    return nearest.m;
+  });
+  // the highest ground of the stretch from a sample on (or back) BOARDWALK_SPAN_M, within the boardwalk
+  const highest = (from: number, to: number) => Math.max(...ground.filter((_, j) => samples[j].d >= from - 1e-9 && samples[j].d <= to + 1e-9));
+  const deck = samples.map(({ d: at }) => {
+    const starts = samples.filter((s) => s.d >= at - BOARDWALK_SPAN_M - 1e-9 && s.d <= at + 1e-9).map((s) => s.d);
+    const ends = samples.filter((s) => s.d >= at - 1e-9 && s.d <= at + BOARDWALK_SPAN_M + 1e-9).map((s) => s.d);
+    return Math.min(...starts.map((s) => highest(s, s + BOARDWALK_SPAN_M)), ...ends.map((e) => highest(e - BOARDWALK_SPAN_M, e))) + BOARDWALK_OVER_M;
+  });
+  // the line's points, and between them the samples where the deck bends away from a straight line
+  const kept = new Set(samples.flatMap((s, i) => (s.point ? [i] : [])));
+  const keep = (a: number, b: number) => {
+    let worst = -1;
+    let most = BOARDWALK_STRAIGHT_M;
+    for (let i = a + 1; i < b; i++) {
+      const t = (samples[i].d - samples[a].d) / (samples[b].d - samples[a].d);
+      const off = Math.abs(deck[i] - (deck[a] + (deck[b] - deck[a]) * t));
+      if (off > most) {
+        [worst, most] = [i, off];
+      }
+    }
+    if (worst >= 0) {
+      kept.add(worst);
+      keep(a, worst);
+      keep(worst, b);
+    }
+  };
+  const points = [...kept].sort((a, b) => a - b);
+  for (let i = 0; i + 1 < points.length; i++) {
+    keep(points[i], points[i + 1]);
+  }
+  const indices = [...kept].sort((a, b) => a - b);
+  boardwalk.line = indices.map((i) => samples[i].p);
+  boardwalk.deck = indices.map((i) => Math.round(deck[i] * 100) / 100);
 }
 
 /** The upper hull of heights by distance: the lowest line above them all that bends one way only */

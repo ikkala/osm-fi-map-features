@@ -96,6 +96,8 @@ export interface Road {
   /** Bridges: bridge:structure=* (beam, truss, arch, suspension, ...) and colour=*, when OSM tells */
   bridgeStructure?: string;
   bridgeColour?: string;
+  /** A boardwalk (bridge=boardwalk): planks laid on the ground, which its deck follows (see bridges.ts) */
+  boardwalk?: boolean;
 }
 
 export type Sidewalks = "both" | "left" | "right" | "none" | "separate";
@@ -2279,13 +2281,14 @@ function underground(tags: Tags): boolean {
   return tags.parking === "underground" && tags.building !== "roof" && tags.building !== "carport";
 }
 
-/** A bridge way's bridge:structure=* and colour=*, when it is a bridge and OSM tells */
-function bridgeLooks(tags: Tags): { bridgeStructure?: string; bridgeColour?: string } {
-  if (!layering(tags).bridge) {
+/** A bridge way's bridge:structure=* and colour=*, when it is a bridge and OSM tells, and whether it is a boardwalk (not one in a tunnel) */
+function bridgeLooks(tags: Tags): { bridgeStructure?: string; bridgeColour?: string; boardwalk?: boolean } {
+  const { bridge, tunnel } = layering(tags);
+  if (!bridge) {
     return {};
   }
   const structure = tags["bridge:structure"];
-  return { ...(structure && { bridgeStructure: structure }), ...(tags.colour && { bridgeColour: tags.colour }) };
+  return { ...(structure && { bridgeStructure: structure }), ...(tags.colour && { bridgeColour: tags.colour }), ...(tags.bridge === "boardwalk" && !tunnel && { boardwalk: true }) };
 }
 
 function layering(tags: Tags): { layer: number; bridge: boolean; tunnel: boolean } {

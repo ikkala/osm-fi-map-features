@@ -399,7 +399,11 @@ unless another tunnel under one asks it lower.
 
 A bridge's ways (the road, its sidewalks, a cycleway) each get a `deck` (`src/bridges.ts`): ways meeting end to end
 are one span, straight from the ground at one end to the other, also over the model's hump under it (the ground
-under a bridge is the gap spanned from the ground around; the terrain is to be kept under the deck). An end that no
+under a bridge is the gap spanned from the ground around; the terrain is to be kept under the deck). A boardwalk
+(`bridge=boardwalk`, `boardwalk`) is no span but planks laid on the ground: its deck follows the ground a little over
+it, level over a dip narrower than a few meters, its line getting points where the deck bends. A span's end on a
+boardwalk, or on another bridge way's inner point (a way leaving a bridge mid-span), takes that deck's height there,
+not the ground's. An end that no
 way leads on from but ways indoors do (`indoor=yes`, left out) goes into a building at some floor, such as a lift
 tower's top: it takes no height from the ground, and the deck runs level from the span's other end. Steps up to a
 point of a span with a count and a way they climb (`step_count`, `incline`) tell its height, 0.16 m a step over the
