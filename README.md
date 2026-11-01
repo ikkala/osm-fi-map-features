@@ -136,7 +136,11 @@ its count leaves out, above the ground (an attic, a storey and a half): as Tampe
 floor area tells the height better than the count there. A guessed pitched roof gets one storey in it
 (`roofLevels`), and a building without one gets them as storeys. The register also gives most buildings their facade material (brick, concrete, wood, ...; `julkisivumateriaali`) unless OSM
 has `building:material` or `material`, the material of their load-bearing frame (`frameMaterial`: wood, brick, concrete
-or steel; `kantavien_rakenteiden_rakennusaine`), also where the facade is not known, and their main use (`use`, see windows below). The rest get a guess: one storey for sheds
+or steel; `kantavien_rakenteiden_rakennusaine`), also where the facade is not known, and their main use (`use`, see windows below).
+Neither material comes from a register building that spans the outlines adjoining its own, with more floor area than
+its own holds on its storeys, and was completed more than a few years (`WING_YEAR_SLACK`) outside those the outline's
+`start_date` allows: it is another of them, such as a later wing whose point fell in the old building. The rest get
+a guess: one storey for sheds
 and anything under 40 m², two for houses and anything under 150 m², three otherwise. Chimneys, towers, water towers,
 silos, tanks, gasometers and ventilation shafts (`man_made=*`) are buildings even without `building`, and so is a
 stop shelter mapped as `amenity=shelter` with `shelter_type=public_transport` alone, as an open roof (`roof`). These and

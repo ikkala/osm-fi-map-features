@@ -51,10 +51,10 @@ export function exactYear(startDate: string | undefined): number | undefined {
   return b && b[0] === b[1] ? b[0] : undefined;
 }
 
-/** Whether a start_date allows the year */
-export function allows(startDate: string, year: number): boolean {
+/** Whether a start_date allows the year, or one within slack years of it */
+export function allows(startDate: string, year: number, slack = 0): boolean {
   const b = bounds(startDate);
-  return !b || (year >= b[0] && year <= b[1]);
+  return !b || (year >= b[0] - slack && year <= b[1] + slack);
 }
 
 /** Whether it was built before the year: true or false when what is known tells, else undefined */

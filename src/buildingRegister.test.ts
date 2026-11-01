@@ -53,7 +53,7 @@ test("applyRegister replaces estimated heights and sets materials from the point
   const at = (e: number, n: number, floors?: number, facade?: string, use?: BuildingUse, year?: number): RegisterBuilding => ({ longitude: e, latitude: n, floors, facade, use, year });
   const register = [at(2, 2, 2, "wood", "house", 1950), at(8, 8, 5, "brick", "apartments", 1912), at(9, 1, 1, "brick", "apartments"), at(25, 5, 4, "concrete", undefined, 1980), at(100, 100, 3)];
   const match = applyRegister([estimated, tagged, empty], register, (r) => [r.longitude, r.latitude]);
-  assert.deepEqual(match, { matched: 2, heights: 1, materials: 1, frames: 0, unmatched: 1, elsewhere: 0, attics: 0, uncounted: 0 });
+  assert.deepEqual(match, { matched: 2, heights: 1, materials: 1, frames: 0, unmatched: 1, elsewhere: 0, attics: 0, uncounted: 0, wings: 0 });
   // the most storeys and the most common facade win
   assert.equal(estimated.height, 15);
   assert.equal(estimated.heightEstimated, undefined);
@@ -80,6 +80,27 @@ test("applyRegister gives a building with a start_date only a completion year it
   applyRegister([century, decade, unread], [at(5, 1954), at(25, 1954), at(45, 1954)], (r) => [r.longitude, r.latitude]);
   assert.deepEqual([century.year, decade.year, unread.year], [1954, undefined, 1954]);
   assert.deepEqual([century.startDate, decade.startDate], ["C20", "1890s"]);
+});
+
+test("applyRegister takes no materials from another wing's register building", () => {
+  // each old building adjoins a wing without a register building of its own
+  const old = square(0, 10, { startDate: "1907" });
+  const near = square(30, 10, { startDate: "1907" });
+  const undated = square(60, 10, { startDate: "1890s" });
+  const wings = [square(10, 10, { startDate: "1968" }), square(40, 10), square(70, 10)];
+  // and stands alone, its register building completed long after it
+  const alone = square(100, 10, { startDate: "1881" });
+  const at = (e: number, year?: number, area = 500): RegisterBuilding => ({ longitude: e, latitude: 5, floors: 2, area, facade: "brick", frame: "concrete", year });
+  // the wing's point in the old building, one completed a few years after it began, one of no known year, and one
+  // whose floor area its outline holds
+  const register = [at(5, 1920), at(35, 1910), at(65), at(105, 1990), at(125, 1990, 150)];
+  const small = square(120, 10, { startDate: "1907" });
+  const match = applyRegister([old, near, undated, ...wings, alone, small, square(130, 10)], register, (r) => [r.longitude, r.latitude]);
+  assert.deepEqual([old.material, old.frameMaterial], [undefined, undefined]);
+  for (const b of [near, undated, alone, small]) {
+    assert.deepEqual([b.material, b.frameMaterial], ["brick", "concrete"]);
+  }
+  assert.deepEqual([match.wings, match.materials, match.frames], [1, 4, 4]);
 });
 
 test("applyRegister sets the most common frame material, also where no facade is known and OSM has a material", () => {

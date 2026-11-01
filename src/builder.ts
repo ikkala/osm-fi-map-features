@@ -453,7 +453,7 @@ export class MapBuilder {
         `building register: ${register.length} buildings (${registerCached ? "cached" : "fetched"}), ` +
           `${match.heights} heights, ${match.materials} wall materials and ${match.frames} frame materials set, ${match.unmatched} inside no OSM building, ` +
           `${match.elsewhere} mostly elsewhere (their storeys not taken), storeys left out of the count in ${match.attics} roofs and ` +
-          `${match.uncounted} buildings`,
+          `${match.uncounted} buildings, another wing's materials not taken in ${match.wings}`,
       );
       if (match.matched > 0) {
         otherAttributions.push(BUILDING_REGISTER_ATTRIBUTION);

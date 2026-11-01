@@ -171,7 +171,16 @@ export interface RegisterMatch {
   unmatched: number;
   /** OSM buildings whose register buildings are mostly elsewhere, their storeys not taken */
   elsewhere: number;
+  /** OSM buildings whose register building is another wing's (see WING_YEAR_SLACK), its materials not taken */
+  wings: number;
 }
+
+/**
+ * A register building spanning the outlines adjoining its own, with more floor area than its own holds on its
+ * storeys, and completed more than this many years outside those its outline's start_date allows, is another of
+ * them, such as a later wing whose point fell in the old one: its facade and frame are not taken.
+ */
+const WING_YEAR_SLACK = 5;
 
 /**
  * A register building with this many times the floor area its outline holds on its storeys (and the outlines
@@ -217,7 +226,7 @@ export function applyRegister(buildings: Building[], register: RegisterBuilding[
       unmatched++;
     }
   }
-  const result: RegisterMatch = { matched: inside.size, heights: 0, materials: 0, frames: 0, unmatched, elsewhere: 0, attics: 0, uncounted: 0 };
+  const result: RegisterMatch = { matched: inside.size, heights: 0, materials: 0, frames: 0, unmatched, elsewhere: 0, attics: 0, uncounted: 0, wings: 0 };
   const groundArea = adjoiningArea(boxes.map(({ b }) => b), (b) => inside.has(b));
   for (const [b, rs] of inside) {
     const area = rs.reduce((sum, r) => sum + (r.area ?? 0), 0);
@@ -261,13 +270,24 @@ export function applyRegister(buildings: Building[], register: RegisterBuilding[
     if (b.year === undefined && years.length > 0) {
       b.year = Math.min(...years);
     }
-    const facade = mostCommon(rs.map((r) => r.facade).filter((f) => f !== undefined));
+    const ownArea = floorArea(b);
+    const wing = (r: RegisterBuilding) =>
+      startDate !== undefined &&
+      r.year !== undefined &&
+      !allows(startDate, r.year, WING_YEAR_SLACK) &&
+      ground > ownArea &&
+      (r.area ?? 0) > ownArea * (r.floors ?? 1);
+    const own = rs.filter((r) => !wing(r));
+    if (rs.some((r) => wing(r) && (r.facade !== undefined || r.frame !== undefined))) {
+      result.wings++;
+    }
+    const facade = mostCommon(own.map((r) => r.facade).filter((f) => f !== undefined));
     if (facade && (!b.material || b.materialEstimated)) {
       b.material = facade;
       delete b.materialEstimated;
       result.materials++;
     }
-    const frame = mostCommon(rs.map((r) => r.frame).filter((f) => f !== undefined));
+    const frame = mostCommon(own.map((r) => r.frame).filter((f) => f !== undefined));
     if (frame) {
       b.frameMaterial = frame;
       result.frames++;
@@ -287,7 +307,6 @@ function adjoiningArea(outlines: Building[], hasOwn: (b: Building) => boolean): 
       byPoint.set(pointKey(p), [...(byPoint.get(pointKey(p)) ?? []), b]);
     }
   }
-  const area = (b: Building) => Math.abs(ringArea(b.polygon.outer)) - b.polygon.holes.reduce((sum, h) => sum + Math.abs(ringArea(h)), 0);
   return (start) => {
     const group = new Set([start]);
     const todo = [start];
@@ -301,8 +320,13 @@ function adjoiningArea(outlines: Building[], hasOwn: (b: Building) => boolean): 
         }
       }
     }
-    return [...group].reduce((sum, b) => sum + area(b), 0);
+    return [...group].reduce((sum, b) => sum + floorArea(b), 0);
   };
+}
+
+/** An outline's area without its holes */
+function floorArea(b: Building): number {
+  return Math.abs(ringArea(b.polygon.outer)) - b.polygon.holes.reduce((sum, h) => sum + Math.abs(ringArea(h)), 0);
 }
 
 function mostCommon<T extends string>(values: T[]): T | undefined {

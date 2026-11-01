@@ -50,6 +50,10 @@ test("allows any year for a start_date it does not read", () => {
   assert.equal(allows("1890s", 1900), false);
 });
 
+test("allows years within the slack of its own", () => {
+  assert.deepEqual([1900, 1901, 1915, 1916].map((y) => allows("1904..1912", y, 3)), [false, true, true, false]);
+});
+
 test("eraOf is the era it was built in, when what is known tells which", () => {
   const eras = [{ before: 1920 }, { before: 1946 }, { before: 1990 }];
   assert.equal(eraOf({ year: 1930 }, eras), eras[1]);
