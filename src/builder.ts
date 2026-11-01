@@ -18,6 +18,7 @@ import { mergeTrees, moveTreesOffWays, plantForests } from "./forests.ts";
 import { pointKey, simplifyLine, type Point } from "./geometry.ts";
 import { placeLamps } from "./lamps.ts";
 import { landmarkQuery, moveLandmarksOffWays, parseLandmarks } from "./landmarks.ts";
+import { fetchLaserRoofs, LASER_ATTRIBUTION } from "./laserScanning.ts";
 import { withoutCourseWater } from "./rides.ts";
 import { parsePlayEquipment, placePlayEquipment, playgroundQuery } from "./playgrounds.ts";
 import { fetchRoofColours, ORTHO_ATTRIBUTION } from "./ortho.ts";
@@ -30,7 +31,7 @@ import { placeStreetNodes } from "./streets.ts";
 import { cutIntoTiles, latticeProjection, tileHeights, tileName, tilePieces, tilesCoveringAny, type Tile, type TileKey } from "./tiles.ts";
 import { setPlatformTops } from "./platforms.ts";
 import { pitchBoxes, setLevelTops } from "./pitches.ts";
-import { applyRoofTops, fetchRoofTops, ROOF_TOP_SOURCES, type RoofTopSource } from "./roofTops.ts";
+import { applyRoofTops, fetchRoofTops, measurable, ROOF_TOP_SOURCES, type RoofTopSource } from "./roofTops.ts";
 import { setTrackBeds } from "./trackbeds.ts";
 import { decksOver, lowerUnderBridges, tramBedCeiling, underBridges } from "./underbridges.ts";
 import { passagesUpSlopes, raisePassages } from "./raisedPassages.ts";
@@ -76,7 +77,7 @@ export interface MapOptions {
   /** Fetch the sources again instead of using the cache */
   refresh?: boolean;
   overpassUrl?: string;
-  /** Maanmittauslaitos open interfaces: ground heights, bridge decks and roof colours when set */
+  /** Maanmittauslaitos open interfaces: ground heights, bridge decks, roof colours and laser-scanned roofs when set */
   mmlApiKey?: string;
   /** The tree registers to take street and park trees from, of those that cover the area; TREE_REGISTERS by default */
   treeRegisters?: TreeRegisterSource[];
@@ -485,8 +486,8 @@ export class MapBuilder {
         logger.warn(`warning: no roof colours from the orthophoto: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-    // TODO: measure guessed heights and roof shapes from the MML laser scanning point cloud (a high
-    // percentile of the points in an outline minus the ground; mind trees and newer buildings).
+    // TODO: measure guessed heights and roof shapes from the MML laser scanning point cloud too, not only bring
+    // measured tops down to it (laserScanning.ts; mind trees and newer buildings).
     // after the register, which has most buildings' years
     const aged = applyAges(features.buildings);
     const dated = features.buildings.filter((b) => (b.year !== undefined || b.startDate !== undefined) && !b.hasParts).length;
@@ -584,6 +585,24 @@ export class MapBuilder {
       logger.log(`${passagesUpSlopes(features.buildings, heightAt)} passage openings and rooms count from the ground up a slope`);
       // measured tops are above sea level: the buildings must stand at their base first
       const notRaised = features.buildings.filter((b) => !raised.includes(b));
+      // the laser scanning's roofs, which a measured top over a chimney or a lantern comes down to
+      let laserRoof: ((b: Building) => number | undefined) | undefined;
+      if (mmlApiKey && roofTopSources.length > 0) {
+        const measured = notRaised.filter(measurable);
+        const toTm = (ring: Point[]) => ring.map((p) => toTm35fin(toGeo(p)));
+        try {
+          const { roofs, cached: roofsCached, fetched } = await fetchLaserRoofs(
+            measured.map((b) => ({ outer: toTm(b.polygon.outer), holes: b.polygon.holes.map(toTm) })),
+            { apiKey: mmlApiKey, cache, refresh, log: (message) => logger.log(message) },
+          );
+          const byBuilding = new Map<Building, number | undefined>(measured.map((b, index) => [b, roofs.get(index)]));
+          laserRoof = (b) => byBuilding.get(b);
+          logger.log(`laser scanning: ${roofs.size} of ${measured.length} roofs measured (${roofsCached} cached, ${fetched} sheets fetched)`);
+        } catch (err) {
+          logger.warn(`warning: no roofs from the laser scanning: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      let lowered = 0;
       for (const source of roofTopSources) {
         try {
           const asked = await inPieces(source.title, (box) => fetchRoofTops(source, box, { cache, refresh }), source.covers);
@@ -591,10 +610,15 @@ export class MapBuilder {
           const partsCached = asked.cached;
           const ring = (points: GeoPoint[]) => points.map((p) => toMeters(p.latitude, p.longitude));
           const nearParts = parts.filter((p) => near(p.outer).length > 0);
-          const match = applyRoofTops(notRaised, nearParts.map((p) => ({ polygon: { outer: ring(p.outer), holes: p.holes.map(ring) }, top: p.top })));
+          const match = applyRoofTops(
+            notRaised,
+            nearParts.map((p) => ({ polygon: { outer: ring(p.outer), holes: p.holes.map(ring) }, top: p.top })),
+            laserRoof,
+          );
+          lowered += match.lowered;
           logger.log(
             `${source.title}: ${parts.length} parts (${partsCached ? "cached" : "fetched"}), ${match.heights} buildings' heights measured ` +
-              `(${match.roofs} given a hipped roof), ` +
+              `(${match.roofs} given a hipped roof, ${match.lowered} down to the laser scanning's roof), ` +
               `${match.uncovered} too little covered, ${match.rejected} with tops fitting neither their storeys nor a roof`,
           );
           if (match.heights > 0) {
@@ -603,6 +627,9 @@ export class MapBuilder {
         } catch (err) {
           logger.warn(`warning: no data from the ${source.title}: ${err instanceof Error ? err.message : String(err)}`);
         }
+      }
+      if (lowered > 0) {
+        otherAttributions.push(LASER_ATTRIBUTION);
       }
     }
     // TODO: buildings with entrances on several levels, or steps at the door, stand at the wrong one.

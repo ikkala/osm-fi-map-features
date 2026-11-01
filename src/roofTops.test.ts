@@ -57,7 +57,7 @@ test("parseRoofTops reads polygons and multipolygons with their tops, not parts 
 test("applyRoofTops gives an old building whose top is well over its eaves a hipped roof up to it", () => {
   const school = building(0, 36, 29, { kind: "school", levels: 4, year: 1907, height: 16 });
   const match = applyRoofTops([school], [part(-1, -1, 38, 31, 25.7)]);
-  assert.deepEqual(match, { heights: 1, roofs: 1, uncovered: 0, rejected: 0 });
+  assert.deepEqual(match, { heights: 1, roofs: 1, lowered: 0, uncovered: 0, rejected: 0 });
   assert.equal(tenth(school.height), 25.7);
   // the walls are its 4 storeys of 3.5 m, the ridge along its long side
   assert.equal(school.roofShape, "hipped");
@@ -66,13 +66,32 @@ test("applyRoofTops gives an old building whose top is well over its eaves a hip
   assert.equal(school.roofHeightEstimated, true);
 });
 
+test("applyRoofTops brings a top over a small part of the roof down to the laser scanning's roof", () => {
+  // a lantern on the ridge's end: the ridge is under the measured top
+  const school = building(0, 36, 29, { kind: "school", levels: 4, year: 1907, height: 16 });
+  // a chimney less than OVER_ROOF_M over it, a roof lower than the storeys, and no roof measured
+  const house = building(100, 10, 8, { levels: 2, year: 1950, height: 8 });
+  const sunk = building(200, 10, 8, { levels: 2, year: 1950, height: 8 });
+  const unmeasured = building(300, 10, 8, { levels: 2, year: 1950, height: 8 });
+  // storeys not known: perhaps a building site when it was scanned
+  const unknown = building(400, 10, 8, { height: 8 });
+  // a top too high for its roof stays out, though the laser scanning's roof would fit
+  const rejected = building(500, 10, 8, { levels: 2, year: 1950, height: 8 });
+  const roofs = new Map([[school, BASE + 22.4], [house, BASE + 8.6], [sunk, BASE + 4], [unknown, BASE + 4], [rejected, BASE + 9]]);
+  const parts = [part(-1, -1, 38, 31, 25.7), ...[100, 200, 300, 400].map((x) => part(x, 0, 10, 8, 9.4)), part(500, 0, 10, 8, 30)];
+  const match = applyRoofTops([school, house, sunk, unmeasured, unknown, rejected], parts, (b) => roofs.get(b));
+  assert.deepEqual([match.lowered, match.rejected], [1, 1]);
+  assert.deepEqual([tenth(school.height), school.roofShape, tenth(school.roofHeight)], [22.4, "hipped", 8.4]);
+  assert.deepEqual([house, sunk, unmeasured, unknown, rejected].map((b) => tenth(b.height)), [9.4, 9.4, 9.4, 9.4, 8]);
+});
+
 test("applyRoofTops keeps flat roofs flat, and leaves a newer building's machine room out", () => {
   const block = building(0, 40, 12, { kind: "apartments", levels: 6, year: 1975, height: 25, heightFromLevels: true });
   const newer = building(100, 40, 12, { kind: "apartments", levels: 5, year: 1981, height: 15 });
   // OSM says flat
   const tagged = building(200, 40, 12, { levels: 3, year: 1925, height: 11, roofShapeEstimated: undefined });
   const match = applyRoofTops([block, newer, tagged], [part(0, 0, 40, 12, 19.5), part(100, 0, 40, 12, 19.1), part(200, 0, 40, 12, 18)]);
-  assert.deepEqual(match, { heights: 1, roofs: 0, uncovered: 0, rejected: 2 });
+  assert.deepEqual(match, { heights: 1, roofs: 0, lowered: 0, uncovered: 0, rejected: 2 });
   assert.deepEqual([tenth(block.height), block.roofShape, block.heightFromLevels], [19.5, undefined, undefined]);
   assert.deepEqual([newer.height, newer.roofShape], [15, undefined]);
   assert.deepEqual([tagged.height, tagged.roofShape], [11, undefined]);
@@ -84,7 +103,7 @@ test("applyRoofTops takes the tops that fit the storeys: a tower on a podium, no
   const parts = [part(0, 0, 30, 30, 11), part(0, 0, 30, 5, 38.8)];
   const wing = building(100, 20, 20, { levels: 9, height: 35 });
   const match = applyRoofTops([tower, wing], [...parts, part(100, 0, 20, 20, 15.7)]);
-  assert.deepEqual(match, { heights: 1, roofs: 0, uncovered: 0, rejected: 1 });
+  assert.deepEqual(match, { heights: 1, roofs: 0, lowered: 0, uncovered: 0, rejected: 1 });
   assert.equal(tenth(tower.height), 38.8);
   assert.equal(wing.height, 35);
 });
@@ -98,7 +117,7 @@ test("applyRoofTops lets a guessed roof rise up to the top, at most half of the 
   const hotel = building(300, 25, 24, { kind: "hotel", levels: 25, height: 90, roofShape: "hipped", roofHeight: 1.5, roofShapeEstimated: undefined });
   const parts = [part(0, 0, 12, 8, 5.5), part(100, 0, 6, 4, 3.1), part(200, 0, 12, 8, 8), part(300, 0, 25, 24, 80.3)];
   const match = applyRoofTops([house, garage, old, hotel], parts);
-  assert.deepEqual(match, { heights: 4, roofs: 0, uncovered: 0, rejected: 0 });
+  assert.deepEqual(match, { heights: 4, roofs: 0, lowered: 0, uncovered: 0, rejected: 0 });
   assert.deepEqual([tenth(house.height), house.roofShape, tenth(house.roofHeight)], [5.5, "gabled", 2.5]);
   // the storeys are too rough a guess of the eaves to flatten a roof
   assert.deepEqual([tenth(garage.height), garage.roofShape, garage.roofHeight], [3.1, "gabled", 1]);
@@ -110,7 +129,7 @@ test("applyRoofTops leaves out a roof too steep for its building, and buildings 
   const narrow = building(0, 20, 6, { levels: 1, year: 1900, height: 3.6 });
   const half = building(100, 20, 10, { levels: 2, year: 1950, height: 6.4 });
   const match = applyRoofTops([narrow, half], [part(0, 0, 20, 6, 20), part(100, 0, 8, 10, 8)]);
-  assert.deepEqual(match, { heights: 0, roofs: 0, uncovered: 1, rejected: 1 });
+  assert.deepEqual(match, { heights: 0, roofs: 0, lowered: 0, uncovered: 1, rejected: 1 });
   assert.deepEqual([narrow.height, narrow.roofShape, half.height], [3.6, undefined, 6.4]);
 });
 
@@ -118,7 +137,7 @@ test("applyRoofTops measures a building without storeys, its guessed roof at mos
   const church = building(0, 30, 15, { kind: "church", height: 13.5, heightEstimated: true, heightByType: true, roofShape: "gabled", roofAngle: 0, roofHeight: 6, roofHeightEstimated: true });
   const shed = building(100, 4, 3, { kind: "shed", height: 3, heightEstimated: true });
   const match = applyRoofTops([church, shed], [part(0, 0, 30, 15, 11), part(100, 0, 4, 3, 1.5)]);
-  assert.deepEqual(match, { heights: 1, roofs: 0, uncovered: 0, rejected: 1 });
+  assert.deepEqual(match, { heights: 1, roofs: 0, lowered: 0, uncovered: 0, rejected: 1 });
   assert.deepEqual([tenth(church.height), tenth(church.roofHeight), church.heightEstimated, church.heightByType], [11, 5.5, undefined, undefined]);
   // too low for any building
   assert.deepEqual([shed.height, shed.heightEstimated], [3, true]);
@@ -135,6 +154,6 @@ test("applyRoofTops leaves parts, special and open buildings and those without a
     building(0, 10, 10, { base: undefined }),
   ];
   const match = applyRoofTops(buildings, [part(0, 0, 10, 10, 30)]);
-  assert.deepEqual(match, { heights: 0, roofs: 0, uncovered: 0, rejected: 0 });
+  assert.deepEqual(match, { heights: 0, roofs: 0, lowered: 0, uncovered: 0, rejected: 0 });
   assert.ok(buildings.every((b) => b.height === 12));
 });

@@ -8,8 +8,9 @@ rides, power lines and ski tracks), and ground areas from
 [OpenStreetMap](https://www.openstreetmap.org/), combined with Finnish open data:
 
 - the ground heights of the [National Land Survey of Finland](https://www.maanmittauslaitos.fi/en)'s
-  (Maanmittauslaitos, MML) 2 m elevation model, for tile heights, bridge decks and where buildings stand, and
-  roof colours from its orthophoto (needs a free API key from https://omatili.maanmittauslaitos.fi)
+  (Maanmittauslaitos, MML) 2 m elevation model, for tile heights, bridge decks and where buildings stand, roof
+  colours from its orthophoto and roofs from its laser scanning (needs a free API key from
+  https://omatili.maanmittauslaitos.fi)
 - storeys, facades, frames, uses and completion years from the Finnish building register, which the Finnish
   Environment Institute (Syke) publishes for the whole country in
   [Ryhti](https://ryhti.syke.fi/palvelut/palvelut-tiedon-hyodyntajille/)
@@ -80,7 +81,8 @@ and the map is only combined from them when it is built. `fileCache(dir)` keeps 
 `overpass-*.json`, `mml-elevation-*.asc`, `ryhti-buildings-*.json` (a page each), `tampere-trees-*.json` (a tree
 register's `name`), `tampere-roof-tops-*.json` (a layer of 3D building parts by its `name`), and
 `mml-roof-colours-<e>_<n>.json` (the colours worked out from the orthophoto by outline, a file per square of the
-photo, so maps of different places keep theirs; the images are not kept).
+photo, so maps of different places keep theirs; the images are not kept), and `mml-laser-roofs-<sheet>.json` (the
+roofs worked out from the laser scanning by outline, a file per map sheet; the point clouds are not kept).
 
 `edits` (`parseOsmEdits` of an OSM XML file) shows edits of the OSM data in the map before they are uploaded: the
 elements the file marks `action="modify"` take its tags (and its geometry when the file has a way's nodes; a way whose
@@ -248,10 +250,24 @@ storeys, as tall as of their age) and itself:
 - other tops more than 3 m over the eaves, and tops more than 3 m over the steepest roof the building could have,
   are left out: a roof that cannot be told or drawn, or another building's top.
 
+A part's highest point may be a chimney's or a lantern's, or a taller building's that the part spans, so with an MML
+API key a top that fits, clearly over (`OVER_ROOF_M`) the roof the National Land Survey's laser scanning measures,
+comes down to it where that roof fits the building's storeys, when they are known (`src/laserScanning.ts`): a top left
+out stays out, so the scanning only ever lowers a building, and one without storeys may be newer than the scanning,
+which then saw its site. The scanning comes from MML's file service (the
+process `laserkeilausaineisto_05_karttalehti`: the newest point cloud of each 1:5000 map sheet of 3 x 3 km, thinned to
+0.5 points/m², as LAZ), only where measured tops are used. An outline's roof is the height under nearly all
+(`ROOF_SHARE`) of the points over the ground (LAS classes other than ground, water and noise) a little inside it
+(`EDGE_MARGIN_M`, clear of its walls), where there are enough of them (`MIN_POINTS`) and they are most of its points
+(`MIN_ABOVE_SHARE`): where they are not, the building is newer than the scanning.
+
 From Lielahti to Hervanta about 18 000 buildings get a measured height (half of them from 1.4 m lower to 1.2 m
 higher than before) and 126 of them a hipped roof, such as the main building of Juhannuskylän koulu (1907,
-`height=16` in OSM), 16 m tall with a flat roof before and now 14.4 m of walls under an 11.3 m hipped roof, and the
-wooden villas of the 1920s in Pyynikki, 6.4 m tall before and now under roofs 5–7 m tall.
+`height=16` in OSM), 16 m tall with a flat roof before and now 14.0 m of walls under an 8.4 m hipped roof up to its
+ridge (its part's top, 3.3 m higher, a small lantern's on the ridge, brought down by the laser scanning), and the
+wooden villas of the 1920s in Pyynikki, 6.4 m tall before and now under roofs 5–7 m tall. The laser scanning brings
+about 150 tops down (October 2026), most of them by 1–2 m, a chimney's, and a few by up to 9 m, where a small part of
+the roof rises far over the rest, such as Napparin talo's (1920), 16.2 m tall under a hipped roof before and now 7.2 m.
 
 Ways through buildings (`tunnel=building_passage`) are drawn on the ground like other ways, and open the walls
 they cross: as wide as the way (wider where it crosses at a slant, and on over nearly straight corners) and as
@@ -770,7 +786,7 @@ The data it builds is not:
   altered and combined with other data, a Derivative Database in ODbL terms: when you make it, or something
   produced from it such as a rendered map, public, you must credit OpenStreetMap and offer the database, or the way it
   was made, under the ODbL. This package is that way for maps built with it; say which commit you used.
-- Elevation model and orthophoto © Maanmittauslaitos, the building register © Finnish Environment Institute Syke
+- Elevation model, orthophoto and laser scanning © Maanmittauslaitos, the building register © Finnish Environment Institute Syke
   (Ryhti), and a tree register and 3D building parts © their city (Tampere), all under
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): credit them.
 - Flows pulled towards counts (`pullFlows`) are OSM roads combined with the counts: a Derivative Database under the

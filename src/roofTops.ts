@@ -135,6 +135,8 @@ const MIN_TOP_M = 2;
 const MAX_PITCH = (50 * Math.PI) / 180;
 /** A top higher than the steepest roof and this (m) is another building's */
 const SLACK_M = 3;
+/** A top more than this (m) over the laser scanning's roof stands on a small part of it: a chimney, a lantern */
+const OVER_ROOF_M = 1;
 /** The parts are indexed in square cells this big (m) */
 const CELL_M = 50;
 
@@ -143,23 +145,31 @@ export interface RoofTopMatch {
   heights: number;
   /** Of them, the ones that got a hipped roof up to it */
   roofs: number;
+  /** Of them, the ones whose top came down to the laser scanning's roof */
+  lowered: number;
   /** Buildings too little covered by the parts */
   uncovered: number;
   /** Buildings whose top fits neither their storeys nor a roof */
   rejected: number;
 }
 
+/** Whether measured tops may give the building its height: an ordinary one standing on its base */
+export function measurable(b: Building): b is Building & { base: number } {
+  return !(b.part || b.hasParts || b.base === undefined || b.special || b.shelter !== undefined || b.lattice || b.minHeight > 0);
+}
+
 /**
  * Sets the heights of ordinary buildings standing on their base (not parts, outlines with parts, special,
  * open or raised ones) to the measured tops over them, the median of the tops that fit their storeys, and with
  * storeys the roof between the eaves and the top: a guessed roof height up to it, else a hipped roof for an old,
- * nearly rectangular building whose top is clearly over its eaves. A top fitting neither is left out.
+ * nearly rectangular building whose top is clearly over its eaves. A top fitting neither is left out. A top that
+ * fits, well over the roof laserRoof measures (m above sea level), comes down to it where that fits the storeys known.
  */
-export function applyRoofTops(buildings: Building[], parts: MeasuredPart[]): RoofTopMatch {
+export function applyRoofTops(buildings: Building[], parts: MeasuredPart[], laserRoof?: (b: Building) => number | undefined): RoofTopMatch {
   const highestTop = partIndex(parts);
-  const result: RoofTopMatch = { heights: 0, roofs: 0, uncovered: 0, rejected: 0 };
+  const result: RoofTopMatch = { heights: 0, roofs: 0, lowered: 0, uncovered: 0, rejected: 0 };
   for (const b of buildings) {
-    if (b.part || b.hasParts || b.base === undefined || b.special || b.shelter !== undefined || b.lattice || b.minHeight > 0) {
+    if (!measurable(b)) {
       continue;
     }
     const base = b.base;
@@ -174,24 +184,30 @@ export function applyRoofTops(buildings: Building[], parts: MeasuredPart[]): Roo
       result.rejected++;
       continue;
     }
-    const top = median(fitting);
     const box = orientedBox(b.polygon.outer);
     const maxRise = (box.width / 2) * Math.tan(MAX_PITCH);
-    const rise = b.levels === undefined ? undefined : top - b.levels * storeyHeight(b);
+    const old = builtBefore(b, FINNISH_DEFAULTS_MEASURED_IN_TAMPERE.pitchedRoofsBefore) === true;
+    const rectangular = b.polygon.holes.length === 0 && Math.abs(ringArea(b.polygon.outer)) >= GUESS_MIN_FILL * box.length * box.width;
+    const riseOf = (top: number) => (b.levels === undefined ? undefined : top - b.levels * storeyHeight(b));
+    const pitched = (rise: number | undefined): rise is number => rise !== undefined && rise > FINNISH_DEFAULTS_MEASURED_IN_TAMPERE.flatRoofRiseM && !b.roofShape;
+    // a roof that cannot be told or drawn, or another building's top
+    const rejects = (rise: number | undefined) =>
+      b.roofShape && b.roofHeightEstimated
+        ? rise !== undefined && rise > maxRise + SLACK_M
+        : pitched(rise) && (!b.roofShapeEstimated || !old || !rectangular || rise > maxRise + SLACK_M);
+    if (rejects(riseOf(median(fitting)))) {
+      result.rejected++;
+      continue;
+    }
+    // a top that fits comes down to the laser scanning's roof where that fits the storeys known
+    const roof = laserRoof?.(b);
+    const lowered = roof !== undefined && b.levels !== undefined && roof - base >= lowest && median(fitting) > roof - base + OVER_ROOF_M;
+    const top = lowered ? roof - base : median(fitting);
+    const rise = riseOf(top);
     if (b.roofShape && b.roofHeightEstimated) {
-      if (rise !== undefined && rise > maxRise + SLACK_M) {
-        result.rejected++;
-        continue;
-      }
       // the storeys tell the eaves too roughly to make a guessed roof lower: up to the rise, at most half of the height
       b.roofHeight = Math.min(Math.max(b.roofHeight ?? 0, Math.min(rise ?? 0, maxRise)), top / 2);
-    } else if (rise !== undefined && rise > FINNISH_DEFAULTS_MEASURED_IN_TAMPERE.flatRoofRiseM && !b.roofShape) {
-      const old = builtBefore(b, FINNISH_DEFAULTS_MEASURED_IN_TAMPERE.pitchedRoofsBefore) === true;
-      const rectangular = b.polygon.holes.length === 0 && Math.abs(ringArea(b.polygon.outer)) >= GUESS_MIN_FILL * box.length * box.width;
-      if (!b.roofShapeEstimated || !old || !rectangular || rise > maxRise + SLACK_M) {
-        result.rejected++;
-        continue;
-      }
+    } else if (pitched(rise)) {
       b.roofShape = "hipped";
       b.roofAngle = roofDegrees(box.angle);
       b.roofHeight = Math.min(rise, maxRise);
@@ -206,6 +222,9 @@ export function applyRoofTops(buildings: Building[], parts: MeasuredPart[]): Roo
     delete b.heightFromLevels;
     delete b.heightByType;
     result.heights++;
+    if (lowered) {
+      result.lowered++;
+    }
   }
   return result;
 }
