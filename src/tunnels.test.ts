@@ -485,6 +485,15 @@ test("a way over a portal is level over the cut in front of it, wider than the t
   assert.deepEqual([at(38.8, 0), at(38.8, 4.5), at(38.8, -5.5), at(38.8, 9), at(41, 4), at(42, 0)], [104, 104, 104, 104, 100, 100]);
 });
 
+test("a way beside a portal, only its width reaching over the room, keeps its ground", () => {
+  // the ground over the tunnel a meter over a street along it, the street's kerb over the room's side
+  const ground = (e: number, n: number) => (Math.abs(n) > 3 ? 103 : e <= 36 ? 104 : e >= 40 ? 100 : 104 - (e - 36));
+  const street = road("w4", [[0, 5.5], [60, 5.5]]);
+  const map = features([road("w2", [[-20, 0], [0, 0]]), underpass(), stub(), road("w5", [[40.5, 0], [80, 0]]), street]);
+  const at = raiseToWalls(ground, portalWallsAt(setTunnelFloors(map, ground).walls));
+  assert.deepEqual([at(38, 0), at(36, 5.5), at(30, 5.5), at(45, 5.5)], [104, 103, 103, 103]);
+});
+
 test("a levelled way's ground is raised around its ends too, a portal's wall only from its face in", () => {
   const walls = [
     { line: [[40, 0], [34, 0]] satisfies Point[], half: 2, top: 104 },

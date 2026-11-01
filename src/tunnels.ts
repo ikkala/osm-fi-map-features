@@ -813,7 +813,8 @@ function inFromPortal(nodes: Map<string, Node>, start: string, length: number): 
 /**
  * The ground under the ways over the portals' walls, raised to the wall's top under their width as far as the
  * model has it lower, the cut in front of a portal being often wider than the tunnel: up to LEVEL_REACH_M either
- * way along the way. Ways meeting the tunnels and ways in front of a portal are not over its wall.
+ * way along the way. Ways meeting the tunnels and ways in front of a portal are not over its wall, nor a way beside
+ * it whose width only reaches over the room: the ground over the tunnel may be higher than a street along it.
  */
 function levelWaysOver(roads: Road[], tunnels: Way[], walls: PortalWall[], modelAt: (e: number, n: number) => number | undefined): PortalWall[] {
   const meeting = new Set(tunnels.flatMap((t) => t.line.map(pointKey)));
@@ -829,17 +830,20 @@ function levelWaysOver(roads: Road[], tunnels: Way[], walls: PortalWall[], model
       if (b.maxX < box.minX - margin || b.minX > box.maxX + margin || b.maxY < box.minY - margin || b.minY > box.maxY + margin) {
         continue;
       }
-      // where along the road its width is over the wall: the wall widened by the road's half
+      // where along the road its width is over the wall: the wall widened by the road's half; its line must be too
       const reachOver = portalWallsAt([{ ...wall, half: margin }]);
+      const lineOver = portalWallsAt([wall]);
       const length = road.line.reduce((sum, q, i) => (i > 0 ? sum + Math.hypot(q[0] - road.line[i - 1][0], q[1] - road.line[i - 1][1]) : 0), 0);
       const onWall: number[] = [];
+      let over = false;
       for (let d = 0; d <= length; d += LEVEL_STEP_M) {
         const p = pointAlong(road.line, d);
         if (p && reachOver(...p) !== undefined) {
           onWall.push(d);
+          over ||= lineOver(...p) !== undefined;
         }
       }
-      if (onWall.length === 0) {
+      if (!over) {
         continue;
       }
       // on from there while the model is lower than the wall's top
