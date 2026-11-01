@@ -928,6 +928,8 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
       }
       const closed = isClosed(element.geometry ?? []);
       const polygon = () => normalize({ outer: points, holes: [] });
+      // a closed way as a line goes back to its start: the outline's points leave the closing one out
+      const line = closed && points.length >= 3 ? [...points, points[0]] : points;
       // a road under construction is drawn as the road it will be: it is mostly there, and in use between works
       const road = tags.highway === "construction" && tags.construction ? { ...tags, highway: tags.construction } : tags;
       if (road.highway && closed && road.area === "yes") {
@@ -948,7 +950,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
           ...(road.highway === "steps" ? stepping(road) : {}),
           ...surfaceOf(road),
           ...bridgeLooks(road),
-          line: points,
+          line,
         };
         const storeys = storeysOf(road);
         if (storeys) {
@@ -958,7 +960,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
           indoors.push(way);
         } else {
           features.roads.push(way);
-          const passage = { line: points, width, height: meters(road.maxheight) ?? (walkway ? WALKWAY_PASSAGE_HEIGHT_M : PASSAGE_HEIGHT_M) };
+          const passage = { line, width, height: meters(road.maxheight) ?? (walkway ? WALKWAY_PASSAGE_HEIGHT_M : PASSAGE_HEIGHT_M) };
           if (road.tunnel === "building_passage") {
             passages.push(passage);
             through.add(way);
@@ -971,7 +973,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
         }
       }
       if (tags.railway && RAIL_KINDS.has(tags.railway)) {
-        const rail: Rail = { osm, kind: tags.railway, ...layering(tags), line: points, ...preferredDirection(tags) };
+        const rail: Rail = { osm, kind: tags.railway, ...layering(tags), line, ...preferredDirection(tags) };
         const storeys = storeysOf(tags);
         if (storeys) {
           levels.set(rail, storeys);
@@ -979,14 +981,16 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
         features.rails.push(rail);
       }
       if (tags.natural === "tree_row") {
-        features.trees.push(...alongLine(points, TREE_ROW_SPACING_M).map((point) => tree(tags, point)));
+        // a closed row's last tree would stand on its first
+        const row = alongLine(line, TREE_ROW_SPACING_M);
+        features.trees.push(...(line === points ? row : row.slice(1)).map((point) => tree(tags, point)));
       }
       if (tags["roof:ridge"] === "yes") {
-        ridges.push(points);
+        ridges.push(line);
       }
       const kind = BARRIER_KINDS.get(tags.barrier ?? "");
       if (kind) {
-        features.barriers.push(barrier(osm, kind, tags, points));
+        features.barriers.push(barrier(osm, kind, tags, line));
       }
       if (closed && points.length >= 3) {
         addPolygonFeature(features, bridgeOutlines, playgrounds, pitches, osm, tags, polygon());

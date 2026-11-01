@@ -402,6 +402,27 @@ test("parseOsm reads the painted crossings, traffic signals and gates, and fence
   assert.deepEqual([features.barriers[4].parapet, features.barriers[1].parapet], [true, undefined]);
 });
 
+test("parseOsm runs a closed way's line back to its start", () => {
+  const square = [at(0, 0), at(20, 0), at(20, 20), at(0, 20), at(0, 0)];
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 80, tags: { barrier: "fence" }, geometry: square },
+      { type: "way", id: 81, tags: { highway: "primary", junction: "roundabout" }, geometry: square },
+      { type: "way", id: 82, tags: { railway: "tram" }, geometry: square },
+      { type: "way", id: 83, tags: { natural: "tree_row" }, geometry: square },
+    ],
+    origin,
+  );
+  const corners = (line: Point[]) => line.map(([e, n]) => [Math.round(e), Math.round(n)]);
+  const closedSquare = [[0, 0], [20, 0], [20, 20], [0, 20], [0, 0]];
+  assert.deepEqual(corners(defined(features.barriers[0]).line), closedSquare);
+  assert.deepEqual(corners(defined(features.roads[0]).line), closedSquare);
+  assert.deepEqual(corners(defined(features.rails[0]).line), closedSquare);
+  // a closed row plants no second tree on its first
+  const trees = features.trees.map((t) => `${Math.round(t.point[0])},${Math.round(t.point[1])}`);
+  assert.equal(new Set(trees).size, trees.length);
+});
+
 test("trees go to the tile of their trunk and lamps to the tile of their foot, south to north", () => {
   const tree = (e: number, n: number): Tree => ({ point: [e, n], kind: "broadleaved", height: 8.04 });
   const trees = [tree(50, 60), tree(150, 10), { ...tree(20, 30), genus: "tilia" }, { ...tree(20, 80), trunk: 2.54 }];
