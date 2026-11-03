@@ -50,11 +50,11 @@ const builder = new MapBuilder({
   // roofTops: [TAMPERE_ROOF_TOPS],
   // and a correction of the elevation model's heights where the ground has changed since it was scanned (a building
   // site's heap levelled): everything that takes heights from the model takes the corrected ones
-  // groundCorrection: ([e, n], height) => height,
+  // groundCorrection: await readLevelledGround(createReadStream("ground.osm"), origin),
   // and tunnels' floors known at points, from plans or surveys (the way's surface, m in N2000)
-  // tunnelFloors: [{ at, floor, name }],
+  // tunnelFloors: await readTunnelFloors(createReadStream("tunnels.json")),
   // and local edits of the OSM data not uploaded yet, OSM XML as an editor such as JOSM saves it (see below)
-  // edits: parseOsmEdits(await readFile("edits.osm", "utf8")),
+  // edits: await readOsmEdits([createReadStream("a.osm"), createReadStream("b.osm")]),
   // and only some of the tiles, with the features near them (see below)
   // part: { tiles: [{ x: 1, y: -4 }, { x: 1, y: -3 }], marginM: 1000 },
 });
@@ -93,6 +93,10 @@ map's features and landmarks (not to its entrances or businesses), and so is a n
 (a way's vertex that had no tags). A relation's edit changes only its tags (its members
 are kept) or leaves it out; new relations are not supported. Once uploaded,
 the edits are in the fetched data anyway and the file can go.
+
+These inputs are read from a string, bytes or a stream (`TextSource`, `src/text.ts`): `readOsmEdits` (several files,
+`src/edits.ts`), `readLevelledGround` (`src/levelledGround.ts`) and `readTunnelFloors` (`src/tunnelFloors.ts`), whose
+comments give the files' formats.
 
 The sources are asked for a box around all the map's tiles, unless `fetchPieceTiles` is given: then for each piece of
 the map, a square of that many tiles a side on a grid from tile `0, 0`, a box around the map's tiles in it. No request

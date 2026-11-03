@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { Readable } from "node:stream";
 import { test } from "node:test";
-import { applyOsmEdits, parseOsmEdits } from "./edits.ts";
+import { applyOsmEdits, isEditOfFile, parseOsmEdits, readOsmEdits } from "./edits.ts";
 import type { OsmElement } from "./osm.ts";
 
 const FILE = `<?xml version='1.0' encoding='UTF-8'?>
@@ -143,4 +144,22 @@ test("applyOsmEdits moves the centre of a response of centres", () => {
     assert.equal(way.geometry, undefined);
     assert.ok(way.center && Math.abs(way.center.lat - 61.50025) < 1e-9);
   }
+});
+
+const NEW_PART = `<osm>
+  <node id='-1' lat='61.5' lon='23.7' />
+  <node id='-2' lat='61.5' lon='23.701' />
+  <node id='-3' lat='61.501' lon='23.701' />
+  <way id='-1'><nd ref='-1' /><nd ref='-2' /><nd ref='-3' /><nd ref='-1' /><tag k='building:part' v='yes' /></way>
+</osm>`;
+
+test("several files' edits, each file's new elements apart from the others', texts and streams alike", async () => {
+  const modified = NEW_PART.replace("</osm>", "<way id='7' action='modify'><tag k='building' v='yes' /></way></osm>");
+  const edits = await readOsmEdits([NEW_PART, Readable.from([Buffer.from(modified.slice(0, 50)), Buffer.from(modified.slice(50))])]);
+  assert.deepEqual(
+    edits.map((edit) => `${edit.action} ${edit.element.type}/${edit.element.id}`),
+    ["create way/-1", "create way/-1000001", "modify way/7"],
+  );
+  assert.deepEqual([-1000001, -1999999, -1, -2000001, 7].map((id) => isEditOfFile(id, 1)), [true, true, false, false, false]);
+  assert.deepEqual(await readOsmEdits([]), []);
 });

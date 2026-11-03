@@ -2,7 +2,17 @@ export { MapBuilder, DEFAULT_OVERPASS_URL, OSM_ATTRIBUTION, type Logger, type Ma
 export type { BicycleParking } from "./bicycleParking.ts";
 export { BUILDING_REGISTER_ATTRIBUTION } from "./buildingRegister.ts";
 export { fileCache, memoryCache, type SourceCache } from "./cache.ts";
-export { applyOsmEdits, parseOsmEdits, type AppliedEdits, type EditAction, type OsmEdit } from "./edits.ts";
+export {
+  applyOsmEdits,
+  EDIT_FILE_ID_SPAN,
+  isEditOfFile,
+  numberEdits,
+  parseOsmEdits,
+  readOsmEdits,
+  type AppliedEdits,
+  type EditAction,
+  type OsmEdit,
+} from "./edits.ts";
 export {
   DISTRICT_KINDS,
   districtKind,
@@ -14,6 +24,7 @@ export {
   type District,
 } from "./districts.ts";
 export { ELEVATION_ATTRIBUTION } from "./elevation.ts";
+export { levelGround, parseLevelledGround, readLevelledGround, type LevelledArea } from "./levelledGround.ts";
 export { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE, type MeasuredDefaults } from "./measuredDefaults.ts";
 export { FAR_CLASSES, farTile, type FarBox, type FarClass, type FarOptions, type FarTile } from "./far.ts";
 export {
@@ -89,5 +100,7 @@ export type { RoofFaces } from "./roofRidges.ts";
 export { ROOF_TOP_SOURCES, TAMPERE_ROOF_TOPS, type RoofTopSource } from "./roofTops.ts";
 export { TAMPERE_TREE_REGISTER, TREE_REGISTERS, type TreeRegisterSource } from "./treeRegister.ts";
 export { lightPhases, type Light, type LightSector, type Seamark, type SeamarkKind } from "./seamarks.ts";
+export { readText, type TextSource } from "./text.ts";
 export { tileName, tileRect, type Heights, type Tile, type TileKey } from "./tiles.ts";
+export { parseTunnelFloors, readTunnelFloors, type TunnelFloor } from "./tunnelFloors.ts";
 export type { Waterway, WaterwayKind } from "./waterways.ts";

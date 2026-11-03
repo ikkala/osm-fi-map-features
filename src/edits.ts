@@ -2,6 +2,7 @@
 // elements changed have action="modify" or action="delete", new ones a negative id. Applied to the data fetched from
 // Overpass before anything is built from it, they show in the map before they are in OpenStreetMap.
 import type { OsmElement } from "./osm.ts";
+import { readText, type TextSource } from "./text.ts";
 
 export type EditAction = "modify" | "delete" | "create";
 
@@ -182,4 +183,27 @@ export function applyOsmEdits(elements: OsmElement[], edits: OsmEdit[], addNew: 
     }
   }
   return { elements: result, missing: changes.size - found.size };
+}
+
+/** Each file numbers its new elements from -1: in readOsmEdits, the files' are kept apart by this much */
+export const EDIT_FILE_ID_SPAN = 1_000_000;
+
+/** A file's edits with its new elements (negative ids) numbered as the file at `index` among several */
+export function numberEdits(edits: OsmEdit[], index: number): OsmEdit[] {
+  return edits.map((edit) => (edit.element.id < 0 ? { ...edit, element: { ...edit.element, id: edit.element.id - index * EDIT_FILE_ID_SPAN } } : edit));
+}
+
+/** Whether a new element's id, as numberEdits numbers them, is of the file at `index` */
+export function isEditOfFile(id: number, index: number): boolean {
+  return id < -index * EDIT_FILE_ID_SPAN && id >= -(index + 1) * EDIT_FILE_ID_SPAN;
+}
+
+/** The edits of several OSM XML files, texts or streams, in their order, each one's new elements apart */
+export async function readOsmEdits(sources: Iterable<TextSource> | AsyncIterable<TextSource>): Promise<OsmEdit[]> {
+  const edits: OsmEdit[] = [];
+  let index = 0;
+  for await (const source of sources) {
+    edits.push(...numberEdits(parseOsmEdits(await readText(source)), index++));
+  }
+  return edits;
 }
