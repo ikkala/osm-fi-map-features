@@ -51,6 +51,8 @@ const builder = new MapBuilder({
   // and a correction of the elevation model's heights where the ground has changed since it was scanned (a building
   // site's heap levelled): everything that takes heights from the model takes the corrected ones
   // groundCorrection: ([e, n], height) => height,
+  // and tunnels' floors known at points, from plans or surveys (the way's surface, m in N2000)
+  // tunnelFloors: [{ at, floor, name }],
   // and local edits of the OSM data not uploaded yet, OSM XML as an editor such as JOSM saves it (see below)
   // edits: parseOsmEdits(await readFile("edits.osm", "utf8")),
   // and only some of the tiles, with the features near them (see below)
@@ -115,645 +117,64 @@ lists the whole map's tiles; `tile()` gives only those built.
 
 ## How the map is built
 
-A building or part wholly under the ground is left out: `location=underground`, or a negative `layer` with every
-`level` below 0 (a shopping centre's basement storey under a square) or, without a `level`, `parking=underground` (a
-car park under a yard), unless it is an open roof (`building=roof` or `carport`) over the ramp down.
+How each feature is made from its tags, the registers and the elevation model is in its module's comments in `src/`,
+and what a tile's fields hold in the types (`src/osm.ts` and the modules it names). Where to look:
 
-A building with parts is drawn by its parts. A part that starts above the ground (`min_height`,
-`building:min_level`) with no other part under it, such as the planetarium on the second floor of Särkänniemi's
-building, gets its building filled in under it as the outline, unless it is a balcony, roof, canopy or the like or
-a way runs under it (an arcade or a passage). A building without parts that starts above the ground with nothing
-under it (a ground floor left out, `building:min_level=1` over shops on a street) comes down to the ground with its
-storeys, unless it is a bridge, roof, canopy or the like, a way runs under it, or at least half of it is over lower
-buildings (volumes mapped on top of each other).
-
-Buildings without `height` or `building:levels` in OSM get their storeys from the Finnish building register
-(`kerrosluku`), as Ryhti publishes it in the OGC API Features collection `avoimet_rakennukset` at
-`paikkatiedot.ymparisto.fi` (a point per building, matched to the OSM outline it is in; demolished ones left out).
-A register building with eight times the floor area of all its storeys (`kokonaisala`) that its outline holds on its
-storeys, with the outlines adjoining it that have no register building of their own (a row of houses may be one),
-is mostly elsewhere, such as a car park under the ground whose point is in its entrance's kiosk: its storeys are not
-the outline's and are not taken. Below three times that, from half a storey more, the register building has storeys
-its count leaves out, above the ground (an attic, a storey and a half): as Tampere's measured roof tops show, the
-floor area tells the height better than the count there. A guessed pitched roof gets one storey in it
-(`roofLevels`), and a building without one gets them as storeys. The register also gives most buildings their facade material (brick, concrete, wood, ...; `julkisivumateriaali`) unless OSM
-has `building:material` or `material`, the material of their load-bearing frame (`frameMaterial`: wood, brick, concrete
-or steel; `kantavien_rakenteiden_rakennusaine`), also where the facade is not known, and their main use (`use`, see windows below).
-Neither material comes from a register building that spans the outlines adjoining its own, with more floor area than
-its own holds on its storeys, and was completed more than a few years (`WING_YEAR_SLACK`) outside those the outline's
-`start_date` allows: it is another of them, such as a later wing whose point fell in the old building. The rest get
-a guess: one storey for sheds
-and anything under 40 m², two for houses and anything under 150 m², three otherwise. Chimneys, towers, water towers,
-silos, tanks, gasometers and ventilation shafts (`man_made=*`) are buildings even without `building`, and so is a
-stop shelter mapped as `amenity=shelter` with `shelter_type=public_transport` alone, as an open roof (`roof`). These and
-churches, whose storeys say little about their height, are guessed by type from the base's longest side instead
-(a chimney 12 times as tall, a water tower 1.3 times, a church 0.45 times, ..., see `HEIGHTS_BY_TYPE`), and the
-register's storeys do not replace that. A building of another kind tagged `man_made=tower` (`building=retail`, a
-fire station) is that building with its tower, as tall as its kind. A chimney with no material in OSM or the register is taken for brick,
-as Tampere's old factory chimneys are (see [Measured in Tampere](#measured-in-tampere)). The walls' colour is
-`building:colour`, else `colour`, which towers and other `man_made=*` structures are tagged with. A tower of
-`tower:construction=lattice` or `guyed_lattice` is a framework of bars (`lattice`), not a closed body, such as
-Pispalan haulitorni, and so is the filler under a part on top of one. A roof's material is `roof:material`
-(`roofMaterial`: roof_tiles, metal, copper, glass, grass, ...). A carport (`building=carport`) is an open roof on posts
-as a canopy is (`shelter`), but stands at its highest ground as a building does, so a car fits under all of it on a
-slope, and is not lifted over vehicles on a road under it. A building under construction (`building=construction`)
-is drawn as the building it will be when `construction=*` tells, as a road under construction is: a roof being built
-over a way is an open roof, not a closed body over it. Parts without a frame or roof material take their outline's. Ways and ground areas
-carry their `surface` (asphalt, paving_stones, fine_gravel, artificial_turf, clay, ...) when OSM has one. A car park
-in the open (`amenity=parking`, not `parking=underground`, `multi-storey` or `rooftop`, nor below the ground) is
-`parking`, and a road for vehicles drawn as an area (`highway=service` with `area=yes`, `area:highway=residential`,
-..., not a footway, a pedestrian street, a traffic island or a platform) a `carriageway`.
-
-The register used to come from the City of Tampere's own
-[building register](https://data.tampere.fi/data/dataset/tampereen-rakennukset), which is the same national register.
-Of its 21 932 buildings in and around Tampere (October 2026), Ryhti has 21 542 by the permanent building identifier,
-with the same storeys in 99 % of those both have them and the same facade in nearly all; it has more completion
-years (a real year where the city has 29 February 1904) and also has the neighbouring municipalities. Its use is
-coarser: seven classes instead of some hundred.
-
-How OSM and the register compare (September 2026, with the city's register, the 1 143 outlines drawn without parts that have both
-`building:levels` and register storeys): 57 % agree, 20 % have one storey fewer in OSM and 18 % one more, 5 % differ
-by two or more. The one-storey differences are mostly the attic of a pitched roof: in old buildings with one (160
-wooden ones before 1940), the register counts it as a storey about half the time, and OSM then has it in
-`roof:levels`; adding that leaves 2 % with fewer storeys in OSM. The import already counts `roof:levels`, as roof
-height, so the register would not make such buildings taller. The large differences are mostly register points
-of a tall building that fall into a low wing drawn as its own outline (Rongankatu 7: 1 vs 11), so taking the
-register's storeys over OSM's would do harm; a few look like errors in OSM (Kankurinkatu 4–8: 4 vs 6), better fixed
-there. Storeys are 3 m, but old buildings have taller ones: a building whose height is counted from its storeys
-(`building:levels` or the register's) gets taller storeys when built in an era of `oldStoreys` (measured defaults,
-below): 3.5 m before 1946, e.g. the walls of Tampereen ensimmäinen postitalo by Finlayson (1867, one storey under a
-hipped roof) are 3.5 m tall, not 3.
-A building keeps OSM's `start_date` as tagged (`startDate`), also when it names no single year: a decade (`1890s`), a
-century (`C19`, `early C19`, `mid C19`, `late C19`), a span (`1904..1920`), `before 1900` or `after 1900`.
-`startDates.ts` answers from it whether the building was built before a year, or that it cannot tell (`C20` before
-1920; a century's years counted from 1 or from 0, its thirds overlapping by a year; `~1900` tells nothing), and so
-which era it is from (`eraOf`), which the rules on storeys and roofs ask. The year (`year`) is the one `start_date`
-names, else the register's completion date (`valmistumispaivamaara`; the earliest of the points in an outline that
-`start_date` allows). The register has 29 February 1904 on outbuildings and holiday homes and 1
-January 1900 on some others whose date is not known, both left out as unknown, and a few dates before 1700 are errors. A
-`building:part` without a year or `start_date` gets those of the building it is in, but keeps 3 m storeys, so that the parts
-meet (a part higher up starts at a `building:min_level` counted at 3 m). It likewise gets the building's wall
-material and colour, which mappers often tag on the outline only (Jyväskylä's Vesilinna: a brick outline, its
-tower part untagged). A register point in a part goes to the outline around it, as the register describes the
-whole building, and so reaches every part; a part in no outline still gets the points inside it.
-
-On a slope a building stands at its highest ground, so its entrance on the uphill side is not in the hill, and its
-walls reach down to its lowest ground: a plinth or a basement storey on the downhill side, with windows in it. On a
-steep slope it stands at most 6 m above its lowest ground. The build takes the ground from the elevation model
-along the outline (`base` in the tiles); a building's parts all stand at the building's base, so they line up. Its
-walls reach down to `low`, the lowest ground along its outline and its courtyards' (each part's its own).
-Without an elevation model buildings stand at their lowest ground. A building over a tunnel in a cut (see below)
-stands at least at the top of the tunnel's lid, since it really stands on the deck over the cut, and so does an open
-roof over a lid (a platform's roof), which otherwise stands on its lowest ground; an open roof over a railway
-platform stands on the platform's top (see below; a rising platform's highest under it), though it reaches out over
-the tracks. A building or part raised off
-the ground (`min_height`) with nothing under it, such as a canopy on a building that stands at its door down the
-slope, counts its `min_height` from its own highest ground, so the rising ground does not come up to it; its top
-stays, unless that would leave it thinner than a storey (or than it was).
-
-Roofs are flat unless OSM has a pitched `roof:shape`, drawn as gabled (also saltbox, gambrel, round), hipped (also
-half-hipped, mansard), pyramidal (also cone, dome) or skillion. Houses, cabins, sheds, garages, barns, saunas and
-churches, and `building=yes` / `residential` of at most 150 m² and two storeys, get a guessed gabled roof when their
-outline is nearly a rectangle. The ridge runs along the outline's long side unless `roof:orientation=across`; a
-skillion roof slopes down to `roof:direction`. The roof's height is `roof:height` or `roof:levels` (kept as
-`roofLevels`: an attic's storeys, whose knee walls may show under the eaves), else a 27°
-slope (10° for skillion, at most 6 m): on top of the storeys, or within a tagged `height`, taking at most half of it.
-A roof may also be drawn by its ridge lines (Simple 3D Buildings' roof lines, `roof:ridge=yes` ways, on a
-`roof:shape=many` building or part with a `roof:height`; `src/roofRidges.ts`): a ridge running across the outline
-from side to side, its ends within half a meter of it, splits it into slopes rising from the eaves at the outline to
-the ridge, given as triangles (`roofFaces`, each point's share of the roof's height), so a ridge may bend as a curving
-wing's does; another ridge may split a slope again, and one that does not reach both sides is left out. A ridge goes
-to the smallest such building or part that holds it whole, its middle well inside: a cross gable's to it, not to
-the longer roof under it nor to a roof ending under it.
-Outlines under 1 m wide get no roof, except steps (`building:part=steps`), whose skillion roof is the slope they climb;
-they also tell how many steps they have (`step_count`). Such a part shows the steps themselves, so a way of steps
-(`highway=steps`) inside it (`src/stairs.ts`), up to 0.3 m out of its outline, is left out of the map.
-
-Where a city publishes its buildings in 3D, the measured tops of their roofs replace these guesses (`src/roofTops.ts`).
-`ROOF_TOP_SOURCES` lists the open layers known, each with the area it covers, and a map takes those it reaches into
-(`roofTops` chooses others): for now only the City of Tampere's 3D building parts
-(`julkinen:mml_rakennusten_osat_3d_polygon_kaytossa` at `geodata.tampere.fi`, about 35 000 from Lielahti to Hervanta), each
-part an outline with the height above sea level of its roof's highest point (`kattokorkeus`, to half a meter): the
-ridge of a pitched roof, the top of a flat one's parapets and machine rooms. Once the buildings stand at their base,
-an ordinary building (not a part, an outline with parts, or a special, open or raised one) that the parts cover for at
-least half of its outline, sampled every meter, takes its height from the tops over it: their median, of the tops that
-fit its storeys (at least 2.7 m a storey), which must cover a tenth of it, so that a tower drawn in one outline with
-its podium keeps its tower and a low wing does not take the top of a tall building over it. This replaces OSM's
-`height` too, which in Tampere is mostly a rule of thumb from the storeys (4 storeys 16 m on 158 buildings, 5
-storeys 20 m on 208, 6 storeys 25 m on 244, ...). With storeys, the top also tells the roof between the eaves (the
-storeys, as tall as of their age) and itself:
-
-- a guessed pitched roof's height rises up to the top, at most half of the height and no steeper than 50°, but it
-  is not made lower than guessed: the storeys tell the eaves too roughly for that (an attic counted as a storey, a
-  plot sloping under the base, a shed's low walls);
-- a building without `roof:shape` in OSM whose top is more than 3 m over its eaves gets a hipped roof up to it
-  (along the outline's long side, no steeper than 50°) if it was built before 1960 and its outline is nearly a
-  rectangle (as for a guessed roof): until then most roofs were pitched, and on later, flat roofs such a top is a
-  machine room (see [Measured in Tampere](#measured-in-tampere));
-- other tops more than 3 m over the eaves, and tops more than 3 m over the steepest roof the building could have,
-  are left out: a roof that cannot be told or drawn, or another building's top.
-
-A part's highest point may be a chimney's or a lantern's, or a taller building's that the part spans, so with an MML
-API key a top that fits, clearly over (`OVER_ROOF_M`) the roof the National Land Survey's laser scanning measures,
-comes down to it where that roof fits the building's storeys, when they are known (`src/laserScanning.ts`): a top left
-out stays out, so the scanning only ever lowers a building, and one without storeys may be newer than the scanning,
-which then saw its site. The scanning comes from MML's file service (the
-process `laserkeilausaineisto_05_karttalehti`: the newest point cloud of each 1:5000 map sheet of 3 x 3 km, thinned to
-0.5 points/m², as LAZ), only where measured tops are used. An outline's roof is the height under nearly all
-(`ROOF_SHARE`) of the points over the ground (LAS classes other than ground, water and noise) a little inside it
-(`EDGE_MARGIN_M`, clear of its walls), where there are enough of them (`MIN_POINTS`) and they are most of its points
-(`MIN_ABOVE_SHARE`): where they are not, the building is newer than the scanning.
-
-From Lielahti to Hervanta about 18 000 buildings get a measured height (half of them from 1.4 m lower to 1.2 m
-higher than before) and 126 of them a hipped roof, such as the main building of Tampereen klassillinen lukio (1907,
-`height=16` in OSM), 16 m tall with a flat roof before and now 14.0 m of walls under an 8.4 m hipped roof up to its
-ridge (its part's top, 3.3 m higher, a small round structure's at the ridge's end, brought down by the laser
-scanning), and the
-wooden villas of the 1920s in Pyynikki, 6.4 m tall before and now under roofs 5–7 m tall. The laser scanning brings
-about 150 tops down (October 2026), most of them by 1–2 m, a chimney's, and a few by up to 9 m, where a small part of
-the roof rises far over the rest, such as Napparin talo's (1920), 16.2 m tall under a hipped roof before and now 7.2 m.
-
-Ways through buildings (`tunnel=building_passage`) are drawn on the ground like other ways, and open the walls
-they cross: as wide as the way (wider where it crosses at a slant, and on over nearly straight corners) and as
-tall as its `maxheight`, else 4 m for vehicles and 3 m for people, leaving at least 0.5 m of wall under the eaves;
-up a slope, where the ground at an opening is over the building's base, from the ground there.
-A building is only its walls and roof, so the way also gets a room through it (`passageRooms`): walls along its
-sides from opening to opening (mitred at its corners, and across its end where it ends inside) and a ceiling at
-the opening's height (up a slope, over the highest ground along it). Where ways beside or across each other meet
-inside, their rooms are one space.
-Passages are often tagged `tunnel=yes`, `covered=yes` or `covered=arcade` instead: such a way is taken for a passage
-when it is at most 60 m long (an arcade, along a building's front, may be longer) and not deeper than `layer=-1`,
-neither end is more than 1 m inside a building (unless, for a covered way on the ground floor, not below the ground
-nor on a `level` above, another way goes on from there: steps up under a building to an arcade), and at least half
-of it is inside buildings. A tunnel going on so into ways indoors under the ground (below) goes into a basement,
-such as a ramp into a car park under a house, and is no passage. Where such a tunnel's portal is in the house's wall
-or inside it, and the tunnel goes in under the house, it and the tunnels on from it open the walls they cross with
-their room over the bottom of the walls' footings, 1.2 m under the building's lowest ground (which its walls reach
-down to): at the portal, under another wall, into a building a corridor comes up under; as wide as the tunnel's room
-(the tunnel and 1 m on both sides) and as tall, from its floor there up, without
-a room, and on to a corner less than 2 m beyond, rather than leave a piece of wall standing like a door ajar. Out of a
-basement, ways indoors only
-on storeys over it go on from a lift, which OSM does not map: they are left out, and the lift's house stays shut.
-A railway (not in a tunnel or on a bridge) running into a building, such as a depot whose doors OSM does not map,
-opens its walls 4.5 m wide, and a building lower than 6 m becomes 6 m tall, without a room.
-
-The model's 2 m grid smooths a retaining wall (`barrier=retaining_wall`) into a slope several meters wide, on
-which a path along the wall's foot would lean and wobble. So beside a retaining wall the ground (everywhere it is
-used, the tiles' heights too) steps at the wall: on its low side, as found in the model a few meters out, it is
-lowered to the slope's foot, and on the high side raised to its top, each as far out as the slope reaches (where
-the ground stops falling or climbing 0.2 m a meter for two meters on, within 8 m), where the model has the sides at
-least 0.5 m apart. Where a side does not level off so (a bank going on up or down past the wall) the wall steps nothing.
-Where the high side's slope reaches more than 2 m further in, to a top more than 1 m higher, than the slopes along
-the same wall (or a retaining wall joined to it) within 15 m on both sides, the ground rises on behind the wall,
-which holds up the lower ground there: the step reaches only as far in as theirs, up to the model's height there, or
-not at all where that is less than 0.5 m over the foot. Toward a wall's free end (not one another retaining wall goes on from) the step eases in over 4 m.
-
-A flight of steps (`highway=steps`) up a slab's or a terrace's edge climbs a step the grid smooths too, so its ends
-are partway up a slope and climb less than its risers. Where a straight flight on the ground with a `step_count`
-climbs less in the model than 0.12 m a riser, and the ground found up to 4 m past its ends is at least 0.2 m further
-apart than its ends but no more than 0.2 m a riser, the ground steps along it (`src/flights.ts`): up to 3 m behind its
-top raised to the top found, under it straight down to its foot, and up to 3 m past its foot lowered to the foot
-found, across its width and eased in over a meter beside it.
-
-A building's walls step the ground the same way. The model has no ground under a building, only a slope across it
-from the ground around, so where a building is cut into a slope the slope goes on out of its wall, a heap of ground
-against it: outside a wall the ground falling out of it to a foot within 8 m, at least 0.5 m lower, where it rises
-on into the building (0.2 m over its first meter), is lowered to that foot, also on the wall's own line; the ground
-inside is left as it is (`src/buildingSteps.ts`). A building on the edge of a bank, its ground level inside, steps
-nothing, nor does a wall whose slope falls to the water (a water area within 2 m past its foot), has a dam on it or
-steps (`highway=steps`) climbing it, which tell it is the ground's. Neither do walls not standing on the ground
-(shelters, lattice towers, buildings raised off it; a building's parts count their outline's walls, and a part in no
-outline its own), nor a wall's stretches with another building outside them or within a meter beyond the half width
-of a way going through the wall. The buildings stand at the base the ground had before, their walls reaching down to
-the stepped ground (`low`).
-A tile has these stretches (`buildingSteps`), its buildings' and those of the buildings around it within 8 m of it.
-
-A road tunnel for vehicles gets a room (`room`) lower than a road's 4.8 m where `maxheight` is lower, at least
-2.2 m: the tallest `maxheight` among the vehicles' tunnels joined to it at their points, so a car park's aisles behind
-its entrances' signs, and tunnels sharing a hall, share it; so does a walkway's tunnel meeting one or beside it.
-Tunnels going down into a basement from a portal in a house (a ramp into a car park under it), joined at their points,
-whose vehicles' ways are all service roads, are a car park: their room is at most 2.5 m, a car park's clear height,
-and a service road of it with `lanes` (a ramp with a lane each way) is as wide as its lanes, 3.25 m each.
-
-Other tunnels get heights from the elevation model, which has the bare ground over them. A tunnel (`layer` -1 or above)
-whose ground rises nowhere more than 3 m over its ends runs at the ground under something built over it, which the
-model leaves out: a railway anywhere (the tracks under Tampere's Kansi and its arena), a road or path when at least
-half of it is under buildings (not open roofs; under a street or a railway the model has their level, not the
-tunnel's). Tunnels joined at a point are one network, which runs at the ground only as a whole: a short branch of a
-tunnel under the ground, ending under a building, stays in it. It becomes a way on the ground, the walls of buildings over it open for it (as tall as a tunnel's room,
-below), an open roof over it is raised over that room, and so is the underside of a building raised off the ground
-(`min_height`), its top where it was. Over a railway every building starts over the room (it stands on a deck over
-the tracks), and an open roof becomes a deck 1 m thick over it, without posts. A building is over a way where the
-way's room, 1 m wider than the way on both sides, is under it. A shallow tunnel
-(`layer` -1 or above) that the model has as an open cut, the ground beside it at least 3 m higher on both sides
-along most of it (an underpass under a deck), gets the top of a lid over it at the lower rim of the cut (`lid`, at
-least 3.5 m and the lid's 0.5 m over the floor), and the ways over it become bridges on the lid (`onLid`). Its `floor` is the ground at its
-ends, where it leads on, and between them the lowest ground across the cut within 4 m of the way's edges: the model
-rounds the cut's sides off, and a way mapped on them would rise and fall with them. A tunnel beside it (within 2 m of
-the lid along most of it, such as a pavement beside a tramway) is in the same cut, under the same lid and on its floor. Once the bridges have their decks, a lid is fitted to the decks over it (they run from the ground at their ends): at
-the lowest deck crossing it, no higher than the cut's higher rim where it crosses, and leaving at least 2.5 m of room over the floor for
-people, 3.5 m for vehicles and 4 m for trains. Any other tunnel, under a
-hill or a lake, gets its floor (`floor`, with a point every 10 m): straight between its portals' ground (the
-lowest within 4 m outside, along the ways leading on and on past a short one, since at the portal the model has
-the top of its wall), a junction underground
-hanging between its branches' ends by distance, but at least room and a 1 m roof under the ground (3 m of
-room for people, 4.8 m for vehicles or lower by `maxheight`, 2.5 m in a car park, 6 m for trains; reached 30 m in from a portal, from a portal in a house only under that house, beyond whose walls the ground over the tunnel is the open ground; under water areas 5 m more, the water's 3 m, since the model has its surface, and 2 m of its bed over the roof, wherever water is over the room's width) and no
-steeper than 7 %, but from a portal in a house that the tunnel goes in under (a ramp down into a basement, with no cut
-in front of it) at one steady grade down to where it must be, however steep. The model smooths a portal's wall into a slope over the tunnel's end, so the ground over the
-room (in the tiles' heights too) is raised from the portal 6 m in to the ground there, and so is the ground under a
-way over that, across its width and as far along it as the model is lower (the cut in front of a portal is often
-wider than the tunnel), at most 10 m either way: a way over the portal stays level. Under a way over it (where the way's width and the tunnel's room overlap, but not at the tunnel's
-free ends nor beyond them, as a way going on from a short way out of a portal) it is that deep from the start, and rises from there no steeper than 7 %, to the portals too. Under a
-bridge (within a bridge way's width and 0.5 m edges, or in its outline with a bridge way in it) the model has no ground, only the gap spanned
-from the ground around: there neither its ground nor a way's over the tunnel (a street's end at the bridge) keeps
-the floor down, and a tunnel through a bridge's end goes straight between its portals, its room fitted under the deck
-(below). Where it
-would follow the ground's humps it is smoothed, lowered only: no point is more than 0.1 m over the line between its
-neighbours (portals and junctions stay). Tunnels that touch (meeting at a point, or with their rooms overlapping: side
-by side, or one crossing over the other) are a group whose floors go through these passes together, twice, and again
-under the tunnels crossing over in it as long as that lowers any: a floor does not depend on tunnels elsewhere.
-Where the ground at a portal (the top of its wall) is over the floor, a ramp is split off each way leading on, with
-a `floor` of its own: straight from the portal's floor to where a 7 % slope from it meets the ground, at most 40 m
-on. A way that ends before that, where only other ways ending there go on, rises 7 % of its length, and they ramp on
-from there, reaching the ground at most 8 m from the portal (beyond its wall the model has the open ground), when that
-leaves them at least 4 m to rise in. A way ending at a ramp on its way (a path joining a cycleway going down to an
-underpass) ramps on from the ramp's floor there in the same way. A way leads on from a tunnel's end only on the tunnel's storey (`level`, when both have one): one on another
-goes on from a lift. Ways indoors (`indoor=yes`, and corridors, `highway=corridor`, tagged so or not) are left out,
-except up to 30 m on from a tunnel's end; those on storeys under the ground (`level` all below 0) out of a tunnel
-with no `level`, such as a car park's corridors to its lifts at the foot of a ramp, go on in the tunnel, as tunnels
-themselves. Stairs leading on (`highway=steps`, also indoors), and corridors (on at the tunnel's level into a building), go up out of the
-tunnel, such as from an underpass to the platforms over it: they rise from its floor to the ground at 60 %, and
-their foot is no portal the floor hangs from, unless the tunnel has no other way out (then it is as deep as the
-room and the roof need). Stairs leaving a tunnel from a point it passes rise from its floor there too, level across
-its room first (the way's half width and 1 m). Lines are simplified to 0.3 m, but not where other ways join them, so a tunnel's branches
-stay joined to it.
-
-A tunnel's floor known at a point, from a plan or a survey (`tunnelFloors`: a latitude and longitude and the height
-of the way's surface, in the elevation model's N2000), takes the place of the one hung under the ground: the
-tunnel's point nearest it, within 6 m, has that floor, deeper or shallower than the ground asks, and the floors
-around come down to it no steeper than 7 % and keep steady grades to it, as to a portal. With the tunnel's `name`,
-only the points of the tunnels of that name are looked at, so that another tunnel passing over or beside it, nearer
-the point, does not take its floor; and from one known floor of a name to the next along its ways, and from the last
-to the tunnel's portal, the floor runs straight between them, past junctions and under the ways crossing over too,
-unless another tunnel under one asks it lower.
-
-A bridge's ways (the road, its sidewalks, a cycleway) each get a `deck` (`src/bridges.ts`): ways meeting end to end
-are one span, straight from the ground at one end to the other, also over the model's hump under it (the ground
-under a bridge is the gap spanned from the ground around; the terrain is to be kept under the deck). A boardwalk
-(`bridge=boardwalk`, `boardwalk`) is no span but planks laid on the ground: its deck follows the ground a little over
-it, level over a dip narrower than a few meters, its line getting points where the deck bends. A span's end on a
-boardwalk, or on another bridge way's inner point (a way leaving a bridge mid-span), takes that deck's height there,
-not the ground's. An end that no
-way leads on from but ways indoors do (`indoor=yes`, left out) goes into a building at some floor, such as a lift
-tower's top: it takes no height from the ground, and the deck runs level from the span's other end. Steps up to a
-point of a span with a count and a way they climb (`step_count`, `incline`) tell its height, 0.16 m a step over the
-ground at their foot; the deck then runs straight between the ends and these heights on their upper hull, so it
-may rise to a crest and fall again but never dips. Such steps also lift a way above the ground that is no bridge
-(`layer` over 0: stairs on a structure, a landing) where they tell an end of it more than 0.5 m over the ground, no
-way on the ground meets them there, and its other end is a dead end (a landing at a door, level) or meets a way on
-the ground no lower (stairs down from a street to where a spiral goes on down). A staircase, ways of steps joined
-end to end where no other way meets them, each telling its count and which way it climbs, all the same way, gets
-decks too (`src/stairs.ts`) where the model has a landing out of line, so that a flight goes down or climbs less than
-a quarter of its share of the staircase's rise by its count (a landing beside a wall or a cliff the model has
-lower): one riser all the way between the heights at its ends, the ground's or a deck's. A bridge's outline follows the upper hull of its ways' decks, its crests rounded
-as a bridge's, along the way its ways run where they run mostly one way (a bridge may be wider than long), else along
-its longer side. A tunnel or covered way through a building
-from one bridge's end to another's (a footbridge through a building's upper floor) carries the span on through it,
-with a deck as the bridges have; the building's openings and the way's room through it then start at the deck
-(`Opening.ground`, `PassageRoom.ground`), and `parseOsm` tells the roads through buildings (`throughBuildings`). The model smooths the cut under a bridge into a
-wider hollow, so an end's ground is taken up the ways leading on as far as it rises steeply (0.2 m every 2 m), past
-at most 6 m of the hollow's level bottom and at most 24 m on, and those ways get a deck up to there. A deck stays straight: where a way
-under a bridge (at a lower layer, not in a tunnel) has less room under the deck than 2.7 m for people, 4.2 m for
-vehicles, 4.7 m for trams and 5.5 m for trains, and the deck's 1 m, the way goes down into a cut there (a stretch
-split off with a `floor`), ramping down no steeper than 8 % (people), 6 % (vehicles) or 3 % (trains); one that
-would go deeper than 3 m, or ends in the cut, is left as it is. A tunnel under a deck keeps its floor and gets a
-lower room (`room`) where the deck and its 1 m leave less. The bridges over cuts are logged: their ends may
-be too low in the model, as a footbridge's ramps and steps are not in it. Many bridges are also drawn as an outline
-(`man_made=bridge`, a way or a multipolygon): the whole deck, with what is between the ways, such as planted strips
-(`src/decks.ts`). The bridge ways at least half inside an outline get one deck: along the bridge straight from
-the highest of their decks at its one end to that at the other, also at their free ends; a way reaching on more
-than 5 m past the outline goes straight from its edge to its own end. They get a point every 5 m for that. The
-ways leading on from them meet the deck: an approach's deck is tilted to it, and a way on the ground gets a ramp
-split off it, up to the deck (a deck) or down to it (a floor, in a cut), no steeper than 8 % for people, 6 % for
-vehicles and 3 % for trains. The outline is then cut across the bridge into
-pieces 4 m long, as triangles with the height of the nearest way's deck at each corner (`bridgeDecks`), so the
-deck can be drawn between the ways too. A deck piece keeps its outline's `bridge:structure` and `colour`
-(`structure`, `colour`), and a bridge way its own (`bridgeStructure`, `bridgeColour`), so that a truss bridge's
-sides can be drawn as its trusses. Past the ends of the ways on it, the nearest is taken of the ways leading on
-too, and on from those end to end (past approaches): a corner nearest a ramp or an approach has its deck's height,
-and a triangle nearest a way on the ground is left out, since an outline may also cover the embankment between two
-bridges (Vackerinsilta in Tampere). The outline's triangles are cut rather than the outline itself, and each
-piece's cuts joined again, since a cut ring would run back over a gap in the outline (Näsinsillat in Tampere is two
-decks side by side, joined in the middle); a triangle steeper than 45° (a sliver whose corners are at different
-heights) is left out. Trees, street lamps and playground equipment on the deck stand on it (`base`), and so do
-landmarks on it or within 1 m of it (a work on the bridge's side is mapped on its outline): a node's is moved in, at
-most 2 m, to where it has 1 m of the deck all round it and keeps 1 m clear of the roads for vehicles and the railways
-(3 m wide) on the deck; one with no such place, as by a bridge that carries only its tracks, is left out.
-
-Railways and tramways that are not bridges or tunnels get a track bed (`bed`): the elevation model has
-platform edges, underpass roofs and the like under the tracks, a metre up and down every few metres, so the bed is
-the ground averaged over 30 m along the line, never more than 0.5 m under the ground right under it. Where lines
-meet, their beds end at the same height: the ground averaged within 10 m, or the deck of a bridge ending there.
-A line keeps only the points its bed bends at (5 cm off straight, a tramway 2 cm), and a tramway those other ways
-have (a junction, a level crossing).
-Tramways meeting end to end, two at a point (a way split at a crossing), get their bed as one line, so the ground
-averaged around that point (a cut beside a bridge's end) does not pull it down. A tramway's bed then bends no
-tighter than a 300 m vertical curve, over a crest or through a dip, and goes into the ground for that, deeper than
-0.5 m where it must; under the deck of a bridge that is no tramway (whose outline may reach over its ways beside
-it) it leaves 4 m (a tram's height, its rails and a margin) and the deck's 1 m, unless the ground there would be
-more than 3 m over that or the curves cannot pass under it before the line's ends. A tramway branching off
-another's middle (at a switch) ends at that one's bed there.
-
-Railway platforms (`railway=platform`, ways and multipolygons, their holes kept) are areas of kind `platform`
-with a `top`: a platform is level, while the elevation model has it as a ridge smoothed at its edges, so its top is
-the ground's median inside its outline, sampled every 2 m. A tram stop's platform (a tramway passing within 3 m of
-its outline) is 0.4 m over the lowest bed of the tramways beside it instead, so that a tram's floor clears it all
-along; only a bed whose top would be within 2 m of the ground's median counts, as further the tramway passes under or
-over the platform. Where those beds rise 0.1 m or more along the platform, as a street on a hill does, the platform
-rises with them, level across: fitted to a straight line along its long side, lowered so that it is nowhere over any
-of the beds and its lower end no higher than over the lowest of them (where a street's rails at a junction lie lower
-than the bed), `slope.tops` are 0.4 m over that line at the two ends of the side's middle line through its centroid,
-`slope.ends`, its top along that line between them, and `top` the lower one (a level top at the lowest bed left one
-end of a stop 1 to 2 m under the street).
-
-Pitches (`leisure=pitch`) are areas of kind `pitch`. A pitch or a paved area (parking, a square, `area:highway`) whose
-ground is level within 0.6 m (sampled every 2 m, the highest and lowest 5 % left out) gets a `top` as a platform does,
-the ground's median inside it, while one on a slope (a ski jump's, a sloping square) gets none. Around Tampere half
-the pitches' ground lies within 0.2 m, and half the surface parking lots' within 0.6 m. A pitch
-outdoors (not tagged `indoor`, `covered=yes` or `location=indoor`, nor with its middle in a building) whose outline
-fills at least 85 % of the smallest box around it (with a side along one of its edges) and that is at least 4 m long
-is also in the tiles' `pitches` (`src/pitches.ts`): its `sports` (`sport=*`, a list, in lower case), `surface`, the
-box's middle `point`, `angle`, `length` and `width`, and the `top`.
-
-Neither OSM nor the register has windows, so ordinary buildings get guessed ones: a row per storey (from
-`building:levels` or the register's storeys, else about every 3 m) and spaced by the kind of building. Houses get
-windows 4 m apart, blocks of flats and hotels 2.8 m, and offices, shops and schools a band of windows 1.6 m apart.
-The kind comes from `building=*`; for `building=yes` the register's main use (`paaasiallinen_kayttotarkoitus`)
-decides: houses and holiday homes, blocks of flats, and public buildings (shops, restaurants, hotels, schools, ...)
-with offices' windows. Offices and factories are one class there, so of those only buildings of 4 storeys or more
-get offices' windows (in Tampere 103 of 135 such are offices, and 880 of the 952 lower ones not). A
-`building:part=yes` gets the windows of the building it is in. Other buildings (churches, sheds, factories,
-halls, ...), glass walls and buildings or parts tagged `window=no` (or `windows=no`) get no windows, and neither do
-storeys under 2.2 m or over 6 m tall; a blind storey over windowed ones is a part of its own over them. Nor do buildings
-tagged as something special whatever their `building=*` (`man_made=*` such as towers and chimneys,
-`amenity=place_of_worship`, `historic=*` other than `building`, `tourism=attraction` or `museum`) and the parts in
-them, or buildings over five times taller than their longest side (towers that are not tagged so); Näsinneula is
-`building=yes` with `man_made=tower`. The style says nothing of the windows' age: a building's `year` (see above) does.
-
-Street and park trees come from a city's tree register, in the format of the parks register software many
-Finnish cities use: a WFS layer of a point per tree with its species, height class and trunk circumference.
-`TREE_REGISTERS` lists the open ones known, each with the area it covers, and a map takes those it reaches into
-(`treeRegisters` chooses others): for now only the City of Tampere's (`locus:locus_t_RpaVegetation_gsview` at
-`geodata.tampere.fi`, about 12 500 around the centre, nearly all trees, few shrubs). Elsewhere the trees are OSM's.
-Only a register's trees inside the map's box are taken, as its server also sends ones with broken coordinates. The height is the middle of the height class, else a guess from
-the trunk (3 m + 0.35 × its diameter in cm, at most 25 m). OSM's `natural=tree` and `natural=shrub` nodes and
-`natural=tree_row` ways (a tree every 8 m or less) are added where the register has no tree within 4 m, with their
-`height`, `genus` (or `species`), `circumference` and `diameter_crown` (`crown`, meters across) when tagged. Woods
-(`natural=wood`, `landuse=forest`) and scrub (`natural=scrub`) are only areas in OSM, so the import plants them,
-far sparser than real woods since every tree costs something to draw: a tree in each 9 m cell of a grid (spruce, pine
-or birch, 10–26 m), leaving 15 % of the cells empty, and in scrub mostly shrubs in 5 m cells. Woods tagged
-`leaf_type=needleleaved` get only spruce and pine, and `leaf_type=broadleaved` ones birch and other broadleaved trees
-(8–20 m); mixed and untagged woods get all three. A plant keeps 2.5 m from others and clear of buildings, roads,
-rails, water, parking and pitches. Where it stands comes from its grid cell alone, and what it is from the cell and
-the woods' leaf type, so every build plants the same trees, and retagging woods changes their trees but moves none.
-Around the centre of Tampere that is some 20 000
-trees, at most about 530 in a 250 m tile.
-
-Street lamps are OSM's `highway=street_lamp` nodes (about 2 100 around the centre of Tampere). Their mount comes
-from `lamp_mount` or `support`, or is a catenary mast (`power=catenary_mast`, such as a tram's); in Tampere a tenth
-have one, and none a `height` or a `direction`. A lamp without them faces the nearest street within 15 m, else the
-nearest path within 8 m, and is 10 m tall by a main street (secondary and up), 8 m by another street and 5 m by a
-path or nothing (high masts 20 m, catenary masts 8 m). A lamp on a bridge stands on its deck: the deck of the way next to it, or of the bridge outline it is on.
-
-Crossings, traffic signals and gates are nodes of the ways they are on (`src/streets.ts`): a crossing
-(`highway=crossing`) is on the street and on the footway across it, so it and a traffic signal
-(`highway=traffic_signals`) are put on the nearest street (not a footway or a path) within 1 m, with the street's
-direction there, kind, width and deck height; a gate (`barrier=gate`) spans the way it is on (the narrowest where ways meet), or else lies in its
-fence or wall, 1.2 m wide unless tagged, and `locked` when it is usually locked (`locked=yes`). Only crossings with markings are kept: not `crossing=unmarked` or
-`crossing:markings=no`, and of the markings only stripes (`zebra`, `yes`, ...). A traffic signal's
-`traffic_signals:direction` (forward or backward along the way) tells which traffic it is for; untagged, one on a
-one-way street is for that street's traffic. Around the centre of
-Tampere there are about 1 100 painted crossings, 200 signals and 200 gates on their ways.
-
-Fences, walls, retaining walls and hedges (`barrier=*` ways, about 1 000 around the centre) get OSM's `height`, or
-1.2 m for fences and hedges, 1.5 m for walls (3 m for noise barriers) and 1 m for retaining walls, and their
-`fence_type`, `material` or `wall` as a material, a railing's `material` too (`madeOf`: cast iron, steel) and
-their `colour`. A path through a fence often has no gate or opening in OSM, so
-each barrier is cut open where a way (not a bridge or a tunnel) crosses it, 0.4 m wider than the way, at its
-gates, and at a tunnel's portal in it (crossing the tunnel's line within 3 m of its end, in or out, as wide as its
-room) (`src/barriers.ts`). A barrier's stretches on a bridge's deck or a tunnel's lid, at least 1 m over the ground,
-are left out (a railing along a bridge): a barrier stands on the ground, which is under the deck there. One crossing
-a bridge's way passes under it: it is left out across the way (its width and the deck's edge) only where the deck is
-less than half a meter over its top, as where the bridge lands. A retaining wall stays under a bridge: it holds up the
-ground there. A bridge's parapet (`wall=parapet`, told
-by `parapet`) stays on the deck it stands on.
-
-Playground equipment (`playground=*` nodes and ways: swings, basket swings, slides, sandpits, climbing frames,
-spring riders, ...) comes from a query of its own (`src/playgrounds.ts`), with its `capacity`, `baby` (a swing's
-baby seat), `material`, `height` and `playground:theme`. OSM seldom tells which way a piece faces or how big it is:
-a way tells both (`along` and `length`; a closed way also `width` and its `outline`, as a sandpit's edge), a swing
-node lines up with the nearest swing within 6 m (frames in a row), and other nodes with the nearest edge (at least
-2 m long) of the playground (`leisure=playground`) they stand in; nodes of one kind within 1.5 m of each other are
-one piece mapped twice. Around Tampere there are about 1 200 pieces in 560 playgrounds, half of them swings and a
-third sandpits; 130 swings stand in a row, and 370 other pieces line up with their playground's edge.
-
-Bicycle parking (`amenity=bicycle_parking` nodes and ways) comes from a query of its own (`src/bicycleParking.ts`)
-into the tiles' `bicycleParkings`, only when it was had: a node's point, or an area's middle and `outline` (a line,
-a row of stands, at its middle), with its `bicycle_parking` kind (stands, wall_loops, shed, ...), `capacity`,
-`covered` (`covered=yes`, a shed, building or lockers), `access` when not public and a `level` other than 0.
-
-Landmarks come from a query of their own (`src/landmarks.ts`); the tiles have their sections (`seamarks`,
-`landmarks`, `piers`, `dams`, `rides`, `powerLines`, `pistes`) only when it was had. Elements drawn as buildings
-(`building=*`) or indoors (`indoor=yes`) are left out of `landmarks`, and relations are left out.
-
-- `seamarks` (`src/seamarks.ts`): lighthouses (`man_made=lighthouse`), lights (`seamark:type=light_*`), beacons
-  and buoys (`beacon_*`, `buoy_*`), with their type and category (a cardinal's north, east, ...), colours top
-  first, colour pattern, shape, topmark and `height`, and their light: its colour (the first of a list), its height
-  over the water and its rhythm, `phases`: seconds lit and dark in turn over its period, lit first, empty for a
-  fixed light. The rhythm is `seamark:light:sequence` when tagged (`0.2+(0.25)+...+0.2+(4)`, dark in brackets,
-  turned round to start lit and its last dark lengthened to the period), else made from the character as the IALA
-  abbreviations describe it: a flash 0.5 s (a long flash 2 s) with 1 s between the flashes of a group, quick lights
-  at 60, 120 and 240 flashes a minute, interrupted ones (and those with a group or a period) dark for the rest of
-  their period, isophase lights half lit, occulting ones lit but for 1 s eclipses; F, and what is not understood, is
-  fixed. Without a period, Fl takes 5 s, LFl 8 s, Iso 4 s and Oc 5 s. A light with numbered lights
-  (`seamark:light:1:*`) all with `sector_start` and `sector_end` has `sectors`: its colour by bearing from the
-  water. Around Tampere there are one lighthouse and four lights, all but the lighthouse fixed, and 57 beacons and
-  buoys.
-- `landmarks`: masts (`man_made=mast`, with `tower:type` and `tower:construction`), towers mapped as a node (as
-  a way they are buildings), flagpoles, boulders (`natural=stone`), fountains, artworks (`tourism=artwork`, with
-  `artwork_type`), memorials and monuments (`historic=memorial` with `memorial=*`, `historic=monument`) and power
-  towers and poles, each with its `name`, `height` and `material`, the way it faces (`direction`, degrees or a point
-  of the compass), whether it is on a wall (`support=wall_mounted`), and a way's outline; a fountain that is an
-  artwork is a fountain. Around Tampere about 900 flagpoles (none with a height), 200 masts, 230 power supports and
-  180 fountains, artworks and memorials. A node's landmark on the ground keeps 0.5 m clear of the roads for vehicles
-  and the railways (3 m wide) on the ground: OSM maps a work at a stop on the platform's edge by the street, and a
-  road's width is often its kind's. One reaching onto them is moved to the nearest place clear of them, at most 6 m,
-  and left out where there is none; power supports stay where their lines have them.
-- `piers` (`man_made=pier`): a closed way's outline, or an open way's line with its `width` (2 m unless
-  tagged), whether it is `floating`, and its `surface` (or `material`). `dams`: `waterway=dam`, `weir` and
-  `lock_gate` ways, an outline or a line 3 m thick unless tagged.
-- `rides` (`src/rides.ts`): the rides of `attraction=*` (roller coasters, carousels, drop towers, ...; not
-  `animal` or `maze`) and roller coasters' tracks (`roller_coaster=track`, kind `track`). A course (a track, a
-  flume, a train's loop) is a line, closed back to its start when its way is, and has `heights` over the ground:
-  OSM seldom tells them, only the layer, so a course is at 6 m a layer over 0 (1 m on layer 0 or unset, at the
-  ground in a tunnel) halfway along, and each end at the mean of those of the courses that meet there, straight
-  between them, so joined pieces meet. Where courses cross without meeting, the one on the higher layer (on the same
-  layer the higher one there) runs 4 m over the other, each moved half the way (the lower one no lower than 1 m),
-  straight to the points before and after; the crossing is a point of both lines. A water area that lies all along a
-  flume's, rafting river's or water slide's course (within 3 m of its line) is the course's water and is left out of
-  `areas`.
-- `powerLines` (`power=line`, `minor_line`) with their highest `voltage` and `cables`, and `pistes`
-  (`piste:type=*`, not proposed or under construction) with their `grooming`, name (`piste:name`, else
-  `name`) and `width`; a closed piste is a loop unless `area=yes`.
-
-Businesses (`Building.businesses`) are the OSM elements with `shop`, `office`, `craft` or `healthcare`, or with an
-`amenity`, `tourism` or `leisure` value that is a business (restaurants, cafes, pharmacies, banks, cinemas, hotels,
-museums, gyms, ...; not benches, parking or parks), with their `name`, `brand`, `cuisine` and lowest `level`.
-Around the centre of Tampere there are about 1 400, nearly all named. They are mostly points inside a building, so
-each goes to the building (or the part on the ground) its point is in, or it is tagged on, or whose wall is within
-2 m; the rest are left out. OSM seldom has their doors, so where a business shows (`front`: a point on the outline
-and the direction out of the wall) is a guess: an `entrance=shop` or `restaurant` within 20 m of it, else a
-`main` or `yes` entrance within 8 m, else the nearest wall within 20 m that faces a street (one within 25 m out in
-front) and is not against another building, else the nearest such wall facing no street. The shops inside a
-building tagged `shop=mall` show only at their own doors. Businesses often share a door or a spot, so the fronts of a
-building are then moved apart along their wall, 6 m from each other (those at doors stay), and a front that finds
-no room on its wall is dropped. Around the centre of Tampere 77 % of the businesses in buildings get a front, a
-tenth of them at a door.
-
-Every way people walk on gets `footfall`: how many walk along it on an average day of the year, both directions
-together (on both sidewalks of a street), at each point of its line. Streets have `sidewalks` from `sidewalk=*`,
-`sidewalk:both`, `sidewalk:left` and `sidewalk:right` (both, left, right, none or separate), and walkways their
-`footway=*` (sidewalk, crossing, ...). No one walks on a street whose sidewalks are `none` or `separate` or run
-beside it as `footway=sidewalk` ways for half its length (in central Tampere about 600 streets), on motorways, trunk
-roads and links unless they have a sidewalk tagged, on roads in tunnels, or where `foot=no`, `use_sidepath` or
-`private`. Elsewhere footfall is estimated as `kind × (base + scale × draw)`: `draw` adds up the businesses near
-the point (restaurants and cafes 1.5, shops 1, offices 0.5, others 0.7; falling off to nothing at 200 m) and the
-other doors (0.15 each, to nothing at 120 m), and `kind` is 1.6 on pedestrian streets, 1 on footways, main
-streets and cycleways shared with people walking (`foot=designated`, `yes` or `permissive`, as most in Finland),
-0.8 on residential streets, 0.6 on steps and unclassified roads, 0.35 on paths, 0.3 on service roads and other
-cycleways, and 0.2 on tracks.
-
-Every way people cycle on gets `cycling` the same way, people cycling along it a day, with `kind` for cycling: 1 on
-cycleways, 0.7 on footways and pedestrian streets shared with bicycles (`bicycle=yes`, `designated` or
-`permissive`), 0.1 and 0.2 on other footways and pedestrian streets (in Finland only children may cycle there), 0.4
-on paths, 0.3 on tracks, and on streets, in their carriageway, 0.7 on tertiary, 0.6 on secondary and residential,
-0.5 on primary, unclassified and living streets and 0.3 on service roads; a street with its sidewalks drawn apart
-gets 30 % of that and one with `bicycle=use_sidepath` (in Tampere most main streets) 15 %, as a cycleway beside it
-takes most of its cyclists. No one cycles on steps, motorways, trunk roads and their links, roads in tunnels, or
-where `bicycle=no` or `private`. Ways have their `foot`, `bicycle` and
-`segregated` (`segregated=yes`: people walking and cycling each have a side of their own; OSM does not tell which).
-
-`base` and `scale` (`footfallModels` in [`FINNISH_DEFAULTS_MEASURED_IN_TAMPERE`](#measured-in-tampere)) were fitted, in September 2026, to the City of Tampere's
-[pedestrian and cycling counts](https://data.tampere.fi/data/dataset/tampereen-jalankulun-ja-pyorailyn-liikennemaaria)
-around the centre: 432 walking counts fit `330 + 19.2 × draw` and 445 cycling counts `330 + 0.5 × draw` (cycling
-hardly depends on the businesses around), within a factor of two of 55 % of the walking counts and 43 % of the
-cycling ones. The counts themselves are not in the map; a user with counts can pull the estimates towards them
-when it uses the map (see [Flows](#flows)). Centre sidewalks get 2 000–9 500 people
-walking a day, suburban footways a few hundred, paths and service roads less; the cycleways and streets a few
-hundred to a few thousand people cycling.
-
-Roads for vehicles have `motorVehicle`, the most specific of `motorcar=*`, `motor_vehicle=*`, `vehicle=*` and
-`access=*` (who may drive on it: no, private, destination, ...), `bus`, from `bus=*` or else `psv=*` (whether buses may:
-designated on a bus lane or a bus station's way closed to others), `busBay`, from `bus_bay=*` (left, right or both:
-on which side of the line, going along it, a bus bay lies beside the road), and service roads their `service=*`
-(parking_aisle, driveway, ...).
+- Buildings (`src/osm.ts`): which are left out under the ground, the filling under parts raised off it, heights from
+  `height`, storeys or the kind of building, guessed roofs, passages through buildings and their rooms, materials,
+  colours and surfaces. With them `src/buildingRegister.ts` (storeys, materials, uses and years from Ryhti),
+  `src/startDates.ts` and `src/ages.ts` (when a building was built, and its storeys' height then), `src/bases.ts`
+  (where a building stands on a slope), `src/roofRidges.ts` (roofs drawn by their ridge lines), `src/roofTops.ts`
+  and `src/laserScanning.ts` (measured roof tops, brought down to the laser-scanned roof), `src/ortho.ts` (roof
+  colours), `src/windows.ts`, `src/entrances.ts` and `src/businesses.ts` (the businesses in a building and where
+  each shows), `src/raisedPassages.ts` (passages on a bridge's deck).
+- The ground where the elevation model's 2 m grid smooths a step: `src/retainingWalls.ts`, `src/flights.ts` (steps
+  up an edge) and `src/buildingSteps.ts` (a building cut into a slope).
+- Tunnels: `src/tunnels.ts` (floors, rooms, ramps at the portals, floors known at points: `tunnelFloors`) and
+  `src/cuts.ts` (a shallow tunnel the model has as an open cut, under a lid).
+- Bridges: `src/bridges.ts` (decks of spans and boardwalks, and steps telling a deck's height), `src/decks.ts`
+  (bridge outlines as decks), `src/underbridges.ts` (ways under a deck), `src/stairs.ts` (staircases' landings).
+- Railways and tramways: `src/trackbeds.ts`; platforms `src/platforms.ts`; pitches and level paved areas
+  `src/pitches.ts`.
+- Trees `src/forests.ts` and `src/treeRegister.ts`, street lamps `src/lamps.ts`, crossings, traffic signals and
+  gates `src/streets.ts`, fences and walls `src/barriers.ts`, playground equipment `src/playgrounds.ts`, bicycle
+  parking `src/bicycleParking.ts`, landmarks `src/landmarks.ts`, `src/seamarks.ts` and `src/rides.ts`.
+- People walking and cycling along each way (`footfall`, `cycling`): `src/footfall.ts`, with its constants in
+  [Measured in Tampere](#measured-in-tampere).
 
 ### Water
 
-Water areas are `natural=water`, `waterway=riverbank` and `landuse=reservoir` or `basin`; those of a river, canal or
-stream (`water=river`, `canal`, `stream`, `rapids`, ..., or `waterway=*` on the area) are `flowing`; such an area dry
-most of the time (`intermittent=yes`, as a bypass channel below a dam's gates) is its bed of stones, `rock`. The elevation
-model has the water's surface, but where an area takes in its banks the surface rises up them, and it wavers by a
-few decimetres here and there. So the tiles' heights in water are the water's level instead (with an elevation
-model):
-
-- A still water, a lake or pond, is level at the median of the elevation model inside it, unless the middle half
-  of those heights spreads over 0.5 m: then it is on a slope and keeps the model's heights.
-- A flowing water falls along the waterways in it (OSM `waterway=river`, `canal` and `stream` lines, which are drawn
-  the way they flow, fetched with a query of their own): every 2 m along a waterway in the water the model's
-  height (a still water's level in one) is taken, and these are made never to rise downstream, a run that would
-  rise pooled at its median, so a dam's crest or a bank does not lift the water. A waterway flowing on from
-  another starts no higher than that one ends, also through a culvert or a waterway dry most of the time
-  (`intermittent=yes`), which have no water of their own. Each point of the water is as high as the
-  nearest point of its waterways, so it is level across and steps down where the river does: Tammerkoski falls
-  from Näsijärvi's 95.4 m to 88.2, 81.3, 77.4 and Pyhäjärvi's 77.1 m at its dams. A flowing water with no waterway
-  in it is set level, or left on its slope, as a still one.
-
-The tiles' `waterways` are the waterways' stretches in the water, cut at the tiles' edges: each with its `kind`,
-`name`, the way it flows (`line`), the water's surface (`levels`, m) and how wide the water is across it (`widths`, m,
-measured to where the water ends on each side, up to 150 m), simplified to within 0.5 m across, 5 cm of level and
-2 m of width, and its `network`: the lowest id of the waterways joined to it at a point, rivers and canals together
-and streams apart, so a river keeps its network through culverts and power plants and a stream joining it does not
-take it.
+Water areas still or flowing, their level, and the tiles' `waterways`: `src/waterways.ts`. The elevation model has
+the water's surface, uneven where an area takes in its banks, so a still water is set level and a flowing one falls
+along the OSM waterways in it, never rising downstream.
 
 ### Flows
 
-`pullFlows(roads, others, counts)` (`flows.ts`) gives how many walk, cycle and drive along roads on an average day
-of the year, at each point of their lines: the map's footfall and cycling, and motor vehicles by the kind of road
-(`estimateMotorTraffic`: motorway 30 000, primary 12 000, secondary 7 000, tertiary 3 500, unclassified 800,
-residential 250, a service road 60, a parking aisle 30; a fifth of it where `motorVehicle` lets only some drive,
-such as `destination` or `delivery`, and none where it is `no`, `private`, `psv`, ..., on walkways and in tunnels
-drawn neither on a floor nor under a lid), each pulled towards counts at points. It is for a user that has counts,
-such as a city's traffic counts, and combines them with the map when it uses it instead of building them into the
-map, so the counts stay a database of their own and can be updated without building the map again.
-
-Each count is on the nearest road of its mode within 25 m among `others` (the roads and those around them, so a
-count beside the edge of an area still counts); a count of walking or cycling on one sidewalk of a street is
-doubled for the street. Around it the ratio of count to estimate spreads, fading out, along the counted road (its
-OSM id or name, and for walking and cycling the walkways of its kind in line with it) within 80 m for walking and
-cycling and 250 m for motor traffic, and onto other roads within 80 m (a third of the pull) or 60 m (a fifth). The
-counts are given as the year's average day, people or vehicles both ways. A road where only some may drive
-(`motorVehicle` `destination`, `delivery`, ..., such as a street for buses, trams and taxis open to deliveries) keeps
-its few cars: a motor count on it is of the buses, taxis and deliveries and is left out, and the counts around do not
-pull it.
+`pullFlows(roads, others, counts)` (`src/flows.ts`) gives how many walk, cycle and drive along roads on an average
+day of the year: the map's footfall and cycling, and motor vehicles by the kind of road (`estimateMotorTraffic`),
+each pulled towards counts at points. It is for a user that has counts, such as a city's traffic counts, and
+combines them with the map when it uses it instead of building them into the map, so the counts stay a database of
+their own and can be updated without building the map again.
 
 ### Seen from afar
 
-`farTile(tile, tileSize)` (`far.ts`) sums a tile up for drawing it from afar, such as dozens of tiles around a
-viewer high up, where their full features would be far too many:
-
-- `cover`: what covers the ground as a coarse picture, 128 × 128 cells by default, row by row from the north-west
-  corner, one character each (the index in `FAR_CLASSES` as a base-36 digit): ground, grass, forest, sand, rock,
-  pitch, paved, water, road, path, rail, field. Areas are painted fields first, then in that order (platforms as paved), and roads, paths (footways, cycleways,
-  steps, ...) and railways over them at their width; tunnels are left out.
-- `heights`: the ground's heights resampled to 17 × 17 points over the tile, in the tile's `Heights` format.
-- `boxes`: each building as the smallest box around its outline with a side along one of its edges (its centre,
-  the long side's direction, length and width) with the building's base, heights and colours. Outlines with parts
-  and buildings smaller than 40 m² are left out; a block with a courtyard is a full box.
+`farTile(tile, tileSize)` (`src/far.ts`) sums a tile up for drawing it from afar, where its full features would be far
+too many: a coarse picture of what covers the ground (`cover`, by `FAR_CLASSES`), coarse heights, and every building
+as a box.
 
 ### Parts of streets and lakes
 
-A point on a long street or a wide lake is hard to find by the feature's name alone. `featureParts.ts` tells where
-on it the point is, for a user with places of their own (a name and a point each) to match to the map when it uses
-them:
-
-- `streetParts(roads, name, near)`: the street of that name passing within 50 m of `near` (names compared with
-  `streetNameKey`: letter case, the kind of dash and spaces aside), with the roads of the name joined to it end to
-  line within 60 m (across a roundabout, between carriageways), and its two ends: the points of its roads farthest
-  apart, each with its compass direction from the other (`"e"`, `"sw"`, ...). A street with its ends under 200 m
-  apart has none.
-- `lakeParts(areas, near)`: the still water (`water`, not `flowing`) `near` is in, or the nearest within 50 m, with
-  the pieces of it that share its `osm` (a large lake cut into tiles), and its shores: for each of the eight
-  directions, the outline's point farthest that way, the main directions first and one within 100 m of a shore before
-  it left out. A lake under 150 m across has none.
-
-Each gives the pieces it matched, so that a user reading the map a tile at a time can tell whether the feature goes
-on into tiles not read yet, and read them too. `undefined` means there is no such street or water near the point.
+`streetParts(roads, name, near)` and `lakeParts(areas, near)` (`src/featureParts.ts`) tell where on a long street or a
+wide lake a point is (a street's ends, a lake's shores, by compass direction), for a user with places of their own
+(a name and a point each) to match to the map when it uses them. Each gives the pieces it matched, so that a user
+reading the map a tile at a time can tell whether the feature goes on into tiles not read yet.
 
 ### Districts
 
-A city's districts are not in the tiles: they are large, and cities map them differently. `districts.ts` reads them
-on their own, for a user to match points of their own to:
-
-- `fetchDistricts(box, origin, options)` (the query `districtsQuery(box)`, cached as the map's other sources are):
-  the administrative divisions below the municipality (`boundary=administrative`, `admin_level` 9 or 10) and the
-  places of a district's kinds (`place` `suburb`, `quarter` or `neighbourhood`) in the box that have a `name`, as
-  areas in meters around `origin` (`parseDistricts`): a relation's outer and inner members stitched into rings, a
-  closed way one ring. Each has its `kind` (`DISTRICT_KINDS`: `"admin_level=10"`, `"place=suburb"`, ...), its `area`
-  and its `center`: its `label` node when it has one inside it, else the centroid of its largest ring.
-- `districtOf(districts, point, kind?)`: the smallest district (of the kind) that has the point in it.
-- `districtKindOf(districts, points)`: the kind a city's districts are mapped as, the one whose districts have the
-  most of the points in them.
+A city's districts are not in the tiles: they are large, and cities map them differently. `fetchDistricts(box,
+origin, options)` (`src/districts.ts`, cached as the map's other sources are) reads its administrative divisions
+below the municipality and its places of a district's kinds (`DISTRICT_KINDS`); `districtOf` gives the district a
+point is in, and `districtKindOf` the kind a city's districts are mapped as.
 
 ## Measured in Tampere
 
@@ -767,7 +188,7 @@ city, until there is data of another city's own to measure them from:
 - `officeLevels`: 4 storeys, from which a building of the register's offices-and-factories class is offices, from the
   city's own building register
 - `pitchedRoofsBefore` and `flatRoofRiseM`: buildings built before 1960 mostly have pitched roofs, and a top at most
-  3 m over the eaves is a flat roof's, from the city's 3D building parts (see above): of the buildings without
+  3 m over the eaves is a flat roof's, from the city's 3D building parts (`src/roofTops.ts`): of the buildings without
   `roof:shape` whose storeys are known, those of the 1920s to the 1950s rise a median 2.1–3.0 m over their storeys
   and about half of them more than 3 m, those of the 1960s to the 2010s 0.6–1.8 m and 12–22 % of them more than 3 m
   (machine rooms on flat roofs)
