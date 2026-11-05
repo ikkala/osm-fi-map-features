@@ -549,3 +549,46 @@ export function nearestPlace<T>(p: Point, reach: number, step: number, place: (q
   }
   return undefined;
 }
+
+/** A binary heap of items by value, smallest first */
+export class MinHeap<T> {
+  readonly #entries: { item: T; value: number }[] = [];
+
+  push(item: T, value: number): void {
+    const entries = this.#entries;
+    entries.push({ item, value });
+    for (let i = entries.length - 1; i > 0; ) {
+      const parent = (i - 1) >> 1;
+      if (entries[parent].value <= entries[i].value) {
+        break;
+      }
+      [entries[parent], entries[i]] = [entries[i], entries[parent]];
+      i = parent;
+    }
+  }
+
+  pop(): { item: T; value: number } | undefined {
+    const entries = this.#entries;
+    const top = entries[0];
+    const last = entries.pop();
+    if (entries.length > 0 && last) {
+      entries[0] = last;
+      for (let i = 0; ; ) {
+        const [l, r] = [2 * i + 1, 2 * i + 2];
+        let smallest = i;
+        if (l < entries.length && entries[l].value < entries[smallest].value) {
+          smallest = l;
+        }
+        if (r < entries.length && entries[r].value < entries[smallest].value) {
+          smallest = r;
+        }
+        if (smallest === i) {
+          break;
+        }
+        [entries[smallest], entries[i]] = [entries[i], entries[smallest]];
+        i = smallest;
+      }
+    }
+    return top;
+  }
+}

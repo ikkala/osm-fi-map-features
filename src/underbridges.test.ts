@@ -58,14 +58,71 @@ test("ways joined end to end under a bridge go down as one, across where they me
   assert.ok(Math.abs(ofA.floor[ofA.floor.length - 1] - ofB.floor[0]) < 1e-9);
 });
 
-test("a way meeting another in the cut it would need is left as it is", () => {
+test("a way meeting a road or a way of another layer in the cut it would need is left as it is", () => {
   const deck = bridge();
   const path = road("w2", [[0, -60], [0, -10], [0, 60]], { kind: "footway", width: 2.5 });
-  // a path across it 10 m from the bridge, where its ramp would be
-  const across = road("w3", [[-20, -10], [0, -10], [20, -10]], { kind: "footway", width: 2.5 });
-  const ways = [deck, path, across];
-  assert.equal(lowerUnderBridges(ways, [deck], [], () => 98), 0);
+  // a street across it 10 m from the bridge, where its ramp would be, and a path on another layer at its other ramp
+  const across = road("w3", [[-20, -10], [0, -10], [20, -10]]);
+  assert.equal(lowerUnderBridges([deck, path, across], [deck], [], () => 98), 0);
   assert.equal(path.floor, undefined);
+  const other = road("w4", [[0, -60], [0, 10], [0, 60]], { kind: "footway", width: 2.5 });
+  const above = road("w5", [[-20, 10], [0, 10], [20, 10]], { kind: "footway", width: 2.5, layer: 1 });
+  assert.equal(lowerUnderBridges([deck, other, above], [deck], [], () => 98), 0);
+});
+
+test("paths meeting under a bridge go down together, at one height where they meet", () => {
+  const deck = bridge();
+  const path = road("w2", [[0, -60], [0, 2], [0, 12], [0, 60]], { kind: "footway", width: 2.5 });
+  // a cycleway joining it under the deck, and a footway across it where its ramp is
+  const joining = road("w3", [[0, 2], [80, 2]], { kind: "cycleway", width: 3 });
+  const across = road("w4", [[-30, 12], [0, 12], [30, 12]], { kind: "footway", width: 2.5 });
+  const ways = [deck, path, joining, across];
+  assert.equal(lowerUnderBridges(ways, [deck], [], () => 98), 1);
+  const floorAt = (osm: string, p: Point) => {
+    for (const way of ways.filter((w) => w.osm === osm && w.floor)) {
+      const i = way.line.findIndex(([e, n]) => e === p[0] && n === p[1]);
+      if (i >= 0 && way.floor) {
+        return way.floor[i];
+      }
+    }
+    return undefined;
+  };
+  // at the bottom under the deck where they meet (its last sample under it 4 m from its middle), the one crossing
+  // the ramp at the ramp's height there
+  assert.ok(Math.abs((floorAt("w2", [0, 2]) ?? 0) - 96.3) < 1e-9);
+  assert.equal(floorAt("w3", [0, 2]), floorAt("w2", [0, 2]));
+  const crossing = floorAt("w4", [0, 12]);
+  assert.ok(crossing !== undefined && Math.abs(crossing - (96.3 + 0.08 * (12 - 4))) < 1e-9);
+  assert.equal(floorAt("w2", [0, 12]), crossing);
+  // each ramps up to the ground
+  for (const way of ways.filter((w) => w.floor)) {
+    assert.ok(way.floor && Math.max(...way.floor) <= 98 && Math.min(...way.floor) >= 96.3 - 1e-9);
+  }
+  assert.ok(ways.filter((w) => w.osm === "w4" && w.floor).length === 1);
+  // a path joining under the deck and ending in the cut leaves them all as they are
+  const lone = bridge();
+  const main = road("w6", [[0, -60], [0, 2], [0, 60]], { kind: "footway", width: 2.5 });
+  const stub = road("w7", [[0, 2], [15, 2]], { kind: "footway", width: 2.5 });
+  assert.equal(lowerUnderBridges([lone, main, stub], [lone], [], () => 98), 0);
+  assert.equal(main.floor, undefined);
+});
+
+test("a way under a bridge with room enough goes down to its own ground where the model's spans the gap over it", () => {
+  // the model's ground spanning the gap under the deck from the embankments beside the way, 2.5 m over the way's
+  // ground at 95 on either side of the bridge
+  const deck = bridge();
+  const path = road("w2", [[0, -60], [0, 60]], { kind: "footway", width: 2.5 });
+  const ways = [deck, path];
+  const ground = (_e: number, n: number) => (Math.abs(n) <= 4 ? 97.5 : 95);
+  assert.equal(lowerUnderBridges(ways, [deck], [], ground), 1);
+  const cut = ways.find((w) => w.osm === "w2" && w.floor);
+  assert.ok(cut?.floor);
+  // level with the ground on either side, under the deck that leaves it more room than it needs
+  assert.ok(cut.floor.every((f) => Math.abs(f - 95) < 1e-9));
+  // a hump of less than half a meter is left as it is
+  const low = bridge();
+  const other = road("w3", [[0, -60], [0, 60]], { kind: "footway", width: 2.5 });
+  assert.equal(lowerUnderBridges([low, other], [low], [], (_e, n) => (Math.abs(n) <= 4 ? 95.4 : 95)), 0);
 });
 
 test("a point is under a bridge within its way's width and edges, or in its outline with a bridge way in it", () => {
