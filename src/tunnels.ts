@@ -4,7 +4,7 @@
 // keeps steady grades down to its deepest points and up again, rather than rising and falling with the ground.
 // Tunnels in cuts (cuts.ts) are left to their cut.
 import { pointAlong } from "./bridges.ts";
-import { distanceToRing, nearestOnLine, pointInPolygon, pointKey, type Point } from "./geometry.ts";
+import { distanceToRing, MinHeap, nearestOnLine, pointInPolygon, pointKey, type Point } from "./geometry.ts";
 import { bounds, LANE_WIDTH_M, openPassages, type Building, type MapFeatures, type Opening, type Rail, type Road } from "./osm.ts";
 
 /** Room over the floor for people, vehicles and trains (m) */
@@ -1709,47 +1709,4 @@ export function densify(line: Point[], step: number): Point[] {
     out.push(c);
   }
   return out;
-}
-
-/** A binary heap of items by value, smallest first */
-class MinHeap<T> {
-  readonly #entries: { item: T; value: number }[] = [];
-
-  push(item: T, value: number): void {
-    const entries = this.#entries;
-    entries.push({ item, value });
-    for (let i = entries.length - 1; i > 0; ) {
-      const parent = (i - 1) >> 1;
-      if (entries[parent].value <= entries[i].value) {
-        break;
-      }
-      [entries[parent], entries[i]] = [entries[i], entries[parent]];
-      i = parent;
-    }
-  }
-
-  pop(): { item: T; value: number } | undefined {
-    const entries = this.#entries;
-    const top = entries[0];
-    const last = entries.pop();
-    if (entries.length > 0 && last) {
-      entries[0] = last;
-      for (let i = 0; ; ) {
-        const [l, r] = [2 * i + 1, 2 * i + 2];
-        let smallest = i;
-        if (l < entries.length && entries[l].value < entries[smallest].value) {
-          smallest = l;
-        }
-        if (r < entries.length && entries[r].value < entries[smallest].value) {
-          smallest = r;
-        }
-        if (smallest === i) {
-          break;
-        }
-        [entries[smallest], entries[i]] = [entries[i], entries[smallest]];
-        i = smallest;
-      }
-    }
-    return top;
-  }
 }
