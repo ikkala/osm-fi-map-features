@@ -854,6 +854,11 @@ test("a way through a building gets a room walled off from the building's inside
     ],
   );
 
+  // a way ending on the wall, a hair inside, has no wall across that end: the building's wall is there
+  const edge = building([[0, 0], [20, 0], [20, 10], [0, 10]]);
+  openPassages([edge], [{ line: [[0.1, 5], [25, 5]], width: 2, height: 3 }]);
+  assert.deepEqual(rooms(edge).map((room) => room.closed), [[false, false]]);
+
   // rooms overlapping on the same side of their walls (a passage carried on through the wall over the passage's
   // own) both keep them there, but not across where one goes on into the other
   const over = building([[0, 0], [20, 0], [20, 10], [0, 10]]);

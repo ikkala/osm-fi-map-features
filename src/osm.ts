@@ -1766,11 +1766,14 @@ function roomsThrough(polygon: Polygon, passage: Passage): PassageRoom[] {
 
   const rooms: PassageRoom[] = [];
   let room: PassageRoom | undefined;
+  // an end inside the building is walled across; one on its wall (within AT_WALL_M) is the wall's to close or open
+  const closedAt = (place: { along: number; crossing: boolean }) =>
+    !place.crossing && [polygon.outer, ...polygon.holes].every((ring) => distanceToRing(pointAt(place.along), ring) > AT_WALL_M);
   for (let j = 0; j + 1 < places.length; j++) {
     if (pointInPolygon(pointAt((places[j].along + places[j + 1].along) / 2), polygon)) {
-      room ??= { sections: [places[j].section], height: passage.height, closed: [!places[j].crossing, false], walls: [] };
+      room ??= { sections: [places[j].section], height: passage.height, closed: [closedAt(places[j]), false], walls: [] };
       room.sections.push(places[j + 1].section);
-      room.closed[1] = !places[j + 1].crossing;
+      room.closed[1] = closedAt(places[j + 1]);
     } else if (room) {
       rooms.push(room);
       room = undefined;
