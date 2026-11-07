@@ -17,6 +17,7 @@ const BY_KIND: Record<string, WindowStyle> = {
   bungalow: "house",
   allotment_house: "house",
   cabin: "house",
+  farm: "house",
   office: "office",
   commercial: "office",
   retail: "office",
@@ -25,6 +26,15 @@ const BY_KIND: Record<string, WindowStyle> = {
   college: "office",
   university: "office",
   kindergarten: "office",
+  // public and civic buildings, hospitals and stations of the emergency services: storeys of offices and wards
+  public: "office",
+  civic: "office",
+  government: "office",
+  townhall: "office",
+  hospital: "office",
+  clinic: "office",
+  fire_station: "office",
+  police: "office",
 };
 
 /** The building register's main uses and their windows; work is offices and factories alike (see officeLevels) */
