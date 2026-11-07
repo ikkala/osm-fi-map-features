@@ -673,6 +673,47 @@ test("a way through a building opens its walls and is drawn on the ground", () =
   assert.deepEqual([tunnel("w41"), tunnel("w42"), tunnel("w43")], [false, false, true]);
 });
 
+test("a building passage tagged short of its building's wall, where a way goes on, goes on straight through the wall", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 60, tags: { building: "office", layer: "2" }, geometry: rectangle(0, 0, 20, 10) },
+      // tagged from the east wall to 3 m inside the west one, where a footway along the front meets it, the outline
+      // reaching a little past the front
+      { type: "way", id: 61, tags: { highway: "footway", tunnel: "building_passage" }, geometry: [at(25, 5), at(3, 5)] },
+      { type: "way", id: 62, tags: { highway: "footway" }, geometry: [at(3, 5), at(1, 5)] },
+      { type: "way", id: 63, tags: { highway: "footway" }, geometry: [at(1, -10), at(1, 5), at(1, 20)] },
+    ],
+    origin,
+  );
+  const walls = (osm: string, f = features) => defined(f.buildings.find((b) => b.osm === osm)).passages?.map((o) => Math.round(o.from[0])).sort((a, b) => a - b);
+  assert.deepEqual(walls("w60"), [0, 20]);
+  // one ending a hair inside the wall, which it then does not cross
+  const { features: hair } = parseOsm(
+    [
+      { type: "way", id: 64, tags: { building: "office" }, geometry: rectangle(0, 0, 20, 10) },
+      { type: "way", id: 65, tags: { highway: "footway", tunnel: "building_passage" }, geometry: [at(25, 5), at(0.1, 5)] },
+      { type: "way", id: 66, tags: { highway: "footway" }, geometry: [at(0.1, 5), at(-5, 5)] },
+    ],
+    origin,
+  );
+  assert.deepEqual(walls("w64", hair), [0, 20]);
+  // with no way on from its end, a way on in a tunnel, or the wall too far, the end stays shut
+  const { features: shut } = parseOsm(
+    [
+      { type: "way", id: 70, tags: { building: "office" }, geometry: rectangle(0, 0, 20, 10) },
+      { type: "way", id: 71, tags: { highway: "footway", tunnel: "building_passage" }, geometry: [at(25, 5), at(3, 5)] },
+      { type: "way", id: 72, tags: { building: "office" }, geometry: rectangle(0, 20, 20, 30) },
+      { type: "way", id: 73, tags: { highway: "footway", tunnel: "building_passage" }, geometry: [at(25, 25), at(3, 25)] },
+      { type: "way", id: 74, tags: { highway: "footway", tunnel: "yes", layer: "-1" }, geometry: [at(3, 25), at(3, 40)] },
+      { type: "way", id: 75, tags: { building: "office" }, geometry: rectangle(0, 50, 40, 60) },
+      { type: "way", id: 76, tags: { highway: "footway", tunnel: "building_passage" }, geometry: [at(45, 55), at(25, 55)] },
+      { type: "way", id: 77, tags: { highway: "footway" }, geometry: [at(25, 55), at(25, 70)] },
+    ],
+    origin,
+  );
+  assert.deepEqual([walls("w70", shut), walls("w72", shut), walls("w75", shut)], [[20], [20], [40]]);
+});
+
 test("a tunnel through a building is taken for a passage, a ramp into it or a deep tunnel is not", () => {
   const { features } = parseOsm(
     [
