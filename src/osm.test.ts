@@ -1,7 +1,7 @@
 // OSM parsing and tiling together, on a small hand-made Overpass response.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { areaKind, compassDegrees, elementsWithin, inheritFromOutlines, meters, mergeOverpass, openDoorways, openPassages, openRailHalls, overpassQuery, parseOsm, type Building, type OverpassResponse, type Rail, type Road, type Tree } from "./osm.ts";
+import { areaKind, compassDegrees, elementsWithin, inheritFromOutlines, meters, mergeOverpass, openDoorways, openPassages, openRailHalls, overpassQuery, parseOsm, passagesOnToWalls, type Building, type OverpassResponse, type Rail, type Road, type Tree } from "./osm.ts";
 import type { Point } from "./geometry.ts";
 import { LocalProjection } from "./projection.ts";
 import { cutIntoTiles, tilePieces, tilesCovering, tilesCoveringAny } from "./tiles.ts";
@@ -712,6 +712,32 @@ test("a building passage tagged short of its building's wall, where a way goes o
     origin,
   );
   assert.deepEqual([walls("w70", shut), walls("w72", shut), walls("w75", shut)], [[20], [20], [40]]);
+  // an arcade along the front inside the outline, a layer over the sidewalks going on from its ends on the walls,
+  // is carried on through both
+  const { features: arcade } = parseOsm(
+    [
+      // the arcade's ends are corners of the outline, as where it is drawn to the wall's nodes
+      { type: "way", id: 80, tags: { building: "office", layer: "2" }, geometry: [at(0, 0), at(40, 0), at(40, 8), at(40, 10), at(0, 10), at(0, 8), at(0, 0)] },
+      { type: "way", id: 81, tags: { highway: "footway", covered: "arcade", layer: "1" }, geometry: [at(0, 8), at(40, 8)] },
+      { type: "way", id: 82, tags: { highway: "footway" }, geometry: [at(-10, 8), at(0, 8)] },
+      { type: "way", id: 83, tags: { highway: "footway" }, geometry: [at(40, 8), at(50, 8)] },
+    ],
+    origin,
+  );
+  // the walls astride each end's corner open
+  assert.deepEqual([...new Set(walls("w80", arcade))], [0, 40]);
+});
+
+test("a passage is carried on through its wall where a way on the ground goes on from it, whatever its layer", () => {
+  const office: Building = { osm: "w1", kind: "office", part: false, hasParts: false, height: 15, minHeight: 0, polygon: { outer: [[0, 0], [40, 0], [40, 10], [0, 10]], holes: [] } };
+  const way = (osm: string, line: Point[], layer: number, tunnel = false): Road => ({ osm, kind: "footway", width: 2, layer, bridge: false, tunnel, line });
+  // an arcade a layer over the sidewalk going on from its end on the west wall
+  const arcade = way("w2", [[20, 8], [0, 8]], 1);
+  const passage = { line: arcade.line, width: 2, height: 3 };
+  const on = passagesOnToWalls([{ road: arcade, passage }], [arcade, way("w3", [[0, 8], [-10, 8]], 0)], [office]);
+  assert.deepEqual(on.map((p) => p.line.map((q) => q.map(Math.round))), [[[1, 8], [-1, 8]]]);
+  // not into a tunnel going on
+  assert.deepEqual(passagesOnToWalls([{ road: arcade, passage }], [arcade, way("w4", [[0, 8], [-10, 8]], -1, true)], [office]), []);
 });
 
 test("a tunnel through a building is taken for a passage, a ramp into it or a deep tunnel is not", () => {
@@ -827,6 +853,72 @@ test("a way through a building gets a room walled off from the building's inside
       [[9, 0, 9, 4], [9, 6, 9, 10], [11, 10, 11, 6], [11, 4, 11, 0]],
     ],
   );
+
+  // a way ending on the wall, a hair inside, has no wall across that end: the building's wall is there
+  const edge = building([[0, 0], [20, 0], [20, 10], [0, 10]]);
+  openPassages([edge], [{ line: [[0.1, 5], [25, 5]], width: 2, height: 3 }]);
+  assert.deepEqual(rooms(edge).map((room) => room.closed), [[false, false]]);
+
+  // rooms overlapping on the same side of their walls (a passage carried on through the wall over the passage's
+  // own) both keep them there, but not across where one goes on into the other
+  const over = building([[0, 0], [20, 0], [20, 10], [0, 10]]);
+  openPassages(
+    [over],
+    [
+      { line: [[-5, 5], [12, 5]], width: 2, height: 3 },
+      { line: [[9, 5], [25, 5]], width: 2, height: 3 },
+    ],
+  );
+  assert.deepEqual(
+    rooms(over).map((room) => room.walls),
+    [
+      [[0, 6, 12, 6], [12, 4, 0, 4]],
+      [[9, 6, 20, 6], [20, 4, 9, 4]],
+    ],
+  );
+
+  // a passage ending just inside the wall, carried on out through it by another: its end there is open, its
+  // sides walled on
+  const mouth = building([[0, 0], [20, 0], [20, 10], [0, 10]]);
+  openPassages(
+    [mouth],
+    [
+      { line: [[0.1, 5], [25, 5]], width: 2, height: 3 },
+      { line: [[1.1, 5], [-0.9, 5]], width: 2, height: 3 },
+    ],
+  );
+  assert.deepEqual(
+    rooms(mouth).map((room) => room.walls),
+    [
+      [[0.1, 6, 20, 6], [20, 4, 0.1, 4]],
+      [[1.1, 4, 0, 4], [0, 6, 1.1, 6]],
+    ],
+  );
+
+  // ways along each other a little apart (a walk beside steps, a rail between them) are one space: their rooms meet
+  // halfway, no walls between them, the same ceiling
+  const beside = building([[0, 0], [20, 0], [20, 10], [0, 10]]);
+  openPassages([beside], [{ line: [[-5, 4], [25, 4]], width: 2, height: 3 }, { line: [[-5, 6.4], [10, 6.4]], width: 2, height: 2.5 }]);
+  const [walk, steps] = defined(beside.passageRooms);
+  // the steps' room's south side, from the wall to its end, now on the walk's north side halfway
+  assert.deepEqual(steps.sections.map(round), [[0, 7.4, 0, 5.2], [10, 7.4, 10, 5.2]]);
+  assert.ok(!walk.walls.some(([a, b]) => a[0] < 10 && b[0] < 10 && Math.abs(a[1] - 5) < 0.3 && Math.abs(b[1] - 5) < 0.3), `walls ${walk.walls.map(round)}`);
+  assert.ok(!steps.walls.some(([a, b]) => Math.abs(a[1] - 5.2) < 0.01 && Math.abs(b[1] - 5.2) < 0.01), `walls ${steps.walls.map(round)}`);
+
+  // a wider way's end inside, a walk going on from its middle aslant and steps beside it: no walls in the gap
+  // between the three, but the walk's and the steps' far ends walled
+  const split = building([[0, 0], [30, 0], [30, 10], [0, 10]]);
+  openPassages(
+    [split],
+    [
+      { line: [[-5, 5], [15, 5]], width: 3.2, height: 3 },
+      { line: [[15, 5], [15.6, 5.6], [25, 5.6]], width: 1.8, height: 3 },
+      { line: [[15, 3.95], [25, 3.95]], width: 1.1, height: 3 },
+    ],
+  );
+  const splitWalls = defined(split.passageRooms).flatMap((room) => room.walls);
+  assert.ok(!splitWalls.some(([a, b]) => [a, b].some(([x, y]) => x > 14.9 && x < 16 && y > 4.4 && y < 5.2)), `walls ${splitWalls.map(round)}`);
+  assert.ok(splitWalls.some(([a, b]) => a[0] === 25 && b[0] === 25 && a[1] - b[1] > 1.8), `walls ${splitWalls.map(round)}`);
 
   // a tunnel in a cut under a building (no height) only opens its walls
   const station = building([[0, 0], [20, 0], [20, 10], [0, 10]]);

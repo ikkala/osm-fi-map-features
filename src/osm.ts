@@ -16,6 +16,7 @@ import {
   distanceToRing,
   extent,
   indexBoxes,
+  nearestOnLine,
   orientedBox,
   pointInPolygon,
   pointInRing,
@@ -1109,6 +1110,8 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
       passages.push(passage);
       found.add(road);
       through.add(road);
+      // carried on through the wall it ends at, as a tagged one
+      tagged.push({ road, passage });
     }
   }
   features.buildings.push(...fillUnderFloatingParts(features));
@@ -1626,6 +1629,7 @@ export function openPassages(buildings: Building[], passages: Passage[], rooms =
     }
   }
   for (const b of roomed) {
+    joinNearRooms(b.passageRooms ?? []);
     setRoomWalls(b.passageRooms ?? []);
   }
 }
@@ -1764,11 +1768,14 @@ function roomsThrough(polygon: Polygon, passage: Passage): PassageRoom[] {
 
   const rooms: PassageRoom[] = [];
   let room: PassageRoom | undefined;
+  // an end inside the building is walled across; one on its wall (within AT_WALL_M) is the wall's to close or open
+  const closedAt = (place: { along: number; crossing: boolean }) =>
+    !place.crossing && [polygon.outer, ...polygon.holes].every((ring) => distanceToRing(pointAt(place.along), ring) > AT_WALL_M);
   for (let j = 0; j + 1 < places.length; j++) {
     if (pointInPolygon(pointAt((places[j].along + places[j + 1].along) / 2), polygon)) {
-      room ??= { sections: [places[j].section], height: passage.height, closed: [!places[j].crossing, false], walls: [] };
+      room ??= { sections: [places[j].section], height: passage.height, closed: [closedAt(places[j]), false], walls: [] };
       room.sections.push(places[j + 1].section);
-      room.closed[1] = !places[j + 1].crossing;
+      room.closed[1] = closedAt(places[j + 1]);
     } else if (room) {
       rooms.push(room);
       room = undefined;
@@ -1780,40 +1787,120 @@ function roomsThrough(polygon: Polygon, passage: Passage): PassageRoom[] {
   return rooms;
 }
 
+/** Rooms of a building nearer than this (m) side by side are one space, as ways along each other with a rail between */
+export const NEAR_ROOMS_M = 0.6;
+
+/**
+ * Rooms of a building nearer than NEAR_ROOMS_M side by side meet halfway: each corner of their sections that near
+ * another room (not in it) moves halfway to it, an open end's only along it, on the building's wall; so that no strip
+ * of ceiling is missing between them and their walls there go (setRoomWalls: another room behind them)
+ */
+function joinNearRooms(rooms: PassageRoom[]): void {
+  const quads = rooms.map((room) => room.sections.slice(1).map(([left, right], i): Point[] => [room.sections[i][0], room.sections[i][1], right, left]));
+  // an open end's corners move only along it, on the building's wall
+  const open = (room: PassageRoom, i: number) => (i === 0 && !room.closed[0]) || (i === room.sections.length - 1 && !room.closed[1]);
+  const moved = rooms.map((room, r) =>
+    room.sections.map((section, i): [Point, Point] => {
+      const [left, right] = [toward(section[0], r), toward(section[1], r)];
+      return open(room, i) ? [along(section, left), along(section, right)] : [left, right];
+    }),
+  );
+  rooms.forEach((room, r) => {
+    room.sections = moved[r];
+  });
+
+  // a point onto a section's line
+  function along([a, b]: [Point, Point], p: Point): Point {
+    const [de, dn] = [b[0] - a[0], b[1] - a[1]];
+    const length2 = de * de + dn * dn;
+    const k = length2 > 0 ? ((p[0] - a[0]) * de + (p[1] - a[1]) * dn) / length2 : 0;
+    return [a[0] + de * k, a[1] + dn * k];
+  }
+
+  // a corner halfway to the nearest other room within NEAR_ROOMS_M, unless it is in one
+  function toward(p: Point, r: number): Point {
+    let nearest: Point | undefined;
+    let distance = NEAR_ROOMS_M;
+    for (const [o, others] of quads.entries()) {
+      for (const quad of o === r ? [] : others) {
+        if (pointInRing(p, quad)) {
+          return p;
+        }
+        const near = nearestOnLine([...quad, quad[0]], p);
+        if (near.distance < distance) {
+          distance = near.distance;
+          nearest = near.point;
+        }
+      }
+    }
+    return nearest ? [(p[0] + nearest[0]) / 2, (p[1] + nearest[1]) / 2] : p;
+  }
+}
+
+/** A room's wall goes where another room is this far (m) behind it */
+const BEHIND_WALL_M = 0.1;
+
 /**
  * Sets the walls of a building's passage rooms: along both sides of each, and across its closed ends,
- * less where they are in another room (a way beside it or across it: one space).
+ * less where another room goes on: behind a side (a way beside it or across it: one space), and where an end
+ * lies in it. Rooms overlapping on the same side of a side wall, as a passage carried on through its building's
+ * wall (passagesOnToWalls) over the passage's own, both keep it; the passage's end just inside the wall is open
+ * where the carried-on room goes on out through the wall. Nor is a gap walled that is all within NEAR_ROOMS_M of
+ * two other rooms, one at each end (a walk and steps beside it going on from a wider way's end).
  */
 function setRoomWalls(rooms: PassageRoom[]): void {
   const quads = rooms.map((room) =>
     room.sections.slice(1).map(([left, right], i): Point[] => [room.sections[i][0], room.sections[i][1], right, left]),
   );
+  // the other rooms within NEAR_ROOMS_M of a point
+  const near = (p: Point, r: number) =>
+    quads.flatMap((others, o) =>
+      o !== r && others.some((quad) => pointInRing(p, quad) || nearestOnLine([...quad, quad[0]], p).distance <= NEAR_ROOMS_M) ? [o] : [],
+    );
+  // a piece of wall all within NEAR_ROOMS_M of other rooms, its ends of different ones: a gap between them
+  const between = ([a, b]: [Point, Point], r: number) => {
+    const steps = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (NEAR_ROOMS_M / 2));
+    const at = (k: number): Point => [a[0] + ((b[0] - a[0]) * k) / steps, a[1] + ((b[1] - a[1]) * k) / steps];
+    const [first, last] = [near(a, r), near(b, r)];
+    return first.some((p) => last.some((q) => q !== p)) && Array.from({ length: steps - 1 }, (_, k) => at(k + 1)).every((p) => near(p, r).length > 0);
+  };
   rooms.forEach((room, r) => {
     const { sections, closed } = room;
     const last = sections.length - 1;
-    const walls: [Point, Point][] = [];
+    // each with whether it is across an end
+    const walls: [Point, Point, boolean][] = [];
     if (closed[0]) {
-      walls.push([sections[0][1], sections[0][0]]);
+      walls.push([sections[0][1], sections[0][0], true]);
     }
     for (let i = 0; i < last; i++) {
-      walls.push([sections[i][0], sections[i + 1][0]]);
+      walls.push([sections[i][0], sections[i + 1][0], false]);
     }
     if (closed[1]) {
-      walls.push([sections[last][0], sections[last][1]]);
+      walls.push([sections[last][0], sections[last][1], true]);
     }
     for (let i = last; i > 0; i--) {
-      walls.push([sections[i][1], sections[i - 1][1]]);
+      walls.push([sections[i][1], sections[i - 1][1], false]);
     }
     const others = quads.filter((_, o) => o !== r).flat();
-    room.walls = walls.flatMap(([a, b]) => {
+    room.walls = walls.flatMap(([a, b, end]) => {
       const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      const spans = others.map((quad) => spanInside(a, b, quad)).filter((span) => span !== undefined);
+      if (length < 1e-9) {
+        return [];
+      }
+      // a side looked at a little behind it, on its left (the room is on its right); an end where it is
+      const [be, bn] = end ? [0, 0] : [(-(b[1] - a[1]) / length) * BEHIND_WALL_M, ((b[0] - a[0]) / length) * BEHIND_WALL_M];
+      const [ba, bb]: [Point, Point] = [
+        [a[0] + be, a[1] + bn],
+        [b[0] + be, b[1] + bn],
+      ];
+      const spans = others.map((quad) => spanInside(ba, bb, quad)).filter((span) => span !== undefined);
       return spansLeft(spans)
         .filter(([t0, t1]) => (t1 - t0) * length > SAME_PLACE_M)
         .map(([t0, t1]): [Point, Point] => [
           [a[0] + (b[0] - a[0]) * t0, a[1] + (b[1] - a[1]) * t0],
           [a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1],
-        ]);
+        ])
+        .filter((piece) => !between(piece, r));
     });
   });
 }
@@ -2437,8 +2524,9 @@ function normalize(polygon: Polygon): Polygon {
 }
 
 /**
- * Building passages that end at their building's wall or short of it, where an untagged way goes on (on the
- * passage's layer, neither a tunnel nor a bridge): an end on the wall, within AT_WALL_M of it (at a corner), does not
+ * Building passages, tagged or found to run through buildings (an arcade, a tunnel), that end at their building's wall
+ * or short of it, where another way goes on (on the ground as the passage is, neither a tunnel nor a bridge, whatever
+ * its layer): an end on the wall, within AT_WALL_M of it (at a corner), does not
  * cross it, and OSM's tag is at times split off a little inside. The passage goes on straight from its last stretch
  * to the wall and PAST_WALL_M through it, when the wall is within PASSAGE_ON_M; returns those passages, which open
  * the wall there (openPassages, which opens a wall once however many passages cross it there).
@@ -2462,7 +2550,9 @@ export function passagesOnToWalls(tagged: { road: Road; passage: Passage }[], ro
       [line[line.length - 1], line[line.length - 2]],
     ]) {
       const goesOn = (at.get(pointKey(end)) ?? []).filter((r) => r !== road && !passageRoads.has(r));
-      if (goesOn.length === 0 || goesOn.some((r) => r.tunnel || r.bridge || r.layer !== road.layer)) {
+      // ways on the ground go on from it, whatever their layers (an arcade under its building's floors is often
+      // tagged a layer over the street's)
+      if (goesOn.length === 0 || goesOn.some((r) => r.tunnel || r.bridge || r.layer < 0 !== road.layer < 0)) {
         continue;
       }
       const inside = buildings.find(
