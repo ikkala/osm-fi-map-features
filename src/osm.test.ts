@@ -905,6 +905,21 @@ test("a way through a building gets a room walled off from the building's inside
   assert.ok(!walk.walls.some(([a, b]) => a[0] < 10 && b[0] < 10 && Math.abs(a[1] - 5) < 0.3 && Math.abs(b[1] - 5) < 0.3), `walls ${walk.walls.map(round)}`);
   assert.ok(!steps.walls.some(([a, b]) => Math.abs(a[1] - 5.2) < 0.01 && Math.abs(b[1] - 5.2) < 0.01), `walls ${steps.walls.map(round)}`);
 
+  // a wider way's end inside, a walk going on from its middle aslant and steps beside it: no walls in the gap
+  // between the three, but the walk's and the steps' far ends walled
+  const split = building([[0, 0], [30, 0], [30, 10], [0, 10]]);
+  openPassages(
+    [split],
+    [
+      { line: [[-5, 5], [15, 5]], width: 3.2, height: 3 },
+      { line: [[15, 5], [15.6, 5.6], [25, 5.6]], width: 1.8, height: 3 },
+      { line: [[15, 3.95], [25, 3.95]], width: 1.1, height: 3 },
+    ],
+  );
+  const splitWalls = defined(split.passageRooms).flatMap((room) => room.walls);
+  assert.ok(!splitWalls.some(([a, b]) => [a, b].some(([x, y]) => x > 14.9 && x < 16 && y > 4.4 && y < 5.2)), `walls ${splitWalls.map(round)}`);
+  assert.ok(splitWalls.some(([a, b]) => a[0] === 25 && b[0] === 25 && a[1] - b[1] > 1.8), `walls ${splitWalls.map(round)}`);
+
   // a tunnel in a cut under a building (no height) only opens its walls
   const station = building([[0, 0], [20, 0], [20, 10], [0, 10]]);
   openPassages([station], [{ line: [[-5, 5], [25, 5]], width: 2, height: 0 }]);

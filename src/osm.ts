@@ -1845,12 +1845,25 @@ const BEHIND_WALL_M = 0.1;
  * less where another room goes on: behind a side (a way beside it or across it: one space), and where an end
  * lies in it. Rooms overlapping on the same side of a side wall, as a passage carried on through its building's
  * wall (passagesOnToWalls) over the passage's own, both keep it; the passage's end just inside the wall is open
- * where the carried-on room goes on out through the wall.
+ * where the carried-on room goes on out through the wall. Nor is a gap walled that is all within NEAR_ROOMS_M of
+ * two other rooms, one at each end (a walk and steps beside it going on from a wider way's end).
  */
 function setRoomWalls(rooms: PassageRoom[]): void {
   const quads = rooms.map((room) =>
     room.sections.slice(1).map(([left, right], i): Point[] => [room.sections[i][0], room.sections[i][1], right, left]),
   );
+  // the other rooms within NEAR_ROOMS_M of a point
+  const near = (p: Point, r: number) =>
+    quads.flatMap((others, o) =>
+      o !== r && others.some((quad) => pointInRing(p, quad) || nearestOnLine([...quad, quad[0]], p).distance <= NEAR_ROOMS_M) ? [o] : [],
+    );
+  // a piece of wall all within NEAR_ROOMS_M of other rooms, its ends of different ones: a gap between them
+  const between = ([a, b]: [Point, Point], r: number) => {
+    const steps = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (NEAR_ROOMS_M / 2));
+    const at = (k: number): Point => [a[0] + ((b[0] - a[0]) * k) / steps, a[1] + ((b[1] - a[1]) * k) / steps];
+    const [first, last] = [near(a, r), near(b, r)];
+    return first.some((p) => last.some((q) => q !== p)) && Array.from({ length: steps - 1 }, (_, k) => at(k + 1)).every((p) => near(p, r).length > 0);
+  };
   rooms.forEach((room, r) => {
     const { sections, closed } = room;
     const last = sections.length - 1;
@@ -1886,7 +1899,8 @@ function setRoomWalls(rooms: PassageRoom[]): void {
         .map(([t0, t1]): [Point, Point] => [
           [a[0] + (b[0] - a[0]) * t0, a[1] + (b[1] - a[1]) * t0],
           [a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1],
-        ]);
+        ])
+        .filter((piece) => !between(piece, r));
     });
   });
 }
