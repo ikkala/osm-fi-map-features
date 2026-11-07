@@ -1,7 +1,7 @@
 // OSM parsing and tiling together, on a small hand-made Overpass response.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { areaKind, compassDegrees, elementsWithin, inheritFromOutlines, meters, mergeOverpass, openDoorways, openPassages, openRailHalls, overpassQuery, parseOsm, type Building, type OverpassResponse, type Rail, type Road, type Tree } from "./osm.ts";
+import { areaKind, compassDegrees, elementsWithin, inheritFromOutlines, meters, mergeOverpass, openDoorways, openPassages, openRailHalls, overpassQuery, parseOsm, passagesOnToWalls, type Building, type OverpassResponse, type Rail, type Road, type Tree } from "./osm.ts";
 import type { Point } from "./geometry.ts";
 import { LocalProjection } from "./projection.ts";
 import { cutIntoTiles, tilePieces, tilesCovering, tilesCoveringAny } from "./tiles.ts";
@@ -726,6 +726,18 @@ test("a building passage tagged short of its building's wall, where a way goes o
   );
   // the walls astride each end's corner open
   assert.deepEqual([...new Set(walls("w80", arcade))], [0, 40]);
+});
+
+test("a passage is carried on through its wall where a way on the ground goes on from it, whatever its layer", () => {
+  const office: Building = { osm: "w1", kind: "office", part: false, hasParts: false, height: 15, minHeight: 0, polygon: { outer: [[0, 0], [40, 0], [40, 10], [0, 10]], holes: [] } };
+  const way = (osm: string, line: Point[], layer: number, tunnel = false): Road => ({ osm, kind: "footway", width: 2, layer, bridge: false, tunnel, line });
+  // an arcade a layer over the sidewalk going on from its end on the west wall
+  const arcade = way("w2", [[20, 8], [0, 8]], 1);
+  const passage = { line: arcade.line, width: 2, height: 3 };
+  const on = passagesOnToWalls([{ road: arcade, passage }], [arcade, way("w3", [[0, 8], [-10, 8]], 0)], [office]);
+  assert.deepEqual(on.map((p) => p.line.map((q) => q.map(Math.round))), [[[1, 8], [-1, 8]]]);
+  // not into a tunnel going on
+  assert.deepEqual(passagesOnToWalls([{ road: arcade, passage }], [arcade, way("w4", [[0, 8], [-10, 8]], -1, true)], [office]), []);
 });
 
 test("a tunnel through a building is taken for a passage, a ramp into it or a deep tunnel is not", () => {
