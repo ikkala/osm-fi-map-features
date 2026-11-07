@@ -1785,9 +1785,10 @@ const BEHIND_WALL_M = 0.1;
 
 /**
  * Sets the walls of a building's passage rooms: along both sides of each, and across its closed ends,
- * less where another room goes on behind them (a way beside it or across it: one space). Rooms overlapping
- * on the same side of a wall, as a passage carried on through its building's wall (passagesOnToWalls) over the
- * passage's own, both keep it.
+ * less where another room goes on behind them (a way beside it or across it: one space) or where they lie on
+ * another room's open end. Rooms overlapping on the same side of a wall, as a passage carried on through its
+ * building's wall (passagesOnToWalls) over the passage's own, both keep it; the passage's end just inside the wall
+ * is open where the carried-on room goes out through it.
  */
 function setRoomWalls(rooms: PassageRoom[]): void {
   const quads = rooms.map((room) =>
@@ -1810,6 +1811,12 @@ function setRoomWalls(rooms: PassageRoom[]): void {
       walls.push([sections[i][1], sections[i - 1][1]]);
     }
     const others = quads.filter((_, o) => o !== r).flat();
+    const openEnds = rooms
+      .filter((_, o) => o !== r)
+      .flatMap((other): [Point, Point][] => [
+        ...(other.closed[0] ? [] : [other.sections[0]]),
+        ...(other.closed[1] ? [] : [other.sections[other.sections.length - 1]]),
+      ]);
     room.walls = walls.flatMap(([a, b]) => {
       const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
       if (length < 1e-9) {
@@ -1821,7 +1828,11 @@ function setRoomWalls(rooms: PassageRoom[]): void {
         [a[0] + be, a[1] + bn],
         [b[0] + be, b[1] + bn],
       ];
-      const spans = others.map((quad) => spanInside(ba, bb, quad)).filter((span) => span !== undefined);
+      const spans = [
+        ...others.map((quad) => spanInside(ba, bb, quad)),
+        // on another room's open end, where it goes on out through its building's wall
+        ...openEnds.map(([p, q]) => spanOn(a, b, p, q)),
+      ].filter((span) => span !== undefined);
       return spansLeft(spans)
         .filter(([t0, t1]) => (t1 - t0) * length > SAME_PLACE_M)
         .map(([t0, t1]): [Point, Point] => [
@@ -1830,6 +1841,30 @@ function setRoomWalls(rooms: PassageRoom[]): void {
         ]);
     });
   });
+}
+
+/** A wall this close (m) to a room's open end lies on it */
+const ON_END_M = 0.05;
+
+/** The span (0 .. 1) of the segment a -> b on the segment p -> q (within ON_END_M of it), or undefined */
+function spanOn(a: Point, b: Point, p: Point, q: Point): [number, number] | undefined {
+  const length = Math.hypot(q[0] - p[0], q[1] - p[1]);
+  if (length < 1e-9) {
+    return undefined;
+  }
+  const [ue, un] = [(q[0] - p[0]) / length, (q[1] - p[1]) / length];
+  const off = (x: Point) => Math.abs((x[0] - p[0]) * un - (x[1] - p[1]) * ue);
+  if (off(a) > ON_END_M || off(b) > ON_END_M) {
+    return undefined;
+  }
+  // a and b along p -> q, and the span of a -> b within 0 .. length
+  const [sa, sb] = [(a[0] - p[0]) * ue + (a[1] - p[1]) * un, (b[0] - p[0]) * ue + (b[1] - p[1]) * un];
+  if (Math.abs(sb - sa) < 1e-9) {
+    return undefined;
+  }
+  const t0 = Math.max(0, Math.min((-ON_END_M - sa) / (sb - sa), (length + ON_END_M - sa) / (sb - sa)));
+  const t1 = Math.min(1, Math.max((-ON_END_M - sa) / (sb - sa), (length + ON_END_M - sa) / (sb - sa)));
+  return t0 < t1 ? [t0, t1] : undefined;
 }
 
 /**
