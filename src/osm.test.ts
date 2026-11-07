@@ -846,6 +846,24 @@ test("a way through a building gets a room walled off from the building's inside
     ],
   );
 
+  // a passage ending just inside the wall, carried on out through it by another: its end there is open, its
+  // sides walled on
+  const mouth = building([[0, 0], [20, 0], [20, 10], [0, 10]]);
+  openPassages(
+    [mouth],
+    [
+      { line: [[0.1, 5], [25, 5]], width: 2, height: 3 },
+      { line: [[1.1, 5], [-0.9, 5]], width: 2, height: 3 },
+    ],
+  );
+  assert.deepEqual(
+    rooms(mouth).map((room) => room.walls),
+    [
+      [[0.1, 6, 20, 6], [20, 4, 0.1, 4]],
+      [[1.1, 4, 0, 4], [0, 6, 1.1, 6]],
+    ],
+  );
+
   // a tunnel in a cut under a building (no height) only opens its walls
   const station = building([[0, 0], [20, 0], [20, 10], [0, 10]]);
   openPassages([station], [{ line: [[-5, 5], [25, 5]], width: 2, height: 0 }]);
