@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { openPassages, type Building } from "./osm.ts";
-import { passagesUpSlopes, raisePassages } from "./raisedPassages.ts";
+import { matchOpeningsToRooms, passagesUpSlopes, raisePassages } from "./raisedPassages.ts";
 
 function block(): Building {
   return {
@@ -75,4 +75,17 @@ test("rooms meeting at an opening between two parts take the higher ceiling, and
   }
   const wall = west.passages?.find((o) => Math.abs(o.from[0] - 12) < 1e-6);
   assert.ok(wall && wall.ground !== undefined && Math.abs(wall.ground - 85) < 0.01);
+});
+
+test("rooms side by side, one space, take the higher ceiling; rooms apart keep their own", () => {
+  const building = block();
+  // a walk and steps beside it, half a metre apart, of different heights; and a way of its own farther off
+  openPassages([building], [
+    { line: [[-3, -2], [15, -2]], width: 2, height: 3 },
+    { line: [[-3, 0.4], [6, 0.4]], width: 2, height: 2.5 },
+    { line: [[-3, 4], [15, 4]], width: 1, height: 2 },
+  ]);
+  matchOpeningsToRooms([building]);
+  const ceilings = (building.passageRooms ?? []).map((room) => (room.ground ?? 84) + room.height);
+  assert.deepEqual(ceilings, [87, 87, 86]);
 });

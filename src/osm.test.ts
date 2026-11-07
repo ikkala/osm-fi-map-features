@@ -895,6 +895,16 @@ test("a way through a building gets a room walled off from the building's inside
     ],
   );
 
+  // ways along each other a little apart (a walk beside steps, a rail between them) are one space: their rooms meet
+  // halfway, no walls between them, the same ceiling
+  const beside = building([[0, 0], [20, 0], [20, 10], [0, 10]]);
+  openPassages([beside], [{ line: [[-5, 4], [25, 4]], width: 2, height: 3 }, { line: [[-5, 6.4], [10, 6.4]], width: 2, height: 2.5 }]);
+  const [walk, steps] = defined(beside.passageRooms);
+  // the steps' room's south side, from the wall to its end, now on the walk's north side halfway
+  assert.deepEqual(steps.sections.map(round), [[0, 7.4, 0, 5.2], [10, 7.4, 10, 5.2]]);
+  assert.ok(!walk.walls.some(([a, b]) => a[0] < 10 && b[0] < 10 && Math.abs(a[1] - 5) < 0.3 && Math.abs(b[1] - 5) < 0.3), `walls ${walk.walls.map(round)}`);
+  assert.ok(!steps.walls.some(([a, b]) => Math.abs(a[1] - 5.2) < 0.01 && Math.abs(b[1] - 5.2) < 0.01), `walls ${steps.walls.map(round)}`);
+
   // a tunnel in a cut under a building (no height) only opens its walls
   const station = building([[0, 0], [20, 0], [20, 10], [0, 10]]);
   openPassages([station], [{ line: [[-5, 5], [25, 5]], width: 2, height: 0 }]);

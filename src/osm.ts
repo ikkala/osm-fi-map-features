@@ -16,6 +16,7 @@ import {
   distanceToRing,
   extent,
   indexBoxes,
+  nearestOnLine,
   orientedBox,
   pointInPolygon,
   pointInRing,
@@ -1628,6 +1629,7 @@ export function openPassages(buildings: Building[], passages: Passage[], rooms =
     }
   }
   for (const b of roomed) {
+    joinNearRooms(b.passageRooms ?? []);
     setRoomWalls(b.passageRooms ?? []);
   }
 }
@@ -1783,6 +1785,56 @@ function roomsThrough(polygon: Polygon, passage: Passage): PassageRoom[] {
     rooms.push(room);
   }
   return rooms;
+}
+
+/** Rooms of a building nearer than this (m) side by side are one space, as ways along each other with a rail between */
+export const NEAR_ROOMS_M = 0.6;
+
+/**
+ * Rooms of a building nearer than NEAR_ROOMS_M side by side meet halfway: each corner of their sections that near
+ * another room (not in it) moves halfway to it, an open end's only along it, on the building's wall; so that no strip
+ * of ceiling is missing between them and their walls there go (setRoomWalls: another room behind them)
+ */
+function joinNearRooms(rooms: PassageRoom[]): void {
+  const quads = rooms.map((room) => room.sections.slice(1).map(([left, right], i): Point[] => [room.sections[i][0], room.sections[i][1], right, left]));
+  // an open end's corners move only along it, on the building's wall
+  const open = (room: PassageRoom, i: number) => (i === 0 && !room.closed[0]) || (i === room.sections.length - 1 && !room.closed[1]);
+  const moved = rooms.map((room, r) =>
+    room.sections.map((section, i): [Point, Point] => {
+      const [left, right] = [toward(section[0], r), toward(section[1], r)];
+      return open(room, i) ? [along(section, left), along(section, right)] : [left, right];
+    }),
+  );
+  rooms.forEach((room, r) => {
+    room.sections = moved[r];
+  });
+
+  // a point onto a section's line
+  function along([a, b]: [Point, Point], p: Point): Point {
+    const [de, dn] = [b[0] - a[0], b[1] - a[1]];
+    const length2 = de * de + dn * dn;
+    const k = length2 > 0 ? ((p[0] - a[0]) * de + (p[1] - a[1]) * dn) / length2 : 0;
+    return [a[0] + de * k, a[1] + dn * k];
+  }
+
+  // a corner halfway to the nearest other room within NEAR_ROOMS_M, unless it is in one
+  function toward(p: Point, r: number): Point {
+    let nearest: Point | undefined;
+    let distance = NEAR_ROOMS_M;
+    for (const [o, others] of quads.entries()) {
+      for (const quad of o === r ? [] : others) {
+        if (pointInRing(p, quad)) {
+          return p;
+        }
+        const near = nearestOnLine([...quad, quad[0]], p);
+        if (near.distance < distance) {
+          distance = near.distance;
+          nearest = near.point;
+        }
+      }
+    }
+    return nearest ? [(p[0] + nearest[0]) / 2, (p[1] + nearest[1]) / 2] : p;
+  }
 }
 
 /** A room's wall goes where another room is this far (m) behind it */
