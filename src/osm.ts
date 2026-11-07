@@ -1780,9 +1780,14 @@ function roomsThrough(polygon: Polygon, passage: Passage): PassageRoom[] {
   return rooms;
 }
 
+/** A room's wall goes where another room is this far (m) behind it */
+const BEHIND_WALL_M = 0.1;
+
 /**
  * Sets the walls of a building's passage rooms: along both sides of each, and across its closed ends,
- * less where they are in another room (a way beside it or across it: one space).
+ * less where another room goes on behind them (a way beside it or across it: one space). Rooms overlapping
+ * on the same side of a wall, as a passage carried on through its building's wall (passagesOnToWalls) over the
+ * passage's own, both keep it.
  */
 function setRoomWalls(rooms: PassageRoom[]): void {
   const quads = rooms.map((room) =>
@@ -1807,7 +1812,16 @@ function setRoomWalls(rooms: PassageRoom[]): void {
     const others = quads.filter((_, o) => o !== r).flat();
     room.walls = walls.flatMap(([a, b]) => {
       const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      const spans = others.map((quad) => spanInside(a, b, quad)).filter((span) => span !== undefined);
+      if (length < 1e-9) {
+        return [];
+      }
+      // the room is on a wall's right: what is a little behind it, on its left
+      const [be, bn] = [(-(b[1] - a[1]) / length) * BEHIND_WALL_M, ((b[0] - a[0]) / length) * BEHIND_WALL_M];
+      const [ba, bb]: [Point, Point] = [
+        [a[0] + be, a[1] + bn],
+        [b[0] + be, b[1] + bn],
+      ];
+      const spans = others.map((quad) => spanInside(ba, bb, quad)).filter((span) => span !== undefined);
       return spansLeft(spans)
         .filter(([t0, t1]) => (t1 - t0) * length > SAME_PLACE_M)
         .map(([t0, t1]): [Point, Point] => [
