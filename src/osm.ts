@@ -592,6 +592,13 @@ const HEIGHTS_BY_TYPE = new Map<string, { perWidth: number; max: number }>([
 ]);
 /** Least height of an untagged roof over a road (vehicles in Finland may be 4.4 m tall) */
 const ROOF_OVER_ROAD_M = 5;
+/** A building passage ending inside its building goes on straight to the wall when the wall is this near (m) */
+const PASSAGE_ON_M = 10;
+/** A passage's end this near (m) a wall of its building is on the wall */
+const AT_WALL_M = 0.3;
+/** A passage gone on to a wall goes this far (m) past it, so that it crosses the wall */
+const PAST_WALL_M = 1;
+
 /** How tall a passage through a building is when its way has no maxheight: for vehicles, and for people */
 const PASSAGE_HEIGHT_M = 4;
 const WALKWAY_PASSAGE_HEIGHT_M = 3;
@@ -904,6 +911,8 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   const passages: Passage[] = [];
   // tunnels and covered ways (arcades too) that may be passages through buildings tagged otherwise
   const maybePassages: { road: Road; passage: Passage; arcade: boolean }[] = [];
+  // the building passages tagged so, for those that stop short of their building's wall (passagesOnToWalls)
+  const tagged: { road: Road; passage: Passage }[] = [];
   const covered: Road[] = [];
   const levels = new Map<Road | Rail, number[]>();
   // the roads through buildings: building passages, and tunnels and covered ways found to be
@@ -969,6 +978,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
           const passage = { line, width, height: meters(road.maxheight) ?? (walkway ? WALKWAY_PASSAGE_HEIGHT_M : PASSAGE_HEIGHT_M) };
           if (road.tunnel === "building_passage") {
             passages.push(passage);
+            tagged.push({ road: way, passage });
             through.add(way);
           } else if ((way.tunnel || road.covered === "yes" || road.covered === "arcade") && way.layer >= -1) {
             maybePassages.push({ road: way, passage, arcade: road.covered === "arcade" });
@@ -1103,6 +1113,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   }
   features.buildings.push(...fillUnderFloatingParts(features));
   groundFloatingBuildings(features);
+  passages.push(...passagesOnToWalls(tagged, features.roads, features.buildings));
   openPassages(features.buildings, passages);
   raiseRoofsOverRoads(features);
   return {
@@ -2423,4 +2434,65 @@ function sameLatLon(a: LatLon, b: LatLon): boolean {
 function normalize(polygon: Polygon): Polygon {
   const orient = (ring: Ring, ccw: boolean) => (ringArea(ring) > 0 === ccw ? ring : [...ring].reverse());
   return { outer: orient(polygon.outer, true), holes: polygon.holes.map((hole) => orient(hole, false)) };
+}
+
+/**
+ * Building passages that end at their building's wall or short of it, where an untagged way goes on (on the
+ * passage's layer, neither a tunnel nor a bridge): an end on the wall, within AT_WALL_M of it (at a corner), does not
+ * cross it, and OSM's tag is at times split off a little inside. The passage goes on straight from its last stretch
+ * to the wall and PAST_WALL_M through it, when the wall is within PASSAGE_ON_M; returns those passages, which open
+ * the wall there (openPassages, which opens a wall once however many passages cross it there).
+ */
+export function passagesOnToWalls(tagged: { road: Road; passage: Passage }[], roads: Road[], buildings: Building[]): Passage[] {
+  const passageRoads = new Set(tagged.map(({ road }) => road));
+  const at = new Map<string, Road[]>();
+  for (const road of roads) {
+    for (const p of road.line) {
+      const list = at.get(pointKey(p)) ?? [];
+      list.push(road);
+      at.set(pointKey(p), list);
+    }
+  }
+  const boxes = buildings.map((b) => bounds(b.polygon.outer));
+  const found: Passage[] = [];
+  for (const { road, passage } of tagged) {
+    const line = road.line;
+    for (const [end, before] of [
+      [line[0], line[1]],
+      [line[line.length - 1], line[line.length - 2]],
+    ]) {
+      const goesOn = (at.get(pointKey(end)) ?? []).filter((r) => r !== road && !passageRoads.has(r));
+      if (goesOn.length === 0 || goesOn.some((r) => r.tunnel || r.bridge || r.layer !== road.layer)) {
+        continue;
+      }
+      const inside = buildings.find(
+        (b, i) =>
+          !b.hasParts &&
+          b.minHeight <= passage.height &&
+          end[0] >= boxes[i].minX && end[0] <= boxes[i].maxX && end[1] >= boxes[i].minY && end[1] <= boxes[i].maxY &&
+          (pointInPolygon(end, b.polygon) || distanceToRing(end, b.polygon.outer) <= AT_WALL_M),
+      );
+      const length = Math.hypot(end[0] - before[0], end[1] - before[1]);
+      if (!inside || length < 1e-9) {
+        continue;
+      }
+      const along = (d: number): Point => [end[0] + ((end[0] - before[0]) * d) / length, end[1] + ((end[1] - before[1]) * d) / length];
+      // the first half meter on out of the building, then the wall in it, by halving
+      let step = 0.5;
+      while (step <= PASSAGE_ON_M && pointInPolygon(along(step), inside.polygon)) {
+        step += 0.5;
+      }
+      if (step > PASSAGE_ON_M) {
+        continue;
+      }
+      let [lo, hi] = [step - 0.5, step];
+      for (let i = 0; i < 20; i++) {
+        const mid = (lo + hi) / 2;
+        [lo, hi] = pointInPolygon(along(mid), inside.polygon) ? [mid, hi] : [lo, mid];
+      }
+      // from inside, so that it crosses the wall clear of its end (one just outside, past a corner, crossed nowhere)
+      found.push({ ...passage, line: [along(-PAST_WALL_M), along(hi + PAST_WALL_M)] });
+    }
+  }
+  return found;
 }
