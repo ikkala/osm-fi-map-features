@@ -2,7 +2,7 @@
 // walls and has its room from the deck up, the wall staying whole under it.
 import { deckAt } from "./bridges.ts";
 import { nearestOnLine, type Point } from "./geometry.ts";
-import type { Building } from "./osm.ts";
+import type { Building, PassageRoom } from "./osm.ts";
 
 /** An opening or a room's section is the way's when its middle is within this of the way's side (m) */
 const SIDE_M = 0.5;
@@ -81,5 +81,45 @@ export function passagesUpSlopes(buildings: Building[], heightAt: (e: number, n:
       }
     }
   }
+  matchOpeningsToRooms(buildings);
   return count;
+}
+
+/** A room's end section is at an opening when their ends are this close (m) */
+const AT_OPENING_M = 0.2;
+
+/**
+ * Where rooms of passages end at an opening (a building's door, or a wall between two parts with a room on each
+ * side), all take the highest ceiling of them, and the opening reaches up to it from its own ground: no strip of wall
+ * or step of ceiling over the way where the ground under it slopes from one room to the next.
+ */
+export function matchOpeningsToRooms(buildings: Building[]): void {
+  const ends: { room: PassageRoom; base: number; end: [Point, Point] }[] = [];
+  for (const b of buildings) {
+    if (b.base === undefined) {
+      continue;
+    }
+    for (const room of b.passageRooms ?? []) {
+      ends.push({ room, base: b.base, end: room.sections[0] }, { room, base: b.base, end: room.sections[room.sections.length - 1] });
+    }
+  }
+  const near = (p: Point, q: Point) => Math.hypot(p[0] - q[0], p[1] - q[1]) <= AT_OPENING_M;
+  for (const b of buildings) {
+    if (b.base === undefined) {
+      continue;
+    }
+    for (const o of b.passages ?? []) {
+      const at = ends.filter(({ end: [l, r] }) => (near(l, o.from) && near(r, o.to)) || (near(l, o.to) && near(r, o.from)));
+      if (at.length === 0) {
+        continue;
+      }
+      const ceiling = Math.max(...at.map(({ room, base }) => (room.ground ?? base) + room.height));
+      for (const { room, base } of at) {
+        if ((room.ground ?? base) + room.height < ceiling) {
+          room.ground = ceiling - room.height;
+        }
+      }
+      o.height = Math.max(o.height, ceiling - (o.ground ?? b.base));
+    }
+  }
 }

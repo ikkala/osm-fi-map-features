@@ -55,3 +55,24 @@ test("a passage up a slope over the building's base opens its walls and has its 
   assert.equal(Math.round(Math.min(...(building.passages ?? []).map((o) => o.ground ?? 0))), 86);
   assert.deepEqual((building.passageRooms ?? []).map((room) => room.ground), [86]);
 });
+
+test("rooms meeting at an opening between two parts take the higher ceiling, and the openings reach up to their rooms'", () => {
+  // two parts side by side on a slope down to the east, a way through both
+  const part = (osm: string, west: number): Building => ({ ...block(), osm, part: true, polygon: { outer: [[west, -5], [west + 12, -5], [west + 12, 5], [west, 5]], holes: [] } });
+  const [west, east] = [part("w1", 0), part("w2", 12)];
+  // 86 m at the west end to 84 at the east end
+  const heightAt = (e: number) => 86 - e / 12;
+  openPassages([west, east], [{ line: [[-3, 0], [27, 0]], width: 2.5, height: 3 }]);
+  passagesUpSlopes([west, east], heightAt);
+  const ceilings = [west, east].flatMap((b) => (b.passageRooms ?? []).map((room) => (room.ground ?? 84) + room.height));
+  assert.equal(ceilings.length, 2);
+  assert.ok(Math.abs(ceilings[0] - ceilings[1]) < 1e-9, `ceilings ${ceilings}`);
+  // every opening reaches the ceiling from its own ground, which stays
+  for (const b of [west, east]) {
+    for (const o of b.passages ?? []) {
+      assert.ok(Math.abs((o.ground ?? 84) + o.height - ceilings[0]) < 1e-9, `${b.osm} opening at ${o.from} up to ${(o.ground ?? 84) + o.height}`);
+    }
+  }
+  const wall = west.passages?.find((o) => Math.abs(o.from[0] - 12) < 1e-6);
+  assert.ok(wall && wall.ground !== undefined && Math.abs(wall.ground - 85) < 0.01);
+});
