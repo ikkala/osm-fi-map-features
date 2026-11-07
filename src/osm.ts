@@ -1109,6 +1109,8 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
       passages.push(passage);
       found.add(road);
       through.add(road);
+      // carried on through the wall it ends at, as a tagged one
+      tagged.push({ road, passage });
     }
   }
   features.buildings.push(...fillUnderFloatingParts(features));
@@ -2486,8 +2488,9 @@ function normalize(polygon: Polygon): Polygon {
 }
 
 /**
- * Building passages that end at their building's wall or short of it, where an untagged way goes on (on the
- * passage's layer, neither a tunnel nor a bridge): an end on the wall, within AT_WALL_M of it (at a corner), does not
+ * Building passages, tagged or found to run through buildings (an arcade, a tunnel), that end at their building's wall
+ * or short of it, where another way goes on (on the ground as the passage is, neither a tunnel nor a bridge, whatever
+ * its layer): an end on the wall, within AT_WALL_M of it (at a corner), does not
  * cross it, and OSM's tag is at times split off a little inside. The passage goes on straight from its last stretch
  * to the wall and PAST_WALL_M through it, when the wall is within PASSAGE_ON_M; returns those passages, which open
  * the wall there (openPassages, which opens a wall once however many passages cross it there).
@@ -2511,7 +2514,9 @@ export function passagesOnToWalls(tagged: { road: Road; passage: Passage }[], ro
       [line[line.length - 1], line[line.length - 2]],
     ]) {
       const goesOn = (at.get(pointKey(end)) ?? []).filter((r) => r !== road && !passageRoads.has(r));
-      if (goesOn.length === 0 || goesOn.some((r) => r.tunnel || r.bridge || r.layer !== road.layer)) {
+      // ways on the ground go on from it, whatever their layers (an arcade under its building's floors is often
+      // tagged a layer over the street's)
+      if (goesOn.length === 0 || goesOn.some((r) => r.tunnel || r.bridge || r.layer < 0 !== road.layer < 0)) {
         continue;
       }
       const inside = buildings.find(

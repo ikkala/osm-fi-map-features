@@ -712,6 +712,20 @@ test("a building passage tagged short of its building's wall, where a way goes o
     origin,
   );
   assert.deepEqual([walls("w70", shut), walls("w72", shut), walls("w75", shut)], [[20], [20], [40]]);
+  // an arcade along the front inside the outline, a layer over the sidewalks going on from its ends on the walls,
+  // is carried on through both
+  const { features: arcade } = parseOsm(
+    [
+      // the arcade's ends are corners of the outline, as where it is drawn to the wall's nodes
+      { type: "way", id: 80, tags: { building: "office", layer: "2" }, geometry: [at(0, 0), at(40, 0), at(40, 8), at(40, 10), at(0, 10), at(0, 8), at(0, 0)] },
+      { type: "way", id: 81, tags: { highway: "footway", covered: "arcade", layer: "1" }, geometry: [at(0, 8), at(40, 8)] },
+      { type: "way", id: 82, tags: { highway: "footway" }, geometry: [at(-10, 8), at(0, 8)] },
+      { type: "way", id: 83, tags: { highway: "footway" }, geometry: [at(40, 8), at(50, 8)] },
+    ],
+    origin,
+  );
+  // the walls astride each end's corner open
+  assert.deepEqual([...new Set(walls("w80", arcade))], [0, 40]);
 });
 
 test("a tunnel through a building is taken for a passage, a ramp into it or a deep tunnel is not", () => {
