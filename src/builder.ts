@@ -498,9 +498,9 @@ export class MapBuilder {
     // after the register, which tells the use of a building=yes
     const windowed = assignWindows(features.buildings);
     logger.log(`${windowed} of ${features.buildings.filter((b) => !b.hasParts).length} buildings get windows`);
-    // OSM entrances, and guessed doors for buildings with windows but none
+    // OSM entrances (with those new in the local edits, or newly tagged there), and guessed doors for buildings with windows but none
     try {
-      const { response: entranceResponse, cached: entrancesCached } = await overpass("OSM entrances", entranceQuery);
+      const { response: entranceResponse, cached: entrancesCached } = await overpass("OSM entrances", entranceQuery, true, false);
       const entrances = parseEntrances(entranceResponse.elements, origin);
       const placed = assignEntrances(features.buildings, entrances);
       const guessed = guessEntrances(features.buildings, features.roads);
