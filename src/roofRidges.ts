@@ -137,7 +137,8 @@ function shares(chain: Ring): number[] {
 
 /**
  * A slope's triangles, its points added to faces: strips from its side to the ridge, going on along whichever is
- * behind, so each runs from the eaves up to the ridge; and not out of the slope where its side turns in.
+ * behind, so each runs from the eaves up to the ridge; and not out of the slope, nor folded under it, where its side
+ * turns in.
  */
 function addSlope(faces: RoofFaces, slope: Slope): void {
   // a side ending on another ridge (a wing's ridge running into the main one) goes on along it: its points at the
@@ -159,7 +160,10 @@ function addSlope(faces: RoofFaces, slope: Slope): void {
   const s = shares(side);
   const r = shares(ridge);
   const ring = slope.ring.map(({ point }) => point);
-  const inside = (a: Point, b: Point, c: Point) => pointInRing([(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3], ring);
+  // a triangle turning against the slope (side on, ridge back) lies folded under it where the side turns in
+  const turn = Math.sign(ringArea([...side, ...[...ridge].reverse()].map(({ point }) => point)));
+  const upright = (a: Point, b: Point, c: Point) => Math.sign((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) === turn;
+  const inside = (a: Point, b: Point, c: Point) => upright(a, b, c) && pointInRing([(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3], ring);
   const add = (a: number, b: number, c: number) => {
     const [p, q, t] = [a, b, c].map((k) => [faces.points[3 * (base + k)], faces.points[3 * (base + k) + 1]]);
     if (Math.abs((q[0] - p[0]) * (t[1] - p[1]) - (q[1] - p[1]) * (t[0] - p[0])) > 1e-9) {
