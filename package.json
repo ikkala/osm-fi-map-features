@@ -26,6 +26,7 @@
   "dependencies": {
     "earcut": "^3.2.3",
     "laz-perf": "^0.0.7",
+    "polygon-clipping": "^0.15.7",
     "proj4": "^2.22.0"
   },
   "devDependencies": {
