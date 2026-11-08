@@ -31,6 +31,7 @@ import { placeStreetNodes } from "./streets.ts";
 import { cutIntoTiles, latticeProjection, tileHeights, tileName, tilePieces, tilesCoveringAny, type Tile, type TileKey } from "./tiles.ts";
 import { setPlatformTops } from "./platforms.ts";
 import { pitchBoxes, setLevelTops } from "./pitches.ts";
+import { splitByMeasuredParts } from "./measuredParts.ts";
 import { applyRoofTops, fetchRoofTops, measurable, ROOF_TOP_SOURCES, type RoofTopSource } from "./roofTops.ts";
 import { setTrackBeds } from "./trackbeds.ts";
 import { decksOver, lowerUnderBridges, tramBedCeiling, underBridges } from "./underbridges.ts";
@@ -610,18 +611,21 @@ export class MapBuilder {
           const partsCached = asked.cached;
           const ring = (points: GeoPoint[]) => points.map((p) => toMeters(p.latitude, p.longitude));
           const nearParts = parts.filter((p) => near(p.outer).length > 0);
-          const match = applyRoofTops(
-            notRaised,
-            nearParts.map((p) => ({ polygon: { outer: ring(p.outer), holes: p.holes.map(ring) }, top: p.top })),
-            laserRoof,
-          );
+          const measuredParts = nearParts.map((p) => ({ polygon: { outer: ring(p.outer), holes: p.holes.map(ring) }, top: p.top }));
+          // outlines holding parts of clearly different heights become outlines with those parts first
+          const split = splitByMeasuredParts(notRaised, measuredParts);
+          for (const part of split.parts) {
+            features.buildings.push(part);
+          }
+          const match = applyRoofTops(notRaised, measuredParts, laserRoof);
           lowered += match.lowered;
           logger.log(
             `${source.title}: ${parts.length} parts (${partsCached ? "cached" : "fetched"}), ${match.heights} buildings' heights measured ` +
               `(${match.roofs} given a hipped roof, ${match.lowered} down to the laser scanning's roof), ` +
-              `${match.uncovered} too little covered, ${match.rejected} with tops fitting neither their storeys nor a roof`,
+              `${match.uncovered} too little covered, ${match.rejected} with tops fitting neither their storeys nor a roof, ` +
+              `${split.split} split into ${split.parts.length} parts of their heights (${split.failed} that could not be cut)`,
           );
-          if (match.heights > 0) {
+          if (match.heights > 0 || split.split > 0) {
             otherAttributions.push(source.attribution);
           }
         } catch (err) {
