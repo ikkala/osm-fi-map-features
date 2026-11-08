@@ -135,3 +135,21 @@ test("a ridge ending at a corner, and a second ridge across a slope", () => {
   assert.equal(shareAt(faces, [10, 2]), 1);
   assert.equal(shareAt(faces, [0, 10]), 0);
 });
+
+test("a slope's side turning in near the ridge's end folds no triangle under it", () => {
+  // a block whose ridge runs from a gable's middle to a hip, its side beyond the gable notched back
+  const block = building([[-63.6, -511.6], [-67.1, -508.7], [-70.6, -505.9], [-66.3, -499.7], [-66.8, -498.2], [-63.7, -490], [-50.6, -495.3], [-46.8, -498.7], [-42.3, -504.3], [-52.9, -508]]);
+  assert.equal(ridgeRoofs([block], [[[-67.1, -508.7], [-52.5, -499.5]]]), 1);
+  const faces = block.roofFaces;
+  assert.ok(faces);
+  // the triangles cover the outline once: none folded over another
+  const at = (i: number) => [faces.points[3 * i], faces.points[3 * i + 1]];
+  let covered = 0;
+  for (let t = 0; t < faces.triangles.length; t += 3) {
+    const [a, b, c] = [0, 1, 2].map((k) => at(faces.triangles[t + k]));
+    covered += Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / 2;
+  }
+  const outer = block.polygon.outer;
+  const area = Math.abs(outer.reduce((sum, [x, y], i) => sum + x * outer[(i + 1) % outer.length][1] - outer[(i + 1) % outer.length][0] * y, 0)) / 2;
+  assert.ok(Math.abs(covered - area) < 0.01, `${covered} over ${area}`);
+});
