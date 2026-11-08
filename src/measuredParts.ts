@@ -1,11 +1,11 @@
 // Buildings whose outline holds parts of clearly different heights in a city's 3D building parts (roofTops.ts), such
 // as a hall, a low link and a tower drawn as one outline, become outlines with parts: the measured parts within the
 // outline, those of about one height that touch merged, each of their own height; what of the outline no part covers
-// goes to the part nearest it. An outline a way crosses (into a garage, through a passage, in a tunnel under it) is
-// left as it is, as what is made of the way's room in the building is made for its outline.
+// goes to the part nearest it. An outline a way crosses (into a garage, through a passage, in a tunnel under or
+// beside it) is left as it is: its parts would stand in the way's room or block it.
 import clipping from "polygon-clipping";
 import { storeyHeight } from "./ages.ts";
-import { distanceToRing, pointInPolygon, ringArea, ringCentroid, type Point, type Polygon, type Ring } from "./geometry.ts";
+import { distanceToRing, distanceToSegment, pointInPolygon, ringArea, ringCentroid, type Point, type Polygon, type Ring } from "./geometry.ts";
 import { bounds, type Building, type Road } from "./osm.ts";
 import { measurable, type MeasuredPart } from "./roofTops.ts";
 
@@ -20,6 +20,8 @@ const SPLIT_M = 4;
 const SAME_M = 1.5;
 /** A top lower than this (m) is no building's */
 const MIN_TOP_M = 2;
+/** A tunnel this near (m) beside its width is under the outline: its room reaches out so far */
+const TUNNEL_ROOM_M = 1;
 /** The parts are indexed in square cells this big (m) */
 const CELL_M = 50;
 
@@ -106,17 +108,27 @@ function crossing(a: Point, b: Point, c: Point, d: Point): boolean {
   return side(a, b, c) * side(a, b, d) < 0 && side(c, d, a) * side(c, d, b) < 0;
 }
 
-/** Whether one of the ways runs into a polygon: a point of it inside, or a stretch crossing its rings */
+/** Whether segments ab and cd come within reach of each other (they do not cross) */
+function segmentsWithin(a: Point, b: Point, c: Point, d: Point, reach: number): boolean {
+  return Math.min(distanceToSegment(a, c, d), distanceToSegment(b, c, d), distanceToSegment(c, a, b), distanceToSegment(d, a, b)) <= reach;
+}
+
+/** Whether one of the ways runs into a polygon: a point of it inside, a stretch crossing its rings, or a tunnel within its room of them */
 function waysCrossing(roads: Road[]): (polygon: Polygon) => boolean {
-  const index = new Map<string, Point[][]>();
+  const index = new Map<string, { segment: Point[]; reach: number }[]>();
   for (const road of roads) {
+    const reach = road.tunnel ? road.width / 2 + TUNNEL_ROOM_M : 0;
     for (let i = 0; i + 1 < road.line.length; i++) {
       const segment = [road.line[i], road.line[i + 1]];
       const box = bounds(segment);
+      box.minX -= reach;
+      box.minY -= reach;
+      box.maxX += reach;
+      box.maxY += reach;
       for (let x = Math.floor(box.minX / CELL_M); x <= Math.floor(box.maxX / CELL_M); x++) {
         for (let y = Math.floor(box.minY / CELL_M); y <= Math.floor(box.maxY / CELL_M); y++) {
           const cell = index.get(`${x},${y}`) ?? [];
-          cell.push(segment);
+          cell.push({ segment, reach });
           index.set(`${x},${y}`, cell);
         }
       }
@@ -127,13 +139,15 @@ function waysCrossing(roads: Road[]): (polygon: Polygon) => boolean {
     const rings = [polygon.outer, ...polygon.holes];
     for (let x = Math.floor(box.minX / CELL_M); x <= Math.floor(box.maxX / CELL_M); x++) {
       for (let y = Math.floor(box.minY / CELL_M); y <= Math.floor(box.maxY / CELL_M); y++) {
-        for (const [a, b] of index.get(`${x},${y}`) ?? []) {
+        for (const { segment, reach } of index.get(`${x},${y}`) ?? []) {
+          const [a, b] = segment;
           if (pointInPolygon(a, polygon) || pointInPolygon(b, polygon)) {
             return true;
           }
           for (const ring of rings) {
             for (let i = 0; i < ring.length; i++) {
-              if (crossing(a, b, ring[i], ring[(i + 1) % ring.length])) {
+              const [c, d] = [ring[i], ring[(i + 1) % ring.length]];
+              if (crossing(a, b, c, d) || (reach > 0 && segmentsWithin(a, b, c, d, reach))) {
                 return true;
               }
             }

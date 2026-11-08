@@ -80,4 +80,6 @@ test("an outline is left as it is when its parts are of about one height, cover 
   assert.equal(splitByMeasuredParts([outline()], split, [road([[5, -5], [5, 3]])]).split, 0);
   assert.equal(splitByMeasuredParts([outline()], split, [road([[10, -5], [12, 15]])]).split, 0);
   assert.equal(splitByMeasuredParts([outline()], split, [road([[-5, -5], [50, -5]])]).split, 1);
+  // a tunnel beside it, its room reaching it
+  assert.equal(splitByMeasuredParts([outline()], split, [{ ...road([[-5, -2], [50, -2]]), tunnel: true }]).split, 0);
 });
