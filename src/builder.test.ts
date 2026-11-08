@@ -64,3 +64,32 @@ test("a map fetched in pieces asks two at a time, telling each piece fetched and
   assert.equal(mostAtOnce, 2);
   assert.deepEqual(await piecesTold(), []);
 });
+
+test("an entrance new in the local edits, or newly tagged on a node of them, is on its building", async (t) => {
+  const projection = new LocalProjection(origin);
+  const at = (east: number, north: number) => {
+    const g = projection.toGeo([east, north]);
+    return { lat: g.latitude, lon: g.longitude };
+  };
+  // a building 20 m by 10 m; Overpass knows no entrance
+  const corners = [at(100, 100), at(120, 100), at(120, 110), at(100, 110), at(100, 100)];
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request, init?: RequestInit) => {
+    if (String(input) !== DEFAULT_OVERPASS_URL) {
+      return new Response("", { status: 500 });
+    }
+    const query = String(init?.body ?? "");
+    const elements = query.includes("entrance") ? [] : [{ type: "way", id: 1, tags: { building: "yes" }, geometry: corners }];
+    return new Response(JSON.stringify({ elements }));
+  });
+  const sw = projection.toGeo([10, 10]);
+  const ne = projection.toGeo([200, 200]);
+  const area = { south: sw.latitude, west: sw.longitude, north: ne.latitude, east: ne.longitude };
+  const edits = [
+    { action: "create" as const, element: { type: "node" as const, id: -1, ...at(110, 100), tags: { entrance: "staircase" } } },
+    { action: "modify" as const, element: { type: "node" as const, id: 5, ...at(110, 110), tags: { entrance: "main" } } },
+  ];
+  const lines: string[] = [];
+  const logger = { log: (line: string) => lines.push(line), warn: () => {} };
+  await new MapBuilder({ origin, area, tileSizeM: 250, cache: memoryCache(), logger, edits, roofTops: [], treeRegisters: [] }).info();
+  assert.ok(lines.some((line) => line.startsWith("2 OSM entrances") && line.includes("2 on a building")), lines.join("\n"));
+});
