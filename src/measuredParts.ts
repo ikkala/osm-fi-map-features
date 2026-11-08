@@ -1,11 +1,12 @@
 // Buildings whose outline holds parts of clearly different heights in a city's 3D building parts (roofTops.ts), such
 // as a hall, a low link and a tower drawn as one outline, become outlines with parts: the measured parts within the
 // outline, those of about one height that touch merged, each of their own height; what of the outline no part covers
-// goes to the part nearest it.
+// goes to the part nearest it. An outline a way crosses (into a garage, through a passage, in a tunnel under it) is
+// left as it is, as what is made of the way's room in the building is made for its outline.
 import clipping from "polygon-clipping";
 import { storeyHeight } from "./ages.ts";
-import { distanceToRing, ringArea, ringCentroid, type Point, type Polygon, type Ring } from "./geometry.ts";
-import { bounds, type Building } from "./osm.ts";
+import { distanceToRing, pointInPolygon, ringArea, ringCentroid, type Point, type Polygon, type Ring } from "./geometry.ts";
+import { bounds, type Building, type Road } from "./osm.ts";
 import { measurable, type MeasuredPart } from "./roofTops.ts";
 
 /** A piece of a measured part within an outline smaller than this (m²) is left out, and a part made smaller too */
@@ -74,11 +75,12 @@ export interface MeasuredSplit {
  * and whose pieces of them differ in height by more than SPLIT_M: each becomes an outline with parts, the parts
  * flat-roofed at their measured tops, with the outline's other attributes and storeys of its storeys' height.
  */
-export function splitByMeasuredParts(buildings: Building[], parts: MeasuredPart[]): MeasuredSplit {
+export function splitByMeasuredParts(buildings: Building[], parts: MeasuredPart[], roads: Road[] = []): MeasuredSplit {
   const near = partsNear(parts);
+  const crossedBy = waysCrossing(roads);
   const result: MeasuredSplit = { split: 0, failed: 0, parts: [] };
   for (const b of buildings) {
-    if (!measurable(b) || (b.passages?.length ?? 0) > 0 || b.roofFaces) {
+    if (!measurable(b) || (b.passages?.length ?? 0) > 0 || b.roofFaces || crossedBy(b.polygon)) {
       continue;
     }
     let made: Building[] | undefined;
@@ -96,6 +98,51 @@ export function splitByMeasuredParts(buildings: Building[], parts: MeasuredPart[
     }
   }
   return result;
+}
+
+/** Whether segments ab and cd cross */
+function crossing(a: Point, b: Point, c: Point, d: Point): boolean {
+  const side = (p: Point, q: Point, r: Point) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+  return side(a, b, c) * side(a, b, d) < 0 && side(c, d, a) * side(c, d, b) < 0;
+}
+
+/** Whether one of the ways runs into a polygon: a point of it inside, or a stretch crossing its rings */
+function waysCrossing(roads: Road[]): (polygon: Polygon) => boolean {
+  const index = new Map<string, Point[][]>();
+  for (const road of roads) {
+    for (let i = 0; i + 1 < road.line.length; i++) {
+      const segment = [road.line[i], road.line[i + 1]];
+      const box = bounds(segment);
+      for (let x = Math.floor(box.minX / CELL_M); x <= Math.floor(box.maxX / CELL_M); x++) {
+        for (let y = Math.floor(box.minY / CELL_M); y <= Math.floor(box.maxY / CELL_M); y++) {
+          const cell = index.get(`${x},${y}`) ?? [];
+          cell.push(segment);
+          index.set(`${x},${y}`, cell);
+        }
+      }
+    }
+  }
+  return (polygon) => {
+    const box = bounds(polygon.outer);
+    const rings = [polygon.outer, ...polygon.holes];
+    for (let x = Math.floor(box.minX / CELL_M); x <= Math.floor(box.maxX / CELL_M); x++) {
+      for (let y = Math.floor(box.minY / CELL_M); y <= Math.floor(box.maxY / CELL_M); y++) {
+        for (const [a, b] of index.get(`${x},${y}`) ?? []) {
+          if (pointInPolygon(a, polygon) || pointInPolygon(b, polygon)) {
+            return true;
+          }
+          for (const ring of rings) {
+            for (let i = 0; i < ring.length; i++) {
+              if (crossing(a, b, ring[i], ring[(i + 1) % ring.length])) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+    }
+    return false;
+  };
 }
 
 /** The parts whose boxes overlap a box */

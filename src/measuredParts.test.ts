@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ringArea, type Point } from "./geometry.ts";
 import { splitByMeasuredParts } from "./measuredParts.ts";
-import type { Building } from "./osm.ts";
+import type { Building, Road } from "./osm.ts";
 import type { MeasuredPart } from "./roofTops.ts";
 
 const BASE = 90;
@@ -74,4 +74,10 @@ test("an outline is left as it is when its parts are of about one height, cover 
   // a piece too small to be a part, and a top too low to be a building's, are left out
   assert.equal(splitByMeasuredParts([outline()], [part(0, 39.5, 18), part(39.5, 0.5, 4)]).split, 0);
   assert.equal(splitByMeasuredParts([outline()], [part(0, 20, 1), part(20, 20, 18)]).split, 0);
+  // a way into it, or through it with no point inside
+  const road = (line: Point[]): Road => ({ osm: "w9", kind: "service", width: 3, layer: 0, bridge: false, tunnel: false, line });
+  const split = [part(0, 20, 6), part(20, 20, 22)];
+  assert.equal(splitByMeasuredParts([outline()], split, [road([[5, -5], [5, 3]])]).split, 0);
+  assert.equal(splitByMeasuredParts([outline()], split, [road([[10, -5], [12, 15]])]).split, 0);
+  assert.equal(splitByMeasuredParts([outline()], split, [road([[-5, -5], [50, -5]])]).split, 1);
 });

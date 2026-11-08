@@ -613,7 +613,7 @@ export class MapBuilder {
           const nearParts = parts.filter((p) => near(p.outer).length > 0);
           const measuredParts = nearParts.map((p) => ({ polygon: { outer: ring(p.outer), holes: p.holes.map(ring) }, top: p.top }));
           // outlines holding parts of clearly different heights become outlines with those parts first
-          const split = splitByMeasuredParts(notRaised, measuredParts);
+          const split = splitByMeasuredParts(notRaised, measuredParts, features.roads);
           for (const part of split.parts) {
             features.buildings.push(part);
           }
