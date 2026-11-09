@@ -1,7 +1,7 @@
 // Buildings whose outline holds parts of clearly different heights in a city's 3D building parts (roofTops.ts), such
 // as a hall, a low link and a tower drawn as one outline, become outlines with parts: the measured parts within the
 // outline, those of about one height that touch merged, each of their own height; what of the outline no part covers
-// goes to the part nearest it. An outline a way crosses (into a garage, through a passage, in a tunnel under or
+// goes to the part nearest it, and so do its entrances. An outline a way crosses (into a garage, through a passage, in a tunnel under or
 // beside it) is left as it is: its parts would stand in the way's room or block it.
 import clipping from "polygon-clipping";
 import { storeyHeight } from "./ages.ts";
@@ -93,6 +93,7 @@ export function splitByMeasuredParts(buildings: Building[], parts: MeasuredPart[
     }
     if (made) {
       b.hasParts = true;
+      giveEntrances(b, made);
       result.split++;
       for (const part of made) {
         result.parts.push(part);
@@ -251,6 +252,28 @@ function split(b: Building, base: number, parts: MeasuredPart[]): Building[] | u
     }
   }
   return made.length < 2 ? undefined : made;
+}
+
+/**
+ * The outline's entrances go to the parts, each to the one whose outline is nearest it: an outline with parts is drawn
+ * by them, its doors with them, and an entrance is on one building only
+ */
+function giveEntrances(b: Building, parts: Building[]): void {
+  for (const entrance of b.entrances ?? []) {
+    let best: Building | undefined;
+    let nearest = Infinity;
+    for (const part of parts) {
+      const d = Math.min(...[part.polygon.outer, ...part.polygon.holes].map((ring) => distanceToRing(entrance.at, ring)));
+      if (d < nearest) {
+        nearest = d;
+        best = part;
+      }
+    }
+    if (best) {
+      (best.entrances ??= []).push(entrance);
+    }
+  }
+  delete b.entrances;
 }
 
 /** A part of the building, flat-roofed at its height, with its other attributes */
