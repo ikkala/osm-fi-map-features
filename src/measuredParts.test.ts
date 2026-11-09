@@ -54,6 +54,16 @@ test("an outline over parts of clearly different heights becomes an outline with
   assert.deepEqual(new Set(parts.map((p) => p.osm)), new Set(["w1:1", "w1:2", "w1:3"]));
 });
 
+test("an outline's entrances go to the parts they are on, and leave the outline", () => {
+  const b = outline({ entrances: [{ at: [5, 0], kind: "main" }, { at: [36, 10], kind: "yes" }] });
+  const { parts } = splitByMeasuredParts([b], [part(0, 15, 9), part(15, 25, 24)]);
+  assert.equal(b.entrances, undefined);
+  const hall = parts.find((p) => p.height === 9);
+  const tower = parts.find((p) => p.height === 24);
+  assert.deepEqual(hall?.entrances?.map((e) => e.kind), ["main"]);
+  assert.deepEqual(tower?.entrances?.map((e) => e.kind), ["yes"]);
+});
+
 test("what no measured part covers goes to the part nearest it", () => {
   // the parts leave 4 m at the east end uncovered: it goes to the tower beside it
   const b = outline();
