@@ -3,16 +3,17 @@ import { test } from "node:test";
 import type { Point } from "./geometry.ts";
 import { roofShareOf, wingRidges } from "./roofWings.ts";
 
-test("an L cuts into wings whose ridges meet: the main one gable to gable, the other into it", () => {
+test("an L cuts into wings whose ridges meet at its corner, each from its gable", () => {
   // a wing 24 m by 10 east to west, another 8 m wide north from its east end
   const L: Point[] = [[0, 0], [24, 0], [24, 20], [16, 20], [16, 10], [0, 10]];
   const [ways] = wingRidges(L);
   const round = (lines: Point[][]) => lines.map((line) => line.map(([e, n]) => [Math.round(e * 10) / 10, Math.round(n * 10) / 10]));
-  assert.deepEqual(round(ways.gabled), [[[0, 5], [24, 5]], [[20, 20], [20, 5]]]);
+  assert.deepEqual(round(ways.gabled), [[[0, 5], [20, 5]], [[20, 20], [20, 5]]]);
   assert.equal(ways.run, 5);
   const share = roofShareOf(L, ways.gabled);
-  // on the main ridge, half way down its slope, and at the wing's gable under its ridge
-  assert.deepEqual([[12, 5], [12, 2.5], [20, 19.9]].map((p) => Math.round((share?.([p[0], p[1]]) ?? -1) * 100) / 100), [1, 0.5, 1]);
+  // on the main ridge, half way down its slope, at the wing's gable under its ridge, and on the wing's side of the hip
+  // down to the outer corner
+  assert.deepEqual([[12, 5], [12, 2.5], [20, 19.9], [22, 3]].map((p) => Math.round((share?.([p[0], p[1]]) ?? -1) * 100) / 100), [1, 0.5, 1, 0.5]);
   // a rectangle has its own shapes
   assert.deepEqual(wingRidges([[0, 0], [20, 0], [20, 10], [0, 10]]), []);
 });
