@@ -587,10 +587,11 @@ export class MapBuilder {
       logger.log(`${passagesUpSlopes(features.buildings, heightAt)} passage openings and rooms count from the ground up a slope`);
       // measured tops are above sea level: the buildings must stand at their base first
       const notRaised = features.buildings.filter((b) => !raised.includes(b));
-      // the laser scanning's roofs, which a measured top over a chimney or a lantern comes down to
+      // the laser scanning's roofs, which a measured top over a chimney or a lantern comes down to, and their shapes:
+      // wherever the National Land Survey's key is, measured tops or not
       let laserRoof: ((b: Building) => number | undefined) | undefined;
       let laserShape: ((b: Building) => LaserRoofShape | undefined) | undefined;
-      if (mmlApiKey && roofTopSources.length > 0) {
+      if (mmlApiKey) {
         // the parts too, for their roofs' shapes
         const measured = notRaised.filter((b) => measurable(b) || (b.part && b.base !== undefined && !b.special && b.shelter === undefined && !b.lattice));
         const toTm = (ring: Point[]) => ring.map((p) => toTm35fin(toGeo(p)));
