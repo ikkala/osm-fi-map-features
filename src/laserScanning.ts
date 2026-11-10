@@ -121,8 +121,18 @@ export async function readLaz(bytes: Uint8Array, visit: (e: number, n: number, z
   }
 }
 
-/** Times a request the service fails with a 5xx is made again */
+/** Times a request the service fails (a 5xx, or no JSON) is made again */
 const RETRIES = 3;
+
+/** The JSON the service answers at url, or undefined when it answers none (failing, or a gateway's timeout) */
+async function jsonOf(url: string, auth: Record<string, string>): Promise<unknown> {
+  try {
+    const res = await fetch(url, { headers: { ...auth, accept: "application/json" } });
+    return res.ok ? await res.json() : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function start(sheet: string, auth: Record<string, string>): Promise<Response> {
   return fetch(`${PROCESS_URL}/execution`, {
@@ -152,7 +162,8 @@ async function fetchSheet(sheet: string, apiKey: string): Promise<Uint8Array | u
   }
   let status: unknown;
   for (let poll = 0; poll < JOB_POLLS; poll++) {
-    status = await (await fetch(jobUrl, { headers: { ...auth, accept: "application/json" } })).json();
+    // a poll the service answers with no JSON (a gateway's timeout) is polled again
+    status = (await jsonOf(jobUrl, auth)) ?? { status: "running" };
     if (field(status, "status") !== "accepted" && field(status, "status") !== "running") {
       break;
     }
@@ -165,14 +176,22 @@ async function fetchSheet(sheet: string, apiKey: string): Promise<Uint8Array | u
     }
     throw new Error(`laser scanning job for ${sheet} ended ${String(field(status, "status"))}: ${message}`);
   }
-  const results: unknown = await (await fetch(`${jobUrl}/results`, { headers: { ...auth, accept: "application/json" } })).json();
+  let results = await jsonOf(`${jobUrl}/results`, auth);
+  for (let retry = 1; retry <= RETRIES && results === undefined; retry++) {
+    await new Promise((resolve) => setTimeout(resolve, JOB_POLL_MS * retry));
+    results = await jsonOf(`${jobUrl}/results`, auth);
+  }
   const path = items(field(results, "results"))
     .map((result) => optionalString(field(result, "path")))
     .find((href) => href?.endsWith(".laz"));
   if (path === undefined) {
     throw new Error(`laser scanning job for ${sheet} gave no LAZ file: ${JSON.stringify(results).slice(0, 500)}`);
   }
-  const res = await fetch(path, { headers: auth });
+  let res = await fetch(path, { headers: auth });
+  for (let retry = 1; retry <= RETRIES && res.status >= 500; retry++) {
+    await new Promise((resolve) => setTimeout(resolve, JOB_POLL_MS * retry));
+    res = await fetch(path, { headers: auth });
+  }
   const bytes = new Uint8Array(await res.arrayBuffer());
   if (!res.ok) {
     throw new Error(`laser scanning download for ${sheet} failed (${res.status}): ${new TextDecoder().decode(bytes.subarray(0, 500))}`);
