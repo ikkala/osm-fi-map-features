@@ -1,12 +1,13 @@
 // Roofs from the National Land Survey's laser scanning (LAZ point clouds thinned to 0.5 points/m², in ETRS-TM35FIN,
 // CC BY 4.0), fetched a map sheet of 3 x 3 km at a time from its file service: the height under nearly all the points
 // over the ground inside an outline, so that a measured top far over it, a chimney's or a lantern's, can come down
-// to the roof, and the roof's shape (laserRoofShapes.ts). Only the roofs are cached, a file per sheet, so maps of
-// different places keep theirs.
+// to the roof, and the shapes fitted to the roof (laserRoofShapes.ts), the shape chosen from them as they are read.
+// Only the roofs and their fits are cached, a file per sheet, so maps of different places keep theirs and the choice
+// can change without fetching the sheets again.
 import type { CacheOptions } from "./cache.ts";
 import { distanceToRing, pointInPolygon, type Point, type Polygon } from "./geometry.ts";
 import { field, isObject, items, optionalNumber, optionalString } from "./json.ts";
-import { fitRoofShape, type LaserRoofShape } from "./laserRoofShapes.ts";
+import { chooseRoofShape, fitRoofShapes, type LaserRoofShape, type RoofFit } from "./laserRoofShapes.ts";
 import type { RoofShape } from "./osm.ts";
 import { outlineKey } from "./ortho.ts";
 
@@ -33,7 +34,7 @@ const CELL_M = 25;
 /** Followed by the sheet, "<sheet>.json" */
 const CACHE_PREFIX = "mml-laser-roofs-";
 /** Bump when the roofs' computation changes, so cached roofs are computed again */
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 
 /** The rows of 1:200 000 sheets from the south, 96 km each from northing 6 570 000 */
 const SHEET_ROWS = "KLMNPQRSTUVWX";
@@ -238,8 +239,9 @@ export async function fetchLaserRoofs(
       const measured = known.get(keys[index]);
       if (measured) {
         result.roofs.set(index, measured.roof);
-        if (measured.shape) {
-          result.shapes.set(index, measured.shape);
+        const shape = chooseRoofShape(measured.fits);
+        if (shape) {
+          result.shapes.set(index, shape);
         }
       }
     }
@@ -315,8 +317,9 @@ export async function fetchLaserRoofs(
       for (const index of group.missing) {
         const points = above.get(index) ?? [];
         const roof = roofOf(points.map(([, , z]) => z), ground.get(index) ?? 0);
-        const shape = roof === undefined ? undefined : fitRoofShape(points, outlines[index]);
-        group.known.set(keys[index], roof === undefined ? null : { roof, ...(shape && { shape }) });
+        const fits = roof === undefined ? [] : fitRoofShapes(points, outlines[index]);
+        const shape = chooseRoofShape(fits);
+        group.known.set(keys[index], roof === undefined ? null : { roof, fits });
         if (roof !== undefined) {
           result.roofs.set(index, roof);
           if (shape) {
@@ -325,7 +328,7 @@ export async function fetchLaserRoofs(
         }
         above.delete(index);
       }
-      const rows = [...group.known].map(([key, measured]) => [key, measured && (measured.shape ? [measured.roof, ...shapeRow(measured.shape)] : measured.roof)]);
+      const rows = [...group.known].map(([key, measured]) => [key, measured && (measured.fits.length > 0 ? [measured.roof, ...measured.fits.flatMap(fitRow)] : measured.roof)]);
       await options.cache.put(`${CACHE_PREFIX}${group.sheet}.json`, JSON.stringify({ version: CACHE_VERSION, roofs: Object.fromEntries(rows) }));
       pending.splice(pending.indexOf(group), 1);
     }
@@ -334,30 +337,32 @@ export async function fetchLaserRoofs(
   return result;
 }
 
-/** An outline's roof (m above sea level) and its shape, if the points tell one */
+/** An outline's roof (m above sea level) and the shapes fitted to its points */
 interface Measured {
   roof: number;
-  shape?: LaserRoofShape;
+  fits: RoofFit[];
 }
 
 const SHAPES: readonly (RoofShape | "flat")[] = ["flat", "gabled", "hipped", "pyramidal", "skillion"];
+/** Values of a fit in the cache's rows */
+const FIT_LENGTH = 6;
 
-/** A shape as the cache keeps it: its name, angle, rise and top */
-function shapeRow(shape: LaserRoofShape): (string | number)[] {
-  return [shape.shape ?? "flat", shape.angle, shape.rise, shape.top];
+/** A fit as the cache keeps it: its shape's name, angle, rise, top, miss and slope */
+function fitRow(fit: RoofFit): (string | number)[] {
+  return [fit.shape ?? "flat", fit.angle, fit.rise, fit.top, fit.miss, fit.slope];
 }
 
-function parseShape(row: unknown[]): LaserRoofShape | undefined {
+function parseFit(row: unknown[]): RoofFit | undefined {
   const name = SHAPES.find((s) => s === row[0]);
-  const [angle, rise, top] = [optionalNumber(row[1]), optionalNumber(row[2]), optionalNumber(row[3])];
-  if (name === undefined || angle === undefined || rise === undefined || top === undefined) {
+  const [angle, rise, top, miss, slope] = row.slice(1).map(optionalNumber);
+  if (name === undefined || angle === undefined || rise === undefined || top === undefined || miss === undefined || slope === undefined) {
     return undefined;
   }
-  return { ...(name !== "flat" && { shape: name }), angle, rise, top };
+  return { ...(name !== "flat" && { shape: name }), angle, rise, top, miss, slope };
 }
 
 /**
- * The roofs cached under the key, by outline: its height, or a list of it and its shape's row (shapeRow); null for
+ * The roofs cached under the key, by outline: its height, or a list of it and its fits' rows (fitRow); null for
  * one the points measured none of. None with `refresh`.
  */
 async function readRoofs(key: string, options: CacheOptions): Promise<Map<string, Measured | null>> {
@@ -369,10 +374,16 @@ async function readRoofs(key: string, options: CacheOptions): Promise<Map<string
     if (field(json, "version") === CACHE_VERSION && isObject(roofs)) {
       for (const [outline, roof] of Object.entries(roofs)) {
         if (typeof roof === "number" || roof === null) {
-          known.set(outline, roof === null ? null : { roof });
+          known.set(outline, roof === null ? null : { roof, fits: [] });
         } else if (Array.isArray(roof) && typeof roof[0] === "number") {
-          const shape = parseShape(roof.slice(1));
-          known.set(outline, { roof: roof[0], ...(shape && { shape }) });
+          const fits: RoofFit[] = [];
+          for (let at = 1; at + FIT_LENGTH <= roof.length; at += FIT_LENGTH) {
+            const fit = parseFit(roof.slice(at, at + FIT_LENGTH));
+            if (fit) {
+              fits.push(fit);
+            }
+          }
+          known.set(outline, { roof: roof[0], fits });
         }
       }
     }

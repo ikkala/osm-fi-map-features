@@ -82,3 +82,10 @@ test("buildings OSM tells no roof shape of take the one the points tell, turned 
   // a guessed roof the points tell flat, and its height measured
   assert.deepEqual([guessed.roofShape, guessed.roofHeight, guessed.height], [undefined, undefined, 9]);
 });
+
+test("a flat roof only where the points lie flat: a tree's crown tells none", () => {
+  // the crowns of trees where a newer building stands, a metre or so up and down
+  let seed = 11;
+  const random = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+  assert.equal(fitRoofShape(scan(() => 106 + (random() - 0.5) * 1.6), OUTLINE), undefined);
+});
