@@ -36,6 +36,7 @@ import { applyRoofTops, fetchRoofTops, measurable, ROOF_TOP_SOURCES, type RoofTo
 import { setTrackBeds } from "./trackbeds.ts";
 import { decksOver, lowerUnderBridges, tramBedCeiling, underBridges } from "./underbridges.ts";
 import { passagesUpSlopes, raisePassages } from "./raisedPassages.ts";
+import { applyLaserShapes, type LaserRoofShape } from "./laserRoofShapes.ts";
 import { fitRoomsUnderDecks, openPortals, portalWallsAt, raiseToWalls, setTunnelFloors, setTunnelRooms, uncoverAtGrade } from "./tunnels.ts";
 import { fetchTreeRegister, overlaps, TREE_REGISTERS, type RegisterTree, type TreeRegisterSource } from "./treeRegister.ts";
 import { assignWindows } from "./windows.ts";
@@ -588,16 +589,19 @@ export class MapBuilder {
       const notRaised = features.buildings.filter((b) => !raised.includes(b));
       // the laser scanning's roofs, which a measured top over a chimney or a lantern comes down to
       let laserRoof: ((b: Building) => number | undefined) | undefined;
+      let laserShape: ((b: Building) => LaserRoofShape | undefined) | undefined;
       if (mmlApiKey && roofTopSources.length > 0) {
         const measured = notRaised.filter(measurable);
         const toTm = (ring: Point[]) => ring.map((p) => toTm35fin(toGeo(p)));
         try {
-          const { roofs, cached: roofsCached, fetched } = await fetchLaserRoofs(
+          const { roofs, shapes, cached: roofsCached, fetched } = await fetchLaserRoofs(
             measured.map((b) => ({ outer: toTm(b.polygon.outer), holes: b.polygon.holes.map(toTm) })),
             { apiKey: mmlApiKey, cache, refresh, log: (message) => logger.log(message) },
           );
           const byBuilding = new Map<Building, number | undefined>(measured.map((b, index) => [b, roofs.get(index)]));
           laserRoof = (b) => byBuilding.get(b);
+          const shapeByBuilding = new Map<Building, LaserRoofShape | undefined>(measured.map((b, index) => [b, shapes.get(index)]));
+          laserShape = (b) => shapeByBuilding.get(b);
           logger.log(`laser scanning: ${roofs.size} of ${measured.length} roofs measured (${roofsCached} cached, ${fetched} sheets fetched)`);
         } catch (err) {
           logger.warn(`warning: no roofs from the laser scanning: ${err instanceof Error ? err.message : String(err)}`);
@@ -632,7 +636,12 @@ export class MapBuilder {
           logger.warn(`warning: no data from the ${source.title}: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
-      if (lowered > 0) {
+      // the shapes after the heights: a roof's rise at most half of its building's
+      const shaped = laserShape ? applyLaserShapes(notRaised, laserShape) : { pitched: 0, flattened: 0 };
+      if (laserShape) {
+        logger.log(`laser scanning: ${shaped.pitched} roofs given the pitched shape their points tell, ${shaped.flattened} guessed ones told flat`);
+      }
+      if (lowered > 0 || shaped.pitched > 0 || shaped.flattened > 0) {
         otherAttributions.push(LASER_ATTRIBUTION);
       }
     }

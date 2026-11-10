@@ -1,10 +1,13 @@
 // Roofs from the National Land Survey's laser scanning (LAZ point clouds thinned to 0.5 points/m², in ETRS-TM35FIN,
 // CC BY 4.0), fetched a map sheet of 3 x 3 km at a time from its file service: the height under nearly all the points
 // over the ground inside an outline, so that a measured top far over it, a chimney's or a lantern's, can come down
-// to the roof. Only the roofs are cached, a file per sheet, so maps of different places keep theirs.
+// to the roof, and the roof's shape (laserRoofShapes.ts). Only the roofs are cached, a file per sheet, so maps of
+// different places keep theirs.
 import type { CacheOptions } from "./cache.ts";
 import { distanceToRing, pointInPolygon, type Point, type Polygon } from "./geometry.ts";
-import { field, isObject, items, optionalString } from "./json.ts";
+import { field, isObject, items, optionalNumber, optionalString } from "./json.ts";
+import { fitRoofShape, type LaserRoofShape } from "./laserRoofShapes.ts";
+import type { RoofShape } from "./osm.ts";
 import { outlineKey } from "./ortho.ts";
 
 export const LASER_ATTRIBUTION = "Laser scanning © Maanmittauslaitos (CC BY 4.0)";
@@ -30,7 +33,7 @@ const CELL_M = 25;
 /** Followed by the sheet, "<sheet>.json" */
 const CACHE_PREFIX = "mml-laser-roofs-";
 /** Bump when the roofs' computation changes, so cached roofs are computed again */
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 
 /** The rows of 1:200 000 sheets from the south, 96 km each from northing 6 570 000 */
 const SHEET_ROWS = "KLMNPQRSTUVWX";
@@ -118,11 +121,11 @@ export async function readLaz(bytes: Uint8Array, visit: (e: number, n: number, z
   }
 }
 
-/** A sheet's point cloud from the file service, or undefined when it has none for the sheet */
-async function fetchSheet(sheet: string, apiKey: string): Promise<Uint8Array | undefined> {
-  // Basic Auth with the key as the user name keeps it out of URLs that end up in logs
-  const auth = { authorization: `Basic ${Buffer.from(`${apiKey}:`).toString("base64")}` };
-  const started = await fetch(`${PROCESS_URL}/execution`, {
+/** Times a request the service fails with a 5xx is made again */
+const RETRIES = 3;
+
+function start(sheet: string, auth: Record<string, string>): Promise<Response> {
+  return fetch(`${PROCESS_URL}/execution`, {
     method: "POST",
     headers: { ...auth, "content-type": "application/json", accept: "application/json" },
     body: JSON.stringify({
@@ -130,6 +133,18 @@ async function fetchSheet(sheet: string, apiKey: string): Promise<Uint8Array | u
       inputs: { mapSheetInput: [sheet], fileFormatInput: "LAZ", dataSetInput: "Uusin" },
     }),
   });
+}
+
+/** A sheet's point cloud from the file service, or undefined when it has none for the sheet */
+async function fetchSheet(sheet: string, apiKey: string): Promise<Uint8Array | undefined> {
+  // Basic Auth with the key as the user name keeps it out of URLs that end up in logs
+  const auth = { authorization: `Basic ${Buffer.from(`${apiKey}:`).toString("base64")}` };
+  let started = await start(sheet, auth);
+  // the service fails now and then: ask again in a moment
+  for (let retry = 1; retry <= RETRIES && started.status >= 500; retry++) {
+    await new Promise((resolve) => setTimeout(resolve, JOB_POLL_MS * retry));
+    started = await start(sheet, auth);
+  }
   const job: unknown = await started.json().catch(() => undefined);
   const jobUrl = items(field(job, "links")).map((link) => (field(link, "rel") === "self" ? optionalString(field(link, "href")) : undefined)).find((href) => href);
   if (!started.ok || jobUrl === undefined) {
@@ -168,6 +183,8 @@ async function fetchSheet(sheet: string, apiKey: string): Promise<Uint8Array | u
 export interface LaserRoofResult {
   /** The roof (m above sea level) by the index of the outline; missing where the points measured none */
   roofs: Map<number, number>;
+  /** The roof's shape by the index of the outline; missing where the points tell none */
+  shapes: Map<number, LaserRoofShape>;
   /** Outlines whose roof (or none) came from the cache */
   cached: number;
   /** Sheets fetched */
@@ -184,22 +201,25 @@ export async function fetchLaserRoofs(
 ): Promise<LaserRoofResult> {
   const keys = outlines.map(outlineKey);
   const boxes = outlines.map((outline) => ringBox(outline.outer));
-  const result: LaserRoofResult = { roofs: new Map(), cached: 0, fetched: 0 };
+  const result: LaserRoofResult = { roofs: new Map(), shapes: new Map(), cached: 0, fetched: 0 };
   // the outlines by the sheet their box's centre is in
   const groups = new Map<string, number[]>();
   boxes.forEach((box, index) => {
     const sheet = mapSheet((box.minE + box.maxE) / 2, (box.minN + box.maxN) / 2);
     groups.set(sheet, [...(groups.get(sheet) ?? []), index]);
   });
-  const pending: { sheet: string; known: Map<string, number | null>; missing: number[]; needs: Set<string> }[] = [];
+  const pending: { sheet: string; known: Map<string, Measured | null>; missing: number[]; needs: Set<string> }[] = [];
   for (const [sheet, indices] of groups) {
     const known = await readRoofs(`${CACHE_PREFIX}${sheet}.json`, options);
     const missing = indices.filter((index) => !known.has(keys[index]));
     result.cached += indices.length - missing.length;
     for (const index of indices) {
-      const roof = known.get(keys[index]);
-      if (roof !== undefined && roof !== null) {
-        result.roofs.set(index, roof);
+      const measured = known.get(keys[index]);
+      if (measured) {
+        result.roofs.set(index, measured.roof);
+        if (measured.shape) {
+          result.shapes.set(index, measured.shape);
+        }
       }
     }
     if (missing.length > 0) {
@@ -208,7 +228,7 @@ export async function fetchLaserRoofs(
     }
   }
   // the points over the ground inside each missing outline, and how many on the ground
-  const above = new Map<number, number[]>();
+  const above = new Map<number, [number, number, number][]>();
   const ground = new Map<number, number>();
   const cells = new Map<string, number[]>();
   for (const { missing } of pending) {
@@ -248,7 +268,7 @@ export async function fetchLaserRoofs(
           if (GROUND_CLASSES.has(cls)) {
             ground.set(index, (ground.get(index) ?? 0) + 1);
           } else {
-            above.get(index)?.push(z);
+            above.get(index)?.push([e, n, z]);
           }
         }
       });
@@ -257,23 +277,54 @@ export async function fetchLaserRoofs(
     // each sheet's roofs once all the points they need are in, so an interrupted import does not fetch them again
     for (const group of pending.filter(({ needs }) => [...needs].every((s) => done.has(s)))) {
       for (const index of group.missing) {
-        const roof = roofOf(above.get(index) ?? [], ground.get(index) ?? 0);
-        group.known.set(keys[index], roof ?? null);
+        const points = above.get(index) ?? [];
+        const roof = roofOf(points.map(([, , z]) => z), ground.get(index) ?? 0);
+        const shape = roof === undefined ? undefined : fitRoofShape(points, outlines[index]);
+        group.known.set(keys[index], roof === undefined ? null : { roof, ...(shape && { shape }) });
         if (roof !== undefined) {
           result.roofs.set(index, roof);
+          if (shape) {
+            result.shapes.set(index, shape);
+          }
         }
         above.delete(index);
       }
-      await options.cache.put(`${CACHE_PREFIX}${group.sheet}.json`, JSON.stringify({ version: CACHE_VERSION, roofs: Object.fromEntries(group.known) }));
+      const rows = [...group.known].map(([key, measured]) => [key, measured && (measured.shape ? [measured.roof, ...shapeRow(measured.shape)] : measured.roof)]);
+      await options.cache.put(`${CACHE_PREFIX}${group.sheet}.json`, JSON.stringify({ version: CACHE_VERSION, roofs: Object.fromEntries(rows) }));
       pending.splice(pending.indexOf(group), 1);
     }
   }
   return result;
 }
 
-/** The roofs cached under the key, by outline (null for one the points measured none of); none with `refresh` */
-async function readRoofs(key: string, options: CacheOptions): Promise<Map<string, number | null>> {
-  const known = new Map<string, number | null>();
+/** An outline's roof (m above sea level) and its shape, if the points tell one */
+interface Measured {
+  roof: number;
+  shape?: LaserRoofShape;
+}
+
+const SHAPES: readonly (RoofShape | "flat")[] = ["flat", "gabled", "hipped", "pyramidal", "skillion"];
+
+/** A shape as the cache keeps it: its name, angle, rise and top */
+function shapeRow(shape: LaserRoofShape): (string | number)[] {
+  return [shape.shape ?? "flat", shape.angle, shape.rise, shape.top];
+}
+
+function parseShape(row: unknown[]): LaserRoofShape | undefined {
+  const name = SHAPES.find((s) => s === row[0]);
+  const [angle, rise, top] = [optionalNumber(row[1]), optionalNumber(row[2]), optionalNumber(row[3])];
+  if (name === undefined || angle === undefined || rise === undefined || top === undefined) {
+    return undefined;
+  }
+  return { ...(name !== "flat" && { shape: name }), angle, rise, top };
+}
+
+/**
+ * The roofs cached under the key, by outline: its height, or a list of it and its shape's row (shapeRow); null for
+ * one the points measured none of. None with `refresh`.
+ */
+async function readRoofs(key: string, options: CacheOptions): Promise<Map<string, Measured | null>> {
+  const known = new Map<string, Measured | null>();
   const text = options.refresh ? undefined : await options.cache.get(key);
   if (text !== undefined) {
     const json: unknown = JSON.parse(text);
@@ -281,7 +332,10 @@ async function readRoofs(key: string, options: CacheOptions): Promise<Map<string
     if (field(json, "version") === CACHE_VERSION && isObject(roofs)) {
       for (const [outline, roof] of Object.entries(roofs)) {
         if (typeof roof === "number" || roof === null) {
-          known.set(outline, roof);
+          known.set(outline, roof === null ? null : { roof });
+        } else if (Array.isArray(roof) && typeof roof[0] === "number") {
+          const shape = parseShape(roof.slice(1));
+          known.set(outline, { roof: roof[0], ...(shape && { shape }) });
         }
       }
     }
