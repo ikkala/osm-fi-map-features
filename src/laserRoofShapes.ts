@@ -1,12 +1,15 @@
 // Roof shapes from the laser scanning's points on a roof (laserScanning.ts): the shapes the map draws (gabled and
 // hipped with the ridge along the outline's oriented box or across it, pyramidal, skillion) and a flat one, each
 // fitted to the points by least squares in the box's frame, the points far off the fit left out a few rounds over
-// (chimneys, dormers, trees over the eaves). The fits are kept (laserScanning.ts caches them) and the shape chosen from
+// (chimneys, dormers, trees over the eaves); for an outline of wings (an L, a T, a U: roofWings.ts) also each way of
+// cutting it into wings, gabled and hipped, as ridgeRoofs draws it. The fits are kept (laserScanning.ts caches them) and the shape chosen from
 // them: a pitched one only where it fits the points closely, much better than a flat roof, is no steeper than a roof
 // is drawn and rises enough to tell, of shapes that fit about as well the simpler one; else a flat one only where the
 // points lie flat, not on trees (a building newer than the scanning) nor a roof of many levels.
 import { boxCentre, orientedBox, ringArea, type Point, type Polygon } from "./geometry.ts";
 import { GUESS_MIN_FILL, roofDegrees, type Building, type RoofShape } from "./osm.ts";
+import { ridgeRoofs } from "./roofRidges.ts";
+import { roofShareOf, wingRidges } from "./roofWings.ts";
 
 export interface LaserRoofShape {
   /** No shape: a flat roof */
@@ -20,10 +23,12 @@ export interface LaserRoofShape {
   rise: number;
   /** The top (m above sea level) */
   top: number;
+  /** A roof of wings (gabled or hipped): which of the outline's ways of cutting into them (wingRidges) */
+  wings?: number;
 }
 
 /** Fewer points than this on a roof tell no shape */
-export const MIN_SHAPE_POINTS = 30;
+export const MIN_SHAPE_POINTS = 12;
 /** A pitched roof rises at least this much (m) from its eaves to its top */
 const MIN_RISE_M = 1.2;
 /** Slopes (rise over run) a pitched roof may have */
@@ -53,6 +58,8 @@ export interface RoofFit {
   miss: number;
   /** Rise over run */
   slope: number;
+  /** As in LaserRoofShape */
+  wings?: number;
 }
 
 /** Fits z = top - slope * d(u, v) to the points, leaving out the far ones; undefined with too few left */
@@ -176,6 +183,24 @@ export function fitRoofShapes(points: [number, number, number][], outline: Polyg
     const top = Math.max(...[-a, a].flatMap((u) => [-b, b].map((v) => plane.c + plane.gu * u + plane.gv * v)));
     fits.push({ shape: "skillion", angle: (((down * 180) / Math.PI) % 360 + 360) % 360, rise: slope * run, top, miss: plane.miss, slope });
   }
+  // the roofs of wings, in the outline's frame: their share of the roof's height from the eaves
+  if (outline.holes.length === 0) {
+    for (const [index, ways] of wingRidges(outline.outer).entries()) {
+      for (const [shape, ridges] of [["gabled", ways.gabled], ["hipped", ways.hipped]] as const) {
+        const share = roofShareOf(outline.outer, ridges);
+        if (!share) {
+          continue;
+        }
+        const on = points.filter(([e, n]) => share([e, n]) !== undefined);
+        const fit = on.length >= MIN_SHAPE_POINTS ? fitDown(on, (e, n) => 1 - (share([e, n]) ?? 0)) : undefined;
+        if (fit) {
+          // the points off the roof drawn count as missed by the flat fit's typical miss
+          const miss = (fit.miss * on.length + flat.miss * (points.length - on.length)) / points.length;
+          fits.push({ shape, angle: 0, rise: fit.slope, top: fit.top, miss, slope: fit.slope / ways.run, wings: index });
+        }
+      }
+    }
+  }
   const round = (x: number, by: number) => Math.round(x * by) / by;
   return fits.map((f) => ({ ...f, angle: round(f.angle, 10), rise: round(f.rise, 100), top: round(f.top, 100), miss: round(f.miss, 1000), slope: round(f.slope, 1000) }));
 }
@@ -193,12 +218,12 @@ export function chooseRoofShape(fits: readonly RoofFit[]): LaserRoofShape | unde
     return flat.miss <= MAX_FLAT_MISS_M ? { angle: 0, rise: 0, top: flat.top } : undefined;
   }
   const best = Math.min(...pitched.map((f) => f.miss));
-  const { shape, angle, rise, top } = pitched.find((f) => f.miss <= best * SIMPLER_BY) ?? pitched[0];
-  return { shape, angle, rise, top };
+  const { shape, angle, rise, top, wings } = pitched.find((f) => f.miss <= best * SIMPLER_BY) ?? pitched[0];
+  return { shape, angle, rise, top, ...(wings !== undefined && { wings }) };
 }
 
 /** Roofs at least this big (m²) take the shape the laser scanning tells */
-export const MIN_SHAPED_AREA_M2 = 100;
+export const MIN_SHAPED_AREA_M2 = 40;
 
 export interface LaserShapeMatch {
   /** Buildings given a pitched roof of the shape the points tell */
@@ -208,10 +233,10 @@ export interface LaserShapeMatch {
 }
 
 /**
- * Gives the buildings OSM tells no roof shape of (nor ridges), of MIN_SHAPED_AREA_M2 at least, the shape their
- * points tell (shapeOf): a pitched one where the outline is nearly its box (GUESS_MIN_FILL), turned as the box is in
- * the map's frame, its rise at most half the building's height; flat where the points tell flat. A building whose
- * height is estimated takes the measured top too.
+ * Gives the buildings and parts OSM tells no roof shape of (nor ridges), of MIN_SHAPED_AREA_M2 at least, the shape
+ * their points tell (shapeOf): a pitched one where the outline is nearly its box (GUESS_MIN_FILL), turned as the box
+ * is in the map's frame, or a roof of wings drawn from their ridges (ridgeRoofs), its rise at most half the
+ * building's height; flat where the points tell flat. A building whose height is estimated takes the measured top too.
  */
 export function applyLaserShapes(buildings: Building[], shapeOf: (b: Building) => LaserRoofShape | undefined): LaserShapeMatch {
   const result: LaserShapeMatch = { pitched: 0, flattened: 0 };
@@ -234,6 +259,20 @@ export function applyLaserShapes(buildings: Building[], shapeOf: (b: Building) =
         delete b.roofHeight;
         delete b.roofHeightEstimated;
         result.flattened++;
+      }
+      continue;
+    }
+    if (measured.wings !== undefined) {
+      // a roof of wings as ridgeRoofs draws it from their ridges in the map's frame
+      const ways = wingRidges(b.polygon.outer)[measured.wings];
+      const roofHeight = Math.min(measured.rise, b.height / 2);
+      const before = { roofShape: b.roofShape, roofAngle: b.roofAngle, roofHeight: b.roofHeight };
+      b.roofHeight = roofHeight;
+      if (ways && ridgeRoofs([b], measured.shape === "hipped" ? ways.hipped : ways.gabled) > 0) {
+        delete b.roofHeightEstimated;
+        result.pitched++;
+      } else {
+        Object.assign(b, before);
       }
       continue;
     }

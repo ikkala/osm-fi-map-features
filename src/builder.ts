@@ -591,7 +591,8 @@ export class MapBuilder {
       let laserRoof: ((b: Building) => number | undefined) | undefined;
       let laserShape: ((b: Building) => LaserRoofShape | undefined) | undefined;
       if (mmlApiKey && roofTopSources.length > 0) {
-        const measured = notRaised.filter(measurable);
+        // the parts too, for their roofs' shapes
+        const measured = notRaised.filter((b) => measurable(b) || (b.part && b.base !== undefined && !b.special && b.shelter === undefined && !b.lattice));
         const toTm = (ring: Point[]) => ring.map((p) => toTm35fin(toGeo(p)));
         try {
           const { roofs, shapes, cached: roofsCached, fetched, failed } = await fetchLaserRoofs(
