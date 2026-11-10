@@ -223,6 +223,10 @@ export interface Entrance {
   at: Point;
   /** entrance=* value (main, staircase, shop, service, yes, ...) */
   kind: string;
+  /** Its staircase's letter or number (ref=*), as on a plaque over the door */
+  ref?: string;
+  /** Its own house number (addr:housenumber), where it has one */
+  housenumber?: string;
   /** Not in OSM: guessed from the building's shape and the street next to it */
   guessed?: boolean;
 }
