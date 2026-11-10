@@ -103,6 +103,9 @@ function split(ring: Ring, ridge: Point[]): [Slope, Slope] | undefined {
   }
   const i = copy.indexOf(start);
   const j = copy.indexOf(end);
+  if (i < 0 || j < 0) {
+    return undefined;
+  }
   // the ridge's points between the vertices on the ring: a hipped end's too
   const between: Ring = ridge.slice(startHip ? 0 : 1, endHip ? ridge.length : last).map((point) => ({ point, share: 1 }));
   const along: Ring = [start, ...between, end];

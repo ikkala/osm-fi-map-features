@@ -187,7 +187,7 @@ export function fitRoofShapes(points: [number, number, number][], outline: Polyg
   if (outline.holes.length === 0) {
     for (const [index, ways] of wingRidges(outline.outer).entries()) {
       for (const [shape, ridges] of [["gabled", ways.gabled], ["hipped", ways.hipped]] as const) {
-        const share = roofShareOf(outline.outer, ridges);
+        const share = ridges.length > 0 ? roofShareOf(outline.outer, ridges) : undefined;
         if (!share) {
           continue;
         }
