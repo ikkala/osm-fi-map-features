@@ -67,6 +67,7 @@ export type {
   AreaKind,
   Barrier,
   BarrierKind,
+  Address,
   BridgeDeck,
   Building,
   BuildingUse,
