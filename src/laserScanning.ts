@@ -34,7 +34,7 @@ const CELL_M = 25;
 /** Followed by the sheet, "<sheet>.json" */
 const CACHE_PREFIX = "mml-laser-roofs-";
 /** Bump when the roofs' computation changes, so cached roofs are computed again */
-const CACHE_VERSION = 3;
+const CACHE_VERSION = 4;
 
 /** The rows of 1:200 000 sheets from the south, 96 km each from northing 6 570 000 */
 const SHEET_ROWS = "KLMNPQRSTUVWX";
@@ -347,18 +347,25 @@ const SHAPES: readonly (RoofShape | "flat")[] = ["flat", "gabled", "hipped", "py
 /** Values of a fit in the cache's rows */
 const FIT_LENGTH = 6;
 
-/** A fit as the cache keeps it: its shape's name, angle, rise, top, miss and slope */
+/**
+ * A fit as the cache keeps it: its shape's name, angle, rise, top, miss and slope; a roof of wings' name ends in
+ * "-wings", its way of cutting in place of the angle
+ */
 function fitRow(fit: RoofFit): (string | number)[] {
-  return [fit.shape ?? "flat", fit.angle, fit.rise, fit.top, fit.miss, fit.slope];
+  const name = fit.shape ?? "flat";
+  return fit.wings === undefined ? [name, fit.angle, fit.rise, fit.top, fit.miss, fit.slope] : [`${name}-wings`, fit.wings, fit.rise, fit.top, fit.miss, fit.slope];
 }
 
 function parseFit(row: unknown[]): RoofFit | undefined {
-  const name = SHAPES.find((s) => s === row[0]);
+  const text = typeof row[0] === "string" ? row[0] : "";
+  const wings = text.endsWith("-wings");
+  const name = SHAPES.find((s) => s === (wings ? text.slice(0, -"-wings".length) : text));
   const [angle, rise, top, miss, slope] = row.slice(1).map(optionalNumber);
   if (name === undefined || angle === undefined || rise === undefined || top === undefined || miss === undefined || slope === undefined) {
     return undefined;
   }
-  return { ...(name !== "flat" && { shape: name }), angle, rise, top, miss, slope };
+  const shape = name !== "flat" && { shape: name };
+  return wings ? { ...shape, angle: 0, rise, top, miss, slope, wings: angle } : { ...shape, angle, rise, top, miss, slope };
 }
 
 /**

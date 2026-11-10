@@ -33,7 +33,7 @@ test("the cached roofs come with the shape chosen from their fits, and need no s
   const cache = memoryCache();
   const sheet = mapSheet(327010, 6822005);
   const [gabled, flat, none] = outlines.map(outlineKey);
-  await cache.put(`mml-laser-roofs-${sheet}.json`, JSON.stringify({ version: 3, roofs: { [gabled]: [104, "flat", 0, 0, 103.6, 0.6, 0, "gabled", 90, 3.2, 104.5, 0.05, 0.4], [flat]: 99.5, [none]: null } }));
+  await cache.put(`mml-laser-roofs-${sheet}.json`, JSON.stringify({ version: 4, roofs: { [gabled]: [104, "flat", 0, 0, 103.6, 0.6, 0, "gabled", 90, 3.2, 104.5, 0.05, 0.4, "hipped-wings", 1, 3, 104.4, 0.2, 0.5], [flat]: 99.5, [none]: null } }));
   const result = await fetchLaserRoofs(outlines, { cache, refresh: false, apiKey: "-" });
   assert.deepEqual([result.cached, result.fetched], [3, 0]);
   assert.deepEqual([...result.roofs], [[0, 104], [1, 99.5]]);
@@ -45,7 +45,7 @@ test("a sheet whose fetch fails leaves out only the roofs needing it", async (t)
   // one outline cached, one in a sheet 6 km off that is not
   const outlines = [square(327000, 6822000), square(333000, 6822000)];
   const cache = memoryCache();
-  await cache.put(`mml-laser-roofs-${mapSheet(327010, 6822005)}.json`, JSON.stringify({ version: 3, roofs: { [outlineKey(outlines[0])]: 104 } }));
+  await cache.put(`mml-laser-roofs-${mapSheet(327010, 6822005)}.json`, JSON.stringify({ version: 4, roofs: { [outlineKey(outlines[0])]: 104 } }));
   t.mock.method(globalThis, "fetch", () => Promise.reject(new Error("no network")));
   const logged: string[] = [];
   const result = await fetchLaserRoofs(outlines, { cache, refresh: false, apiKey: "-", log: (m) => logged.push(m) });
