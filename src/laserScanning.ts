@@ -208,11 +208,13 @@ export interface LaserRoofResult {
   cached: number;
   /** Sheets fetched */
   fetched: number;
+  /** Sheets whose fetch failed, their groups' roofs left out */
+  failed: number;
 }
 
 /**
- * The roofs of TM35FIN outlines, cached by outline shape in the file of the sheet their box's centre is in, else
- * measured from the sheets their box reaches into, fetched one at a time.
+ * The roofs of TM35FIN outlines, cached by outline shape in the file of the sheet their box's centre is in (a group),
+ * else measured from the sheets their box reaches into, fetched one at a time, a group's together.
  */
 export async function fetchLaserRoofs(
   outlines: Polygon[],
@@ -220,7 +222,7 @@ export async function fetchLaserRoofs(
 ): Promise<LaserRoofResult> {
   const keys = outlines.map(outlineKey);
   const boxes = outlines.map((outline) => ringBox(outline.outer));
-  const result: LaserRoofResult = { roofs: new Map(), shapes: new Map(), cached: 0, fetched: 0 };
+  const result: LaserRoofResult = { roofs: new Map(), shapes: new Map(), cached: 0, fetched: 0, failed: 0 };
   // the outlines by the sheet their box's centre is in
   const groups = new Map<string, number[]>();
   boxes.forEach((box, index) => {
@@ -262,12 +264,27 @@ export async function fetchLaserRoofs(
       }
     }
   }
-  const sheets = [...new Set(pending.flatMap(({ needs }) => [...needs]))].sort();
+  // a group's sheets at a time, so that each group's roofs are cached as soon as can be and an interrupted import
+  // fetches few sheets again; a sheet that fails leaves out only the groups needing it, to be fetched another time
+  pending.sort((a, b) => (a.sheet < b.sheet ? -1 : a.sheet > b.sheet ? 1 : 0));
   const done = new Set<string>();
-  for (const sheet of sheets) {
+  const failed = new Set<string>();
+  const next = () => pending.flatMap(({ needs }) => [...needs].sort()).find((sheet) => !done.has(sheet) && !failed.has(sheet));
+  for (let sheet = next(); sheet !== undefined; sheet = next()) {
     const waiting = pending.filter(({ needs }) => needs.has(sheet)).reduce((sum, { missing }) => sum + missing.length, 0);
     options.log?.(`fetching the laser scanning of sheet ${sheet} for up to ${waiting} roofs`);
-    const bytes = await fetchSheet(sheet, options.apiKey);
+    let bytes: Uint8Array | undefined;
+    try {
+      bytes = await fetchSheet(sheet, options.apiKey);
+    } catch (err) {
+      failed.add(sheet);
+      options.log?.(`the laser scanning of sheet ${sheet} failed, its roofs left out: ${err instanceof Error ? err.message : String(err)}`);
+      for (const group of pending.filter(({ needs }) => needs.has(sheet))) {
+        group.missing.forEach((index) => above.delete(index));
+        pending.splice(pending.indexOf(group), 1);
+      }
+      continue;
+    }
     result.fetched++;
     if (bytes !== undefined) {
       await readLaz(bytes, (e, n, z, cls) => {
@@ -293,7 +310,7 @@ export async function fetchLaserRoofs(
       });
     }
     done.add(sheet);
-    // each sheet's roofs once all the points they need are in, so an interrupted import does not fetch them again
+    // each group's roofs once all the points they need are in, so an interrupted import does not fetch them again
     for (const group of pending.filter(({ needs }) => [...needs].every((s) => done.has(s)))) {
       for (const index of group.missing) {
         const points = above.get(index) ?? [];
@@ -313,6 +330,7 @@ export async function fetchLaserRoofs(
       pending.splice(pending.indexOf(group), 1);
     }
   }
+  result.failed = failed.size;
   return result;
 }
 
