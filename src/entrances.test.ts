@@ -27,6 +27,20 @@ test("parseEntrances keeps entrance nodes in meters, without entrance=no", () =>
   assert.ok(near(entrances[0].at, [0, 0]));
 });
 
+test("parseEntrances keeps an entrance's staircase letter and its own house number", () => {
+  const entrances = parseEntrances(
+    [
+      { type: "node", id: 1, lat: 61.5, lon: 23.7, tags: { entrance: "staircase", ref: "A" } },
+      { type: "node", id: 2, lat: 61.5, lon: 23.7, tags: { entrance: "main", "addr:housenumber": "5 b", ref: " " } },
+    ],
+    { latitude: 61.5, longitude: 23.7 },
+  );
+  assert.deepEqual(entrances.map(({ kind, ref, housenumber }) => ({ kind, ref, housenumber })), [
+    { kind: "staircase", ref: "A", housenumber: undefined },
+    { kind: "main", ref: undefined, housenumber: "5 b" },
+  ]);
+});
+
 test("assignEntrances puts entrances on the outlines they are on", () => {
   const a = rectangle(0, 0, 10, 10);
   const b = rectangle(10, 0, 10, 10);
