@@ -199,6 +199,8 @@ export interface Building {
   /** Walls without windows (window=no or windows=no) */
   windowless?: boolean;
   name?: string;
+  /** Its street address (addr:street, else addr:place, and addr:housenumber as tagged: "4", "4 B", "4-6", "4;6") */
+  address?: Address;
   /** Where ways run through the building (tunnel=building_passage): its walls are open there */
   passages?: Opening[];
   /** The rooms of the ways through the building, walled off from its insides */
@@ -208,6 +210,12 @@ export interface Building {
   /** Shops, restaurants, offices, ... inside the building (see businesses.ts) */
   businesses?: Business[];
   polygon: Polygon;
+}
+
+/** A street address: the street (or the place) and the house number */
+export interface Address {
+  street: string;
+  number: string;
 }
 
 /** A door at a point on a building's outline */
@@ -1485,8 +1493,16 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
     ...((tags.window === "no" || tags.windows === "no") && { windowless: true }),
     ...(isSpecial(tags) && { special: true }),
     ...optionalName(tags),
+    ...optionalAddress(tags),
     polygon,
   };
+}
+
+/** The street address tagged, with both a street (or a place) and a number */
+function optionalAddress(tags: Tags): { address?: Address } {
+  const street = (tags["addr:street"] ?? tags["addr:place"])?.trim();
+  const number = tags["addr:housenumber"]?.trim();
+  return street && number ? { address: { street, number } } : {};
 }
 
 /** A building's wall material: building:material or material, guessed for an untagged chimney */

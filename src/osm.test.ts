@@ -1110,6 +1110,25 @@ test("walls tagged window=no or windows=no are windowless, and storeys in a roof
   ]);
 });
 
+test("a building's street address is its street, or its place, and its house number as tagged", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 50, tags: { building: "yes", "addr:street": "Metsäkulmantie", "addr:housenumber": "4" }, geometry: square(0, 0, 10) },
+      { type: "way", id: 51, tags: { building: "yes", "addr:place": "Pikkula", "addr:housenumber": " 2-4 B " }, geometry: square(20, 0, 10) },
+      { type: "way", id: 52, tags: { building: "yes", "addr:street": "Metsäkulmantie" }, geometry: square(40, 0, 10) },
+      { type: "way", id: 53, tags: { building: "yes", "addr:housenumber": "6" }, geometry: square(60, 0, 10) },
+    ],
+    origin,
+  );
+  const address = (osm: string) => defined(features.buildings.find((b) => b.osm === osm)).address;
+  assert.deepEqual(["w50", "w51", "w52", "w53"].map(address), [
+    { street: "Metsäkulmantie", number: "4" },
+    { street: "Pikkula", number: "2-4 B" },
+    undefined,
+    undefined,
+  ]);
+});
+
 test("a lattice tower is a framework of bars, also as the filler under a raised part", () => {
   const { features } = parseOsm(
     [
