@@ -285,6 +285,8 @@ export interface PassageRoom {
    * highest along the room (m above sea level), which height counts from
    */
   ground?: number;
+  /** Where that slopes along the room: each section's (m above sea level), the ceiling height over each */
+  grounds?: number[];
 }
 
 export type AreaKind = "water" | "grass" | "forest" | "field" | "sand" | "rock" | "pitch" | "paved" | "platform";
