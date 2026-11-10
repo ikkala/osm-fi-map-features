@@ -63,6 +63,7 @@ export {
 export { ORTHO_ATTRIBUTION } from "./ortho.ts";
 export { inheritFromOutlines, parseOsm, parseOverpassResponse, type OsmElement, type OverpassResponse, type ParseResult } from "./osm.ts";
 export type {
+  Address,
   Area,
   AreaKind,
   Barrier,

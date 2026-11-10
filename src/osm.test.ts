@@ -1371,3 +1371,15 @@ test("a boardwalk (bridge=boardwalk) is a bridge that says so, another bridge or
   );
   assert.deepEqual(features.roads.map((r) => [r.osm, r.bridge, r.boardwalk]), [["w1", true, true], ["w2", true, undefined], ["w3", true, undefined]]);
 });
+
+test("parseOsm reads a building's street address, its street or place and its house number, not half of one", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 1, tags: { building: "apartments", "addr:street": "Lapintie", "addr:housenumber": " 24 " }, geometry: square(0, 0, 20) },
+      { type: "way", id: 2, tags: { building: "house", "addr:place": "Kylä", "addr:housenumber": "3" }, geometry: square(30, 0, 20) },
+      { type: "way", id: 3, tags: { building: "yes", "addr:street": "Lapintie" }, geometry: square(60, 0, 20) },
+    ],
+    origin,
+  );
+  assert.deepEqual(features.buildings.map((b) => b.address), [{ street: "Lapintie", housenumber: "24" }, { street: "Kylä", housenumber: "3" }, undefined]);
+});

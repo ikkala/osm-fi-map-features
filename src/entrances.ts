@@ -29,7 +29,9 @@ export function parseEntrances(elements: OverpassResponse["elements"], origin: G
   for (const element of elements) {
     const kind = element.tags?.entrance;
     if (element.type === "node" && kind && kind !== "no" && element.lat !== undefined && element.lon !== undefined) {
-      result.push({ at: projection.toMeters({ latitude: element.lat, longitude: element.lon }), kind });
+      const ref = element.tags?.ref?.trim();
+      const housenumber = element.tags?.["addr:housenumber"]?.trim();
+      result.push({ at: projection.toMeters({ latitude: element.lat, longitude: element.lon }), kind, ...(ref && { ref }), ...(housenumber && { housenumber }) });
     }
   }
   return result;

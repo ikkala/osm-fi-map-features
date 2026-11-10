@@ -199,6 +199,8 @@ export interface Building {
   /** Walls without windows (window=no or windows=no) */
   windowless?: boolean;
   name?: string;
+  /** Its street address (addr:street, else addr:place, and addr:housenumber), as its number on its walls reads */
+  address?: Address;
   /** Where ways run through the building (tunnel=building_passage): its walls are open there */
   passages?: Opening[];
   /** The rooms of the ways through the building, walled off from its insides */
@@ -211,10 +213,20 @@ export interface Building {
 }
 
 /** A door at a point on a building's outline */
+/** A street address: the street (or place) and the house number on it */
+export interface Address {
+  street: string;
+  housenumber: string;
+}
+
 export interface Entrance {
   at: Point;
   /** entrance=* value (main, staircase, shop, service, yes, ...) */
   kind: string;
+  /** Its staircase's letter or number (ref=*), as on a plaque over the door */
+  ref?: string;
+  /** Its own house number (addr:housenumber), where it has one */
+  housenumber?: string;
   /** Not in OSM: guessed from the building's shape and the street next to it */
   guessed?: boolean;
 }
@@ -1485,8 +1497,16 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
     ...((tags.window === "no" || tags.windows === "no") && { windowless: true }),
     ...(isSpecial(tags) && { special: true }),
     ...optionalName(tags),
+    ...optionalAddress(tags),
     polygon,
   };
+}
+
+/** A building's street address, where it has a house number and a street or place */
+export function optionalAddress(tags: Tags): { address?: Address } {
+  const street = (tags["addr:street"] ?? tags["addr:place"])?.trim();
+  const housenumber = tags["addr:housenumber"]?.trim();
+  return street && housenumber ? { address: { street, housenumber } } : {};
 }
 
 /** A building's wall material: building:material or material, guessed for an untagged chimney */
