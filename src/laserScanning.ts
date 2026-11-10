@@ -317,7 +317,13 @@ export async function fetchLaserRoofs(
       for (const index of group.missing) {
         const points = above.get(index) ?? [];
         const roof = roofOf(points.map(([, , z]) => z), ground.get(index) ?? 0);
-        const fits = roof === undefined ? [] : fitRoofShapes(points, outlines[index]);
+        let fits: RoofFit[] = [];
+        try {
+          fits = roof === undefined ? [] : fitRoofShapes(points, outlines[index]);
+        } catch (err) {
+          // one outline's shapes failing leaves out only its shape
+          options.log?.(`the roof shapes of an outline in sheet ${group.sheet} failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
         const shape = chooseRoofShape(fits);
         group.known.set(keys[index], roof === undefined ? null : { roof, fits });
         if (roof !== undefined) {

@@ -153,6 +153,11 @@ export function wingRidges(ring: Ring): WingRidges[] {
     }
     seen.add(key);
     const ridges = ridgesOf(wings, corners);
+    // a hipped wing too short for a ridge of its own is no roof of hipped wings
+    const length = (line: Point[]) => Math.hypot(line[1][0] - line[0][0], line[1][1] - line[0][1]);
+    if (ridges && ridges.hipped.some((line) => length(line) < MERGE_M)) {
+      ridges.hipped = [];
+    }
     if (ridges) {
       out.push({ gabled: ridges.gabled.map((line) => line.map(toWorld)), hipped: ridges.hipped.map((line) => line.map(toWorld)), run: ridges.run });
     }
