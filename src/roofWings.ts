@@ -1,6 +1,7 @@
 // Roofs of wings: an outline of square corners, an L, a T, a U, is cut at its inner corners into rectangles, its
 // wings, in each way it can be, and each way of cutting gives ridges: the largest wing's along its length, gable to
-// gable, and each other wing's from its outer end into the ridge of the wing it joins. With hipped ends the ridges
+// gable, and each other wing's from its outer end into the ridge of the wing it joins, which ends there where the
+// joining wing is flush with its end (an L's corner, hipped outside). With hipped ends the ridges
 // stop short of the outline by half their wing's width. ridgeRoofs (roofRidges.ts) draws a roof from such ridges, and
 // its share of the roof's height at a point is what laserRoofShapes.ts fits to the laser scanning's points.
 import { boxCentre, orientedBox, pointInRing, simplifyRing, type Point, type Ring } from "./geometry.ts";
@@ -233,25 +234,18 @@ function ridgesOf(wings: Wing[], corners: Point[]): { gabled: Point[][]; hipped:
     return undefined;
   }
   main.axis = mu >= mv ? 0 : 1;
-  const gabled: Point[][] = [];
-  const hipped: Point[][] = [];
+  // each wing's ridge along its axis, from and to, and whether each end is hipped: set as the wings join, a ridge
+  // ending at a wing that joins it flush with its end (an L's corner), the two ridges meeting there
+  const ridges = new Map<Wing, { axis: 0 | 1; from: number; to: number; hipFrom: boolean; hipTo: boolean }>();
   // the main wing first, then each joining one already placed
   const placed: Wing[] = [main];
-  const ridgeOf = (w: Wing, axis: 0 | 1, from: number, to: number, hipFrom: boolean, hipTo: boolean) => {
-    const across = axis === 0 ? (w.v0 + w.v1) / 2 : (w.u0 + w.u1) / 2;
-    const half = (axis === 0 ? w.v1 - w.v0 : w.u1 - w.u0) / 2;
-    const [a, b] = [from + (hipFrom ? Math.sign(to - from) * half : 0), to - (hipTo ? Math.sign(to - from) * half : 0)];
-    const line = (s: number, t: number): Point[] => (axis === 0 ? [[s, across], [t, across]] : [[across, s], [across, t]]);
-    gabled.push(line(from, to));
-    hipped.push(line(a, b));
-  };
   {
     const [from, to] = main.axis === 0 ? [main.u0, main.u1] : [main.v0, main.v1];
     const ends = [from, to].map((at) => (main.axis === 0 ? onOutline(corners, 1, at, main.v0, main.v1) : onOutline(corners, 0, at, main.u0, main.u1)));
     if (!ends[0] || !ends[1]) {
       return undefined;
     }
-    ridgeOf(main, main.axis, from, to, true, true);
+    ridges.set(main, { axis: main.axis, from, to, hipFrom: true, hipTo: true });
   }
   const rest = wings.filter((w) => w !== main);
   while (rest.length > 0) {
@@ -260,20 +254,28 @@ function ridgesOf(wings: Wing[], corners: Point[]): { gabled: Point[][]; hipped:
     for (const w of rest) {
       for (const p of placed) {
         const shared = sharedSide(w, p);
-        if (!shared || p.axis === undefined || shared.axis !== p.axis) {
+        const pr = ridges.get(p);
+        if (!shared || !pr || shared.axis !== pr.axis) {
           continue;
         }
-
         const axis: 0 | 1 = shared.axis === 0 ? 1 : 0;
-        const pRidge = p.axis === 0 ? (p.v0 + p.v1) / 2 : (p.u0 + p.u1) / 2;
+        const pRidge = pr.axis === 0 ? (p.v0 + p.v1) / 2 : (p.u0 + p.u1) / 2;
         const [lo, hi] = axis === 0 ? [w.u0, w.u1] : [w.v0, w.v1];
         const outer = Math.abs(lo - shared.at) < Math.abs(hi - shared.at) ? hi : lo;
         const outerOnOutline = axis === 0 ? onOutline(corners, 1, outer, w.v0, w.v1) : onOutline(corners, 0, outer, w.u0, w.u1);
         if (!outerOnOutline) {
           continue;
         }
-        w.axis = axis;
-        ridgeOf(w, axis, outer, pRidge, true, false);
+        // flush with an end of p: p's ridge ends where w's meets it
+        const [wLo, wHi] = pr.axis === 0 ? [w.u0, w.u1] : [w.v0, w.v1];
+        const [pLo, pHi] = pr.axis === 0 ? [p.u0, p.u1] : [p.v0, p.v1];
+        const meet = (wLo + wHi) / 2;
+        if (Math.abs(wHi - pHi) < MERGE_M && Math.abs(pr.to - pHi) < MERGE_M) {
+          Object.assign(pr, { to: meet, hipTo: false });
+        } else if (Math.abs(wLo - pLo) < MERGE_M && Math.abs(pr.from - pLo) < MERGE_M) {
+          Object.assign(pr, { from: meet, hipFrom: false });
+        }
+        ridges.set(w, { axis, from: outer, to: pRidge, hipFrom: true, hipTo: false });
         placed.push(w);
         rest.splice(rest.indexOf(w), 1);
         joined = true;
@@ -286,6 +288,16 @@ function ridgesOf(wings: Wing[], corners: Point[]): { gabled: Point[][]; hipped:
     if (!joined) {
       return undefined;
     }
+  }
+  const gabled: Point[][] = [];
+  const hipped: Point[][] = [];
+  for (const [w, { axis, from, to, hipFrom, hipTo }] of ridges) {
+    const across = axis === 0 ? (w.v0 + w.v1) / 2 : (w.u0 + w.u1) / 2;
+    const half = (axis === 0 ? w.v1 - w.v0 : w.u1 - w.u0) / 2;
+    const [a, b] = [from + (hipFrom ? Math.sign(to - from) * half : 0), to - (hipTo ? Math.sign(to - from) * half : 0)];
+    const line = (s: number, t: number): Point[] => (axis === 0 ? [[s, across], [t, across]] : [[across, s], [across, t]]);
+    gabled.push(line(from, to));
+    hipped.push(line(a, b));
   }
   return { gabled, hipped, run: Math.min(mu, mv) / 2 };
 }
