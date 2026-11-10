@@ -1,9 +1,10 @@
 // Roof shapes from the laser scanning's points on a roof (laserScanning.ts): the shapes the map draws (gabled and
 // hipped with the ridge along the outline's oriented box or across it, pyramidal, skillion) and a flat one, each
 // fitted to the points by least squares in the box's frame, the points far off the fit left out a few rounds over
-// (chimneys, dormers, trees over the eaves). A pitched shape is taken only where it fits the points much better than
-// a flat roof, is no steeper than a roof is drawn and rises enough to tell; of shapes that fit about as well, the
-// simpler one.
+// (chimneys, dormers, trees over the eaves). The fits are kept (laserScanning.ts caches them) and the shape chosen from
+// them: a pitched one only where it fits the points closely, much better than a flat roof, is no steeper than a roof
+// is drawn and rises enough to tell, of shapes that fit about as well the simpler one; else a flat one only where the
+// points lie flat, not on trees (a building newer than the scanning) nor a roof of many levels.
 import { boxCentre, orientedBox, ringArea, type Point, type Polygon } from "./geometry.ts";
 import { GUESS_MIN_FILL, roofDegrees, type Building, type RoofShape } from "./osm.ts";
 
@@ -31,7 +32,9 @@ const MAX_SLOPE = Math.tan((60 * Math.PI) / 180);
 /** A pitched shape's typical miss is at most this share of a flat roof's */
 const PITCHED_SHARE = 0.6;
 /** A pitched shape's typical miss is at most this (m) */
-const MAX_MISS_M = 0.4;
+const MAX_MISS_M = 0.3;
+/** A flat roof's typical miss is at most this (m): a roof's points, not a tree's crown */
+const MAX_FLAT_MISS_M = 0.15;
 /** A simpler shape is taken over a better fitting one when its typical miss is at most this much more */
 const SIMPLER_BY = 1.15;
 /** Rounds of leaving out the points far off the fit, and how far: this many times the typical miss, at least the floor */
@@ -39,13 +42,16 @@ const TRIM_ROUNDS = 3;
 const TRIM_TIMES = 3;
 const TRIM_FLOOR_M = 0.3;
 
-interface Fit {
+/** A shape fitted to a roof's points: angle, rise and top as in LaserRoofShape */
+export interface RoofFit {
+  /** No shape: a flat roof */
   shape?: RoofShape;
   angle: number;
   rise: number;
   top: number;
   /** The median distance of all the points from the fit (m) */
   miss: number;
+  /** Rise over run */
   slope: number;
 }
 
@@ -120,13 +126,18 @@ function median(values: number[]): number {
   return sorted.length === 0 ? 0 : sorted[Math.floor((sorted.length - 1) / 2)];
 }
 
-/**
- * The shape of a roof from the points on it (easting, northing and height, in the outline's frame), or undefined
- * when they are too few or fit no shape well, not even a flat one.
- */
+/** The shape of a roof from the points on it, as chooseRoofShape chooses from fitRoofShapes' fits */
 export function fitRoofShape(points: [number, number, number][], outline: Polygon): LaserRoofShape | undefined {
+  return chooseRoofShape(fitRoofShapes(points, outline));
+}
+
+/**
+ * Every shape fitted to a roof's points (easting, northing and height, in the outline's frame), the flat one first;
+ * none when they are too few.
+ */
+export function fitRoofShapes(points: [number, number, number][], outline: Polygon): RoofFit[] {
   if (points.length < MIN_SHAPE_POINTS) {
-    return undefined;
+    return [];
   }
   const box = orientedBox(outline.outer);
   const centre: Point = boxCentre(outline.outer, box.angle);
@@ -137,10 +148,10 @@ export function fitRoofShape(points: [number, number, number][], outline: Polygo
     return [de * cos + dn * sin, -de * sin + dn * cos, z];
   });
   const [a, b] = [box.length / 2, box.width / 2];
-  const fits: Fit[] = [];
+  const fits: RoofFit[] = [];
   const flat = fitDown(local, () => 0);
   if (flat === undefined) {
-    return undefined;
+    return [];
   }
   fits.push({ angle: 0, rise: 0, top: flat.top, miss: flat.miss, slope: 0 });
   // the pitched shapes, simplest first: z falls from the ridge with the distance d, rising slope * run in all
@@ -165,15 +176,25 @@ export function fitRoofShape(points: [number, number, number][], outline: Polygo
     const top = Math.max(...[-a, a].flatMap((u) => [-b, b].map((v) => plane.c + plane.gu * u + plane.gv * v)));
     fits.push({ shape: "skillion", angle: (((down * 180) / Math.PI) % 360 + 360) % 360, rise: slope * run, top, miss: plane.miss, slope });
   }
+  const round = (x: number, by: number) => Math.round(x * by) / by;
+  return fits.map((f) => ({ ...f, angle: round(f.angle, 10), rise: round(f.rise, 100), top: round(f.top, 100), miss: round(f.miss, 1000), slope: round(f.slope, 1000) }));
+}
+
+/** The shape of a roof from its fits (fitRoofShapes), or undefined when none fits well, not even a flat one */
+export function chooseRoofShape(fits: readonly RoofFit[]): LaserRoofShape | undefined {
+  const flat = fits.find((f) => f.shape === undefined);
+  if (flat === undefined) {
+    return undefined;
+  }
   const pitched = fits.filter(
     (f) => f.shape && f.rise >= MIN_RISE_M && f.slope >= MIN_SLOPE && f.slope <= MAX_SLOPE && f.miss <= MAX_MISS_M && f.miss <= PITCHED_SHARE * flat.miss,
   );
   if (pitched.length === 0) {
-    return flat.miss <= MAX_MISS_M ? { angle: 0, rise: 0, top: flat.top } : undefined;
+    return flat.miss <= MAX_FLAT_MISS_M ? { angle: 0, rise: 0, top: flat.top } : undefined;
   }
   const best = Math.min(...pitched.map((f) => f.miss));
-  const chosen = pitched.find((f) => f.miss <= best * SIMPLER_BY) ?? pitched[0];
-  return { shape: chosen.shape, angle: Math.round(chosen.angle * 10) / 10, rise: Math.round(chosen.rise * 100) / 100, top: Math.round(chosen.top * 100) / 100 };
+  const { shape, angle, rise, top } = pitched.find((f) => f.miss <= best * SIMPLER_BY) ?? pitched[0];
+  return { shape, angle, rise, top };
 }
 
 /** Roofs at least this big (m²) take the shape the laser scanning tells */
