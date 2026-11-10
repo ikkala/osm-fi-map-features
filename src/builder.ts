@@ -594,7 +594,7 @@ export class MapBuilder {
         const measured = notRaised.filter(measurable);
         const toTm = (ring: Point[]) => ring.map((p) => toTm35fin(toGeo(p)));
         try {
-          const { roofs, shapes, cached: roofsCached, fetched } = await fetchLaserRoofs(
+          const { roofs, shapes, cached: roofsCached, fetched, failed } = await fetchLaserRoofs(
             measured.map((b) => ({ outer: toTm(b.polygon.outer), holes: b.polygon.holes.map(toTm) })),
             { apiKey: mmlApiKey, cache, refresh, log: (message) => logger.log(message) },
           );
@@ -602,7 +602,7 @@ export class MapBuilder {
           laserRoof = (b) => byBuilding.get(b);
           const shapeByBuilding = new Map<Building, LaserRoofShape | undefined>(measured.map((b, index) => [b, shapes.get(index)]));
           laserShape = (b) => shapeByBuilding.get(b);
-          logger.log(`laser scanning: ${roofs.size} of ${measured.length} roofs measured (${roofsCached} cached, ${fetched} sheets fetched)`);
+          logger.log(`laser scanning: ${roofs.size} of ${measured.length} roofs measured (${roofsCached} cached, ${fetched} sheets fetched${failed > 0 ? `, ${failed} failed` : ""})`);
         } catch (err) {
           logger.warn(`warning: no roofs from the laser scanning: ${err instanceof Error ? err.message : String(err)}`);
         }

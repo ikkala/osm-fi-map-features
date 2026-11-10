@@ -39,3 +39,19 @@ test("the cached roofs come with their shapes, and need no sheet fetched", async
   assert.deepEqual([...result.roofs], [[0, 104], [1, 99.5]]);
   assert.deepEqual([...result.shapes], [[0, { shape: "gabled", angle: 90, rise: 3.2, top: 104.5 }]]);
 });
+
+test("a sheet whose fetch fails leaves out only the roofs needing it", async (t) => {
+  const square = (e: number, n: number): Polygon => ({ outer: [[e, n], [e + 20, n], [e + 20, n + 10], [e, n + 10]], holes: [] });
+  // one outline cached, one in a sheet 6 km off that is not
+  const outlines = [square(327000, 6822000), square(333000, 6822000)];
+  const cache = memoryCache();
+  await cache.put(`mml-laser-roofs-${mapSheet(327010, 6822005)}.json`, JSON.stringify({ version: 2, roofs: { [outlineKey(outlines[0])]: 104 } }));
+  t.mock.method(globalThis, "fetch", () => Promise.reject(new Error("no network")));
+  const logged: string[] = [];
+  const result = await fetchLaserRoofs(outlines, { cache, refresh: false, apiKey: "-", log: (m) => logged.push(m) });
+  assert.deepEqual([result.cached, result.fetched, result.failed], [1, 0, 1]);
+  assert.deepEqual([...result.roofs], [[0, 104]]);
+  assert.ok(logged.some((m) => /failed, its roofs left out: no network/.test(m)), logged.join("\n"));
+  // nothing cached for it: fetched another time
+  assert.equal(await cache.get(`mml-laser-roofs-${mapSheet(333010, 6822005)}.json`), undefined);
+});
