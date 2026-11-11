@@ -74,7 +74,7 @@ test("buildings OSM tells no roof shape of take the one the points tell, turned 
   const gabled = { shape: "gabled" as const, angle: 90, rise: 4, top: 113 };
   const [across, tagged, small, guessed] = [building(), building({ roofShapeEstimated: undefined }), building({ polygon: { outer: [[0, 0], [5, 0], [5, 6], [0, 6]], holes: [] } }), building({ roofShape: "hipped", roofHeight: 2, roofHeightEstimated: true, heightEstimated: true })];
   const shapes = new Map<Building, LaserRoofShape>([[across, gabled], [tagged, gabled], [small, gabled], [guessed, { angle: 0, rise: 0, top: 109 }]]);
-  assert.deepEqual(applyLaserShapes([across, tagged, small, guessed], (b) => shapes.get(b)), { pitched: 1, flattened: 1 });
+  assert.deepEqual(applyLaserShapes([across, tagged, small, guessed], (b) => shapes.get(b)), { pitched: 1, flattened: 1, gambrel: 0 });
   // the ridge across the long side, which is north: east to west
   assert.deepEqual([across.roofShape, across.roofAngle, across.roofHeight], ["gabled", 180, 4]);
   assert.equal(tagged.roofShape, undefined);
@@ -118,7 +118,7 @@ test("an L's roof and a T's are of wings: their ridges, gabled or hipped, drawn 
   assert.ok(shape && shape.wings !== undefined && shape.shape === "gabled" && Math.abs(shape.rise - 3) < 0.4, JSON.stringify(shape));
   // drawn on a building: faces from the ridges, no shape of the box's
   const b: Building = { osm: "w2", kind: "yes", part: false, hasParts: false, height: 9, minHeight: 0, base: 94, roofShapeEstimated: true, polygon: { outer: L, holes: [] } };
-  assert.deepEqual(applyLaserShapes([b], () => shape), { pitched: 1, flattened: 0 });
+  assert.deepEqual(applyLaserShapes([b], () => shape), { pitched: 1, flattened: 0, gambrel: 0 });
   assert.ok(b.roofFaces && b.roofFaces.triangles.length > 0 && b.roofShape === undefined && b.roofHeight !== undefined && Math.abs(b.roofHeight - 3) < 0.4);
 
   // a T: a bar 30 m by 10, a stem 8 m wide north from its middle, hipped at its ends

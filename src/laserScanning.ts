@@ -7,6 +7,7 @@
 import type { CacheOptions } from "./cache.ts";
 import { distanceToRing, pointInPolygon, type Point, type Polygon } from "./geometry.ts";
 import { field, isObject, items, optionalNumber, optionalString } from "./json.ts";
+import { fitGambrel, GAMBREL_REACH_M, type GambrelFit } from "./gambrelRoofs.ts";
 import { chooseRoofShape, fitRoofShapes, type LaserRoofShape, type RoofFit } from "./laserRoofShapes.ts";
 import type { RoofShape } from "./osm.ts";
 import { outlineKey } from "./ortho.ts";
@@ -34,7 +35,7 @@ const CELL_M = 25;
 /** Followed by the sheet, "<sheet>.json" */
 const CACHE_PREFIX = "mml-laser-roofs-";
 /** Bump when the roofs' computation changes, so cached roofs are computed again */
-const CACHE_VERSION = 4;
+const CACHE_VERSION = 5;
 
 /** The rows of 1:200 000 sheets from the south, 96 km each from northing 6 570 000 */
 const SHEET_ROWS = "KLMNPQRSTUVWX";
@@ -239,7 +240,7 @@ export async function fetchLaserRoofs(
       const measured = known.get(keys[index]);
       if (measured) {
         result.roofs.set(index, measured.roof);
-        const shape = chooseRoofShape(measured.fits);
+        const shape = chooseRoofShape(measured.fits, measured.gambrel);
         if (shape) {
           result.shapes.set(index, shape);
         }
@@ -250,15 +251,24 @@ export async function fetchLaserRoofs(
       pending.push({ sheet, known, missing, needs });
     }
   }
-  // the points over the ground inside each missing outline, and how many on the ground
+  // the points over the ground inside each missing outline, and how many on the ground; and those over the ground
+  // near it, inside or out, that a gambrel roof is fitted to
   const above = new Map<number, [number, number, number][]>();
+  const near = new Map<number, [number, number, number][]>();
   const ground = new Map<number, number>();
   const cells = new Map<string, number[]>();
+  const reach = (box: { minE: number; minN: number; maxE: number; maxN: number }) => ({
+    minE: box.minE - GAMBREL_REACH_M,
+    minN: box.minN - GAMBREL_REACH_M,
+    maxE: box.maxE + GAMBREL_REACH_M,
+    maxN: box.maxN + GAMBREL_REACH_M,
+  });
   for (const { missing } of pending) {
     for (const index of missing) {
       above.set(index, []);
+      near.set(index, []);
       ground.set(index, 0);
-      const box = boxes[index];
+      const box = reach(boxes[index]);
       for (let x = Math.floor(box.minE / CELL_M); x <= Math.floor(box.maxE / CELL_M); x++) {
         for (let y = Math.floor(box.minN / CELL_M); y <= Math.floor(box.maxN / CELL_M); y++) {
           cells.set(`${x}_${y}`, [...(cells.get(`${x}_${y}`) ?? []), index]);
@@ -282,7 +292,10 @@ export async function fetchLaserRoofs(
       failed.add(sheet);
       options.log?.(`the laser scanning of sheet ${sheet} failed, its roofs left out: ${err instanceof Error ? err.message : String(err)}`);
       for (const group of pending.filter(({ needs }) => needs.has(sheet))) {
-        group.missing.forEach((index) => above.delete(index));
+        group.missing.forEach((index) => {
+          above.delete(index);
+          near.delete(index);
+        });
         pending.splice(pending.indexOf(group), 1);
       }
       continue;
@@ -295,12 +308,17 @@ export async function fetchLaserRoofs(
         }
         const p: Point = [e, n];
         for (const index of cells.get(`${Math.floor(e / CELL_M)}_${Math.floor(n / CELL_M)}`) ?? []) {
-          const box = boxes[index];
+          const box = reach(boxes[index]);
           const outline = outlines[index];
-          if (e < box.minE || e > box.maxE || n < box.minN || n > box.maxN || !pointInPolygon(p, outline)) {
+          if (e < box.minE || e > box.maxE || n < box.minN || n > box.maxN) {
             continue;
           }
-          if ([outline.outer, ...outline.holes].some((ring) => distanceToRing(p, ring) < EDGE_MARGIN_M)) {
+          const inside = pointInPolygon(p, outline);
+          const edge = Math.min(...[outline.outer, ...outline.holes].map((ring) => distanceToRing(p, ring)));
+          if (!GROUND_CLASSES.has(cls) && (inside || edge <= GAMBREL_REACH_M)) {
+            near.get(index)?.push([e, n, z]);
+          }
+          if (!inside || edge < EDGE_MARGIN_M) {
             continue;
           }
           if (GROUND_CLASSES.has(cls)) {
@@ -318,14 +336,16 @@ export async function fetchLaserRoofs(
         const points = above.get(index) ?? [];
         const roof = roofOf(points.map(([, , z]) => z), ground.get(index) ?? 0);
         let fits: RoofFit[] = [];
+        let gambrel: GambrelFit | undefined;
         try {
           fits = roof === undefined ? [] : fitRoofShapes(points, outlines[index]);
+          gambrel = roof === undefined ? undefined : fitGambrel(near.get(index) ?? [], outlines[index]);
         } catch (err) {
           // one outline's shapes failing leaves out only its shape
           options.log?.(`the roof shapes of an outline in sheet ${group.sheet} failed: ${err instanceof Error ? err.message : String(err)}`);
         }
-        const shape = chooseRoofShape(fits);
-        group.known.set(keys[index], roof === undefined ? null : { roof, fits });
+        const shape = chooseRoofShape(fits, gambrel);
+        group.known.set(keys[index], roof === undefined ? null : { roof, fits, ...(gambrel && { gambrel }) });
         if (roof !== undefined) {
           result.roofs.set(index, roof);
           if (shape) {
@@ -333,8 +353,12 @@ export async function fetchLaserRoofs(
           }
         }
         above.delete(index);
+        near.delete(index);
       }
-      const rows = [...group.known].map(([key, measured]) => [key, measured && (measured.fits.length > 0 ? [measured.roof, ...measured.fits.flatMap(fitRow)] : measured.roof)]);
+      const rows = [...group.known].map(([key, measured]) => [
+        key,
+        measured && (measured.fits.length > 0 || measured.gambrel ? [measured.roof, ...measured.fits.flatMap(fitRow), ...(measured.gambrel ? gambrelRow(measured.gambrel) : [])] : measured.roof),
+      ]);
       await options.cache.put(`${CACHE_PREFIX}${group.sheet}.json`, JSON.stringify({ version: CACHE_VERSION, roofs: Object.fromEntries(rows) }));
       pending.splice(pending.indexOf(group), 1);
     }
@@ -347,6 +371,7 @@ export async function fetchLaserRoofs(
 interface Measured {
   roof: number;
   fits: RoofFit[];
+  gambrel?: GambrelFit;
 }
 
 const SHAPES: readonly (RoofShape | "flat")[] = ["flat", "gabled", "hipped", "pyramidal", "skillion"];
@@ -360,6 +385,36 @@ const FIT_LENGTH = 6;
 function fitRow(fit: RoofFit): (string | number)[] {
   const name = fit.shape ?? "flat";
   return fit.wings === undefined ? [name, fit.angle, fit.rise, fit.top, fit.miss, fit.slope] : [`${name}-wings`, fit.wings, fit.rise, fit.top, fit.miss, fit.slope];
+}
+
+/** The values of a gambrel roof's fit in the cache's rows, after its name */
+const GAMBREL_FIELDS = ["angle", "offset", "knee", "rise", "top", "slope", "lowerSlope", "miss", "lowerMiss", "gabledLowerMiss", "lowerPoints"] as const;
+
+/** A gambrel roof's fit as the cache keeps it: "gambrel" and its GAMBREL_FIELDS */
+function gambrelRow(fit: GambrelFit): (string | number)[] {
+  return ["gambrel", ...GAMBREL_FIELDS.map((name) => fit[name])];
+}
+
+function parseGambrel(row: unknown[]): GambrelFit | undefined {
+  const values = row.slice(1).map(optionalNumber);
+  const value = (name: (typeof GAMBREL_FIELDS)[number]) => values[GAMBREL_FIELDS.indexOf(name)];
+  const [angle, offset, knee, rise, top, slope, lowerSlope, miss, lowerMiss, gabledLowerMiss, lowerPoints] = GAMBREL_FIELDS.map(value);
+  if (
+    angle === undefined ||
+    offset === undefined ||
+    knee === undefined ||
+    rise === undefined ||
+    top === undefined ||
+    slope === undefined ||
+    lowerSlope === undefined ||
+    miss === undefined ||
+    lowerMiss === undefined ||
+    gabledLowerMiss === undefined ||
+    lowerPoints === undefined
+  ) {
+    return undefined;
+  }
+  return { angle, offset, knee, rise, top, slope, lowerSlope, miss, lowerMiss, gabledLowerMiss, lowerPoints };
 }
 
 function parseFit(row: unknown[]): RoofFit | undefined {
@@ -390,13 +445,20 @@ async function readRoofs(key: string, options: CacheOptions): Promise<Map<string
           known.set(outline, roof === null ? null : { roof, fits: [] });
         } else if (Array.isArray(roof) && typeof roof[0] === "number") {
           const fits: RoofFit[] = [];
-          for (let at = 1; at + FIT_LENGTH <= roof.length; at += FIT_LENGTH) {
-            const fit = parseFit(roof.slice(at, at + FIT_LENGTH));
+          let gambrel: GambrelFit | undefined;
+          for (let at = 1; at < roof.length; ) {
+            if (roof[at] === "gambrel") {
+              gambrel = parseGambrel(roof.slice(at, at + 1 + GAMBREL_FIELDS.length));
+              at += 1 + GAMBREL_FIELDS.length;
+              continue;
+            }
+            const fit = at + FIT_LENGTH <= roof.length ? parseFit(roof.slice(at, at + FIT_LENGTH)) : undefined;
             if (fit) {
               fits.push(fit);
             }
+            at += FIT_LENGTH;
           }
-          known.set(outline, { roof: roof[0], fits });
+          known.set(outline, { roof: roof[0], fits, ...(gambrel && { gambrel }) });
         }
       }
     }

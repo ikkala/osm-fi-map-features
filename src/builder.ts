@@ -639,9 +639,11 @@ export class MapBuilder {
         }
       }
       // the shapes after the heights: a roof's rise at most half of its building's
-      const shaped = laserShape ? applyLaserShapes(notRaised, laserShape) : { pitched: 0, flattened: 0 };
+      const shaped = laserShape ? applyLaserShapes(notRaised, laserShape) : { pitched: 0, flattened: 0, gambrel: 0 };
       if (laserShape) {
-        logger.log(`laser scanning: ${shaped.pitched} roofs given the pitched shape their points tell, ${shaped.flattened} guessed ones told flat`);
+        logger.log(
+          `laser scanning: ${shaped.pitched} roofs given the pitched shape their points tell (${shaped.gambrel} gambrel), ${shaped.flattened} guessed ones told flat`,
+        );
       }
       if (lowered > 0 || shaped.pitched > 0 || shaped.flattened > 0) {
         otherAttributions.push(LASER_ATTRIBUTION);
