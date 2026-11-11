@@ -126,7 +126,7 @@ and what a tile's fields hold in the types (`src/osm.ts` and the modules it name
   `src/startDates.ts` and `src/ages.ts` (when a building was built, and its storeys' height then), `src/bases.ts`
   (where a building stands on a slope), `src/roofRidges.ts` (roofs drawn by their ridge lines), `src/roofTops.ts`
   and `src/laserScanning.ts` (measured roof tops, brought down to the laser-scanned roof), `src/laserRoofShapes.ts` and `src/roofWings.ts`
-  (roof shapes from the laser scanning's points), `src/gambrelRoofs.ts` (gambrel roofs among them), `src/measuredParts.ts`
+  (roof shapes from the laser scanning's points), `src/gambrelRoofs.ts` (gambrel roofs among them, and where OSM tags one), `src/measuredParts.ts`
   (an outline split into the measured parts' heights), `src/ortho.ts` (roof
   colours), `src/windows.ts`, `src/entrances.ts` and `src/businesses.ts` (the businesses in a building and where
   each shows), `src/raisedPassages.ts` (passages on a bridge's deck).

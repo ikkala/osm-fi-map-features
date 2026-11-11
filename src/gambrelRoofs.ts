@@ -10,7 +10,7 @@
 // and lower roofs beside them make the whole roof's misses alike. The roof is drawn as triangles (roofFaces) over the
 // outline, centred on its box, the knee's share of the roof's height along the outline's sides.
 import { boxCentre, orientedBox, ringArea, triangulate, type Point, type Polygon } from "./geometry.ts";
-import { GUESS_MIN_FILL } from "./osm.ts";
+import { GUESS_MIN_FILL, type Building } from "./osm.ts";
 import type { RoofFaces } from "./roofRidges.ts";
 
 export interface GambrelFit {
@@ -319,4 +319,38 @@ export function gambrelFaces(outer: Point[], angle: number, knee: number, kneeHe
     }
   }
   return faces;
+}
+
+/**
+ * Where OSM tags a gambrel roof the knee is this share of the way from the ridge to the eaves, at this share of the
+ * roof's height: about where the laser scanning finds it
+ */
+const TAGGED_KNEE = 0.65;
+const TAGGED_KNEE_HEIGHT = 0.7;
+
+/**
+ * Draws the gabled roofs OSM tags gambrel (roofGambrel) by their faces (gambrelFaces), the knee at TAGGED_KNEE, where
+ * their outline has no holes and is near its box. Returns how many.
+ */
+export function taggedGambrels(buildings: Building[]): number {
+  let count = 0;
+  for (const b of buildings) {
+    const box = orientedBox(b.polygon.outer);
+    if (
+      !b.roofGambrel ||
+      b.roofShape !== "gabled" ||
+      b.roofAngle === undefined ||
+      !b.roofHeight ||
+      b.roofFaces ||
+      b.polygon.holes.length > 0 ||
+      Math.abs(ringArea(b.polygon.outer)) < GUESS_MIN_FILL * box.length * box.width
+    ) {
+      continue;
+    }
+    b.roofFaces = gambrelFaces(b.polygon.outer, (b.roofAngle * Math.PI) / 180, TAGGED_KNEE, TAGGED_KNEE_HEIGHT);
+    delete b.roofShape;
+    delete b.roofAngle;
+    count++;
+  }
+  return count;
 }

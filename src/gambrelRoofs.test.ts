@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fitGambrel, gambrelFaces, GAMBREL_REACH_M, isGambrel, kneeShare } from "./gambrelRoofs.ts";
+import { fitGambrel, gambrelFaces, GAMBREL_REACH_M, isGambrel, kneeShare, taggedGambrels } from "./gambrelRoofs.ts";
 import { distanceToRing, pointInRing, ringArea, type Point, type Polygon } from "./geometry.ts";
 import { applyLaserShapes, chooseRoofShape } from "./laserRoofShapes.ts";
-import type { Building } from "./osm.ts";
+import { parseOsm, type Building } from "./osm.ts";
+import { LocalProjection } from "./projection.ts";
+import { defined } from "./testing.ts";
 
 // a house 14 m by 9.5 m, its long side at 50° from east, centred at (1000, 2000)
 const ANGLE = (50 * Math.PI) / 180;
@@ -118,4 +120,31 @@ test("a building given a gambrel roof is drawn by its faces, with a storey in th
   assert.deepEqual(result, { pitched: 1, flattened: 0, gambrel: 1 });
   assert.ok(b.roofFaces && b.roofFaces.triangles.length >= 12, JSON.stringify(b.roofFaces));
   assert.deepEqual([b.roofShape, b.roofAngle, b.roofHeight, b.levels, b.roofLevels], [undefined, undefined, 4.6, 1, 1]);
+});
+
+test("a roof OSM tags gambrel is gabled until its height is known, then drawn by its faces along its ridge", () => {
+  const origin = { latitude: 61.5, longitude: 23.75 };
+  const projection = new LocalProjection(origin);
+  const at = (east: number, north: number) => {
+    const { latitude, longitude } = projection.toGeo([east, north]);
+    return { lat: latitude, lon: longitude };
+  };
+  // 12 m east to west by 8, its ridge so
+  const { features } = parseOsm(
+    [{ type: "way", id: 40, tags: { building: "house", "roof:shape": "gambrel", "building:levels": "1", "roof:levels": "1" }, geometry: [at(0, 0), at(12, 0), at(12, 8), at(0, 8), at(0, 0)] }],
+    origin,
+  );
+  const b = defined(features.buildings[0]);
+  assert.deepEqual([b.roofShape, b.roofGambrel], ["gabled", true]);
+  assert.equal(taggedGambrels(features.buildings), 1);
+  assert.ok(b.roofFaces && b.roofShape === undefined && b.roofHeight !== undefined, JSON.stringify(b));
+  // the knee on the west gable, both sides of the ridge at its middle
+  const faces = b.roofFaces;
+  const knees: number[] = [];
+  for (let i = 0; i < faces.points.length; i += 3) {
+    if (Math.abs(faces.points[i]) < 0.05 && faces.points[i + 2] > 0 && faces.points[i + 2] < 1) {
+      knees.push(Math.round(faces.points[i + 1] * 10) / 10);
+    }
+  }
+  assert.deepEqual([...new Set(knees)].sort((x, y) => x - y), [1.4, 6.6]);
 });

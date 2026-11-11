@@ -36,6 +36,7 @@ import { applyRoofTops, fetchRoofTops, measurable, ROOF_TOP_SOURCES, type RoofTo
 import { setTrackBeds } from "./trackbeds.ts";
 import { decksOver, lowerUnderBridges, tramBedCeiling, underBridges } from "./underbridges.ts";
 import { passagesUpSlopes, raisePassages } from "./raisedPassages.ts";
+import { taggedGambrels } from "./gambrelRoofs.ts";
 import { applyLaserShapes, type LaserRoofShape } from "./laserRoofShapes.ts";
 import { fitRoomsUnderDecks, openPortals, portalWallsAt, raiseToWalls, setTunnelFloors, setTunnelRooms, uncoverAtGrade } from "./tunnels.ts";
 import { fetchTreeRegister, overlaps, TREE_REGISTERS, type RegisterTree, type TreeRegisterSource } from "./treeRegister.ts";
@@ -648,6 +649,11 @@ export class MapBuilder {
       if (lowered > 0 || shaped.pitched > 0 || shaped.flattened > 0) {
         otherAttributions.push(LASER_ATTRIBUTION);
       }
+    }
+    // once their heights are known
+    const gambrels = taggedGambrels(features.buildings);
+    if (gambrels > 0) {
+      logger.log(`${gambrels} roofs tagged gambrel drawn so`);
     }
     // TODO: buildings with entrances on several levels, or steps at the door, stand at the wrong one.
     heightAt = buildingStepped;
