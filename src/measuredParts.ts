@@ -279,7 +279,7 @@ function giveEntrances(b: Building, parts: Building[]): void {
 /** A part of the building, flat-roofed at its height, with its other attributes */
 function partOf(b: Building, polygon: Polygon, height: number, k: number): Building {
   const part: Building = { ...b, osm: `${b.osm}:${k}`, part: true, hasParts: false, polygon, height };
-  for (const key of ["roofShape", "roofHeight", "roofHeightEstimated", "roofAngle", "roofLevels", "heightEstimated", "heightByType", "heightFromLevels", "passages", "passageRooms", "entrances", "businesses", "name"] as const) {
+  for (const key of ["roofShape", "roofGambrel", "roofHeight", "roofHeightEstimated", "roofAngle", "roofLevels", "heightEstimated", "heightByType", "heightFromLevels", "passages", "passageRooms", "entrances", "businesses", "name"] as const) {
     delete part[key];
   }
   part.roofShapeEstimated = true;

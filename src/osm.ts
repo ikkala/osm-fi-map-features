@@ -165,6 +165,8 @@ export interface Building {
   roofShape?: RoofShape;
   /** OSM has no roof:shape: the shape is a guess, or flat by default */
   roofShapeEstimated?: boolean;
+  /** roof:shape=gambrel: gabled until its height is known, then drawn by its faces (taggedGambrels, gambrelRoofs.ts) */
+  roofGambrel?: boolean;
   /** Meters from the eaves to the top of the roof (included in height) */
   roofHeight?: number;
   /** A pitched roof's height is a guess (no roof:height or roof:levels) */
@@ -1482,6 +1484,7 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
     ...(wallLevels !== undefined && wallLevels >= 1 && { levels: Math.round(wallLevels) }),
     ...(roofLevels !== undefined && roofLevels >= 1 && { roofLevels: Math.round(roofLevels) }),
     ...(roof && { roofShape: roof.shape, roofAngle: roof.angle }),
+    ...(roof && tags["roof:shape"] === "gambrel" && { roofGambrel: true }),
     ...(tags["roof:shape"] === undefined && { roofShapeEstimated: true }),
     ...(roofHeight !== undefined && { roofHeight }),
     ...(roofHeightEstimated && { roofHeightEstimated }),
