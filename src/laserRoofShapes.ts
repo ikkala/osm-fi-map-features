@@ -6,6 +6,7 @@
 // them: a pitched one only where it fits the points closely, much better than a flat roof, is no steeper than a roof
 // is drawn and rises enough to tell, of shapes that fit about as well the simpler one; else a flat one only where the
 // points lie flat, not on trees (a building newer than the scanning) nor a roof of many levels.
+import { gambrelFaces, isGambrel, kneeShare, type GambrelFit } from "./gambrelRoofs.ts";
 import { boxCentre, orientedBox, ringArea, type Point, type Polygon } from "./geometry.ts";
 import { GUESS_MIN_FILL, roofDegrees, type Building, type RoofShape } from "./osm.ts";
 import { ridgeRoofs } from "./roofRidges.ts";
@@ -25,6 +26,11 @@ export interface LaserRoofShape {
   top: number;
   /** A roof of wings (gabled or hipped): which of the outline's ways of cutting into them (wingRidges) */
   wings?: number;
+  /**
+   * A gabled roof that is a gambrel roof (gambrelRoofs.ts): the knee's distance from the ridge, a share of the way to
+   * the eaves, and its share of the roof's height from the eaves
+   */
+  gambrel?: { knee: number; height: number };
 }
 
 /** Fewer points than this on a roof tell no shape */
@@ -205,8 +211,15 @@ export function fitRoofShapes(points: [number, number, number][], outline: Polyg
   return fits.map((f) => ({ ...f, angle: round(f.angle, 10), rise: round(f.rise, 100), top: round(f.top, 100), miss: round(f.miss, 1000), slope: round(f.slope, 1000) }));
 }
 
-/** The shape of a roof from its fits (fitRoofShapes), or undefined when none fits well, not even a flat one */
-export function chooseRoofShape(fits: readonly RoofFit[]): LaserRoofShape | undefined {
+/**
+ * The shape of a roof from its fits (fitRoofShapes), or undefined when none fits well, not even a flat one: a gambrel
+ * roof where its fit (gambrelRoofs.ts) tells one, whatever the others fit
+ */
+export function chooseRoofShape(fits: readonly RoofFit[], gambrel?: GambrelFit): LaserRoofShape | undefined {
+  if (gambrel && isGambrel(gambrel)) {
+    const { angle, rise, top, knee } = gambrel;
+    return { shape: "gabled", angle, rise, top, gambrel: { knee, height: Math.round(kneeShare(gambrel) * 1000) / 1000 } };
+  }
   const flat = fits.find((f) => f.shape === undefined);
   if (flat === undefined) {
     return undefined;
@@ -224,22 +237,30 @@ export function chooseRoofShape(fits: readonly RoofFit[]): LaserRoofShape | unde
 
 /** Roofs at least this big (m²) take the shape the laser scanning tells */
 export const MIN_SHAPED_AREA_M2 = 40;
+/** A gambrel roof's rise is at most this share of its building's height, other roofs' at most half */
+const MAX_GAMBREL_SHARE = 0.7;
+/** Storeys lower than this (m) do not fit in the walls: one of them is in a gambrel roof */
+const MIN_STOREY_M = 2.2;
 
 export interface LaserShapeMatch {
   /** Buildings given a pitched roof of the shape the points tell */
   pitched: number;
   /** Buildings whose guessed pitched roof the points tell flat */
   flattened: number;
+  /** Of the pitched ones, gambrel roofs */
+  gambrel: number;
 }
 
 /**
  * Gives the buildings and parts OSM tells no roof shape of (nor ridges), of MIN_SHAPED_AREA_M2 at least, the shape
  * their points tell (shapeOf): a pitched one where the outline is nearly its box (GUESS_MIN_FILL), turned as the box
  * is in the map's frame, or a roof of wings drawn from their ridges (ridgeRoofs), its rise at most half the
- * building's height; flat where the points tell flat. A building whose height is estimated takes the measured top too.
+ * building's height; flat where the points tell flat. A gambrel roof is drawn by its faces (gambrelFaces), its rise
+ * a larger share of the building's height, and holds a storey (roofLevels) that the walls lose where theirs would be
+ * too low. A building whose height is estimated takes the measured top too.
  */
 export function applyLaserShapes(buildings: Building[], shapeOf: (b: Building) => LaserRoofShape | undefined): LaserShapeMatch {
-  const result: LaserShapeMatch = { pitched: 0, flattened: 0 };
+  const result: LaserShapeMatch = { pitched: 0, flattened: 0, gambrel: 0 };
   for (const b of buildings) {
     const measured = shapeOf(b);
     const area = Math.abs(ringArea(b.polygon.outer));
@@ -280,8 +301,25 @@ export function applyLaserShapes(buildings: Building[], shapeOf: (b: Building) =
     if (b.polygon.holes.length > 0 || area < GUESS_MIN_FILL * box.length * box.width) {
       continue;
     }
+    const angle = box.angle + (measured.angle * Math.PI) / 180;
+    if (measured.gambrel) {
+      // drawn by its faces, as a roof of ridges is
+      b.roofHeight = Math.min(measured.rise, b.height * MAX_GAMBREL_SHARE);
+      b.roofFaces = gambrelFaces(b.polygon.outer, angle, measured.gambrel.knee, measured.gambrel.height);
+      delete b.roofShape;
+      delete b.roofAngle;
+      delete b.roofShapeEstimated;
+      delete b.roofHeightEstimated;
+      b.roofLevels ??= 1;
+      if (b.levels !== undefined && b.levels > 1 && (b.height - b.roofHeight - b.minHeight) / b.levels < MIN_STOREY_M) {
+        b.levels--;
+      }
+      result.pitched++;
+      result.gambrel++;
+      continue;
+    }
     b.roofShape = measured.shape;
-    b.roofAngle = roofDegrees(box.angle + (measured.angle * Math.PI) / 180);
+    b.roofAngle = roofDegrees(angle);
     b.roofHeight = Math.min(measured.rise, b.height / 2);
     delete b.roofHeightEstimated;
     result.pitched++;

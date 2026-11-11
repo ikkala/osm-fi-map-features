@@ -28,16 +28,23 @@ test("roofOf is the height under nearly all the points over the ground, what sta
 
 test("the cached roofs come with the shape chosen from their fits, and need no sheet fetched", async () => {
   const square = (e: number, n: number): Polygon => ({ outer: [[e, n], [e + 20, n], [e + 20, n + 10], [e, n + 10]], holes: [] });
-  // three outlines in sheet L4144B4 (Tampere's centre)
-  const outlines = [square(327000, 6822000), square(327100, 6822000), square(327200, 6822000)];
+  // four outlines in sheet M4212G1 (Tampere's centre)
+  const outlines = [square(327000, 6822000), square(327100, 6822000), square(327200, 6822000), square(327300, 6822000)];
   const cache = memoryCache();
   const sheet = mapSheet(327010, 6822005);
-  const [gabled, flat, none] = outlines.map(outlineKey);
-  await cache.put(`mml-laser-roofs-${sheet}.json`, JSON.stringify({ version: 4, roofs: { [gabled]: [104, "flat", 0, 0, 103.6, 0.6, 0, "gabled", 90, 3.2, 104.5, 0.05, 0.4, "hipped-wings", 1, 3, 104.4, 0.2, 0.5], [flat]: 99.5, [none]: null } }));
+  const [gabled, flat, none, gambrel] = outlines.map(outlineKey);
+  const fits = ["flat", 0, 0, 103.6, 0.6, 0, "gabled", 90, 3.2, 104.5, 0.05, 0.4, "hipped-wings", 1, 3, 104.4, 0.2, 0.5];
+  // a gambrel roof's fit after the others: angle, offset, knee, rise, top, slopes, misses and the lower slopes' points
+  const gambrelFit = ["gambrel", 0, -0.5, 0.6, 4.4, 108, 0.4, 2.3, 0.1, 0.2, 1.2, 9];
+  await cache.put(
+    `mml-laser-roofs-${sheet}.json`,
+    JSON.stringify({ version: 5, roofs: { [gabled]: [104, ...fits], [flat]: 99.5, [none]: null, [gambrel]: [108, ...fits, ...gambrelFit] } }),
+  );
   const result = await fetchLaserRoofs(outlines, { cache, refresh: false, apiKey: "-" });
-  assert.deepEqual([result.cached, result.fetched], [3, 0]);
-  assert.deepEqual([...result.roofs], [[0, 104], [1, 99.5]]);
-  assert.deepEqual([...result.shapes], [[0, { shape: "gabled", angle: 90, rise: 3.2, top: 104.5 }]]);
+  assert.deepEqual([result.cached, result.fetched], [4, 0]);
+  assert.deepEqual([...result.roofs], [[0, 104], [1, 99.5], [3, 108]]);
+  assert.deepEqual(result.shapes.get(0), { shape: "gabled", angle: 90, rise: 3.2, top: 104.5 });
+  assert.deepEqual(result.shapes.get(3), { shape: "gabled", angle: 0, rise: 4.4, top: 108, gambrel: { knee: 0.6, height: 0.793 } });
 });
 
 test("a sheet whose fetch fails leaves out only the roofs needing it", async (t) => {
@@ -45,7 +52,7 @@ test("a sheet whose fetch fails leaves out only the roofs needing it", async (t)
   // one outline cached, one in a sheet 6 km off that is not
   const outlines = [square(327000, 6822000), square(333000, 6822000)];
   const cache = memoryCache();
-  await cache.put(`mml-laser-roofs-${mapSheet(327010, 6822005)}.json`, JSON.stringify({ version: 4, roofs: { [outlineKey(outlines[0])]: 104 } }));
+  await cache.put(`mml-laser-roofs-${mapSheet(327010, 6822005)}.json`, JSON.stringify({ version: 5, roofs: { [outlineKey(outlines[0])]: 104 } }));
   t.mock.method(globalThis, "fetch", () => Promise.reject(new Error("no network")));
   const logged: string[] = [];
   const result = await fetchLaserRoofs(outlines, { cache, refresh: false, apiKey: "-", log: (m) => logged.push(m) });
