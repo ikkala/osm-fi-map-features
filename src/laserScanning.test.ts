@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fetchLaserRoofs, mapSheet, roofOf } from "./laserScanning.ts";
+import { download, fetchLaserRoofs, mapSheet, roofOf } from "./laserScanning.ts";
 import { memoryCache } from "./cache.ts";
 import type { Polygon } from "./geometry.ts";
 import { outlineKey } from "./ortho.ts";
@@ -61,4 +61,32 @@ test("a sheet whose fetch fails leaves out only the roofs needing it", async (t)
   assert.ok(logged.some((m) => /failed, its roofs left out: no network/.test(m)), logged.join("\n"));
   // nothing cached for it: fetched another time
   assert.equal(await cache.get(`mml-laser-roofs-${mapSheet(333010, 6822005)}.json`), undefined);
+});
+
+test("a download cut off midway goes on from where it was cut", async (t) => {
+  const file = Uint8Array.from({ length: 1000 }, (_, i) => i % 251);
+  const ranges: (string | null)[] = [];
+  t.mock.method(globalThis, "fetch", async (_url: string, init: { headers: Record<string, string> }) => {
+    const range = init.headers.range ?? null;
+    ranges.push(range);
+    const from = range ? Number(range.slice("bytes=".length, -1)) : 0;
+    // each answer cut off after 300 bytes
+    let sent = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (!sent) {
+          sent = true;
+          controller.enqueue(file.slice(from, Math.min(from + 300, file.length)));
+        } else if (from + 300 < file.length) {
+          controller.error(new Error("terminated"));
+        } else {
+          controller.close();
+        }
+      },
+    });
+    return new Response(body, { status: range ? 206 : 200, headers: { "content-length": String(file.length - from) } });
+  });
+  const bytes = await download("https://example.com/a.laz", { authorization: "Basic -" }, "a download");
+  assert.deepEqual(bytes, file);
+  assert.deepEqual(ranges, [null, "bytes=300-", "bytes=600-", "bytes=900-"]);
 });

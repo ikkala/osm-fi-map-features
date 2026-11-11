@@ -189,14 +189,55 @@ async function fetchSheet(sheet: string, apiKey: string): Promise<Uint8Array | u
   if (path === undefined) {
     throw new Error(`laser scanning job for ${sheet} gave no LAZ file: ${JSON.stringify(results).slice(0, 500)}`);
   }
-  let res = await fetch(path, { headers: auth });
+  return download(path, auth, `laser scanning download for ${sheet}`);
+}
+
+/** Times a download cut off midway goes on from where it was cut (a Range request) */
+const RESUMES = 5;
+
+/**
+ * The file at url, a download cut off midway (a proxy that ends long transfers) going on from where it was cut, with
+ * Range requests, where the server answers them
+ */
+export async function download(url: string, headers: Record<string, string>, what: string): Promise<Uint8Array> {
+  let res = await fetch(url, { headers });
   for (let retry = 1; retry <= RETRIES && res.status >= 500; retry++) {
     await new Promise((resolve) => setTimeout(resolve, JOB_POLL_MS * retry));
-    res = await fetch(path, { headers: auth });
+    res = await fetch(url, { headers });
   }
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  if (!res.ok) {
-    throw new Error(`laser scanning download for ${sheet} failed (${res.status}): ${new TextDecoder().decode(bytes.subarray(0, 500))}`);
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`${what} failed (${res.status}): ${text.slice(0, 500)}`);
+  }
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  const total = Number(res.headers.get("content-length") ?? NaN);
+  for (let resume = 0; ; resume++) {
+    try {
+      const reader = res.body?.getReader();
+      for (let read = await reader?.read(); read && !read.done; read = await reader?.read()) {
+        chunks.push(read.value);
+        received += read.value.length;
+      }
+      if (Number.isNaN(total) || received >= total) {
+        break;
+      }
+      throw new Error(`${received} of ${total} bytes`);
+    } catch (err) {
+      if (resume >= RESUMES || received === 0) {
+        throw err;
+      }
+      res = await fetch(url, { headers: { ...headers, range: `bytes=${received}-` } });
+      if (res.status !== 206) {
+        throw new Error(`${what} was cut off at ${received} bytes and cannot go on (${res.status}): ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+  const bytes = new Uint8Array(received);
+  let at = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, at);
+    at += chunk.length;
   }
   return bytes;
 }
