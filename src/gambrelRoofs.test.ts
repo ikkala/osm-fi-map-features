@@ -101,7 +101,7 @@ test("a gambrel roof's faces cover its outline, the knee's share of the height a
   assert.deepEqual([0, 1.6, 4, 6.4, 8].map((n) => shareAt(0, n)), [0, 0.75, 1, 0.75, 0]);
 });
 
-test("a building given a gambrel roof is drawn by its faces, with a storey in the roof that its walls had too low", () => {
+test("a building given a gambrel roof is drawn by its faces, one of its storeys in the roof unless OSM tells those", () => {
   const b: Building = {
     osm: "w3",
     kind: "house",
@@ -120,6 +120,10 @@ test("a building given a gambrel roof is drawn by its faces, with a storey in th
   assert.deepEqual(result, { pitched: 1, flattened: 0, gambrel: 1 });
   assert.ok(b.roofFaces && b.roofFaces.triangles.length >= 12, JSON.stringify(b.roofFaces));
   assert.deepEqual([b.roofShape, b.roofAngle, b.roofHeight, b.levels, b.roofLevels], [undefined, undefined, 4.6, 1, 1]);
+  // storeys tagged in the roof: the walls keep theirs
+  const tagged: Building = { ...b, levels: 2, roofLevels: 1, roofFaces: undefined, roofShape: "gabled", roofShapeEstimated: true };
+  applyLaserShapes([tagged], () => ({ shape: "gabled", angle: 0, rise: 4.6, top: 127.5, gambrel: { knee: 0.7, height: 0.65 } }));
+  assert.deepEqual([tagged.levels, tagged.roofLevels], [2, 1]);
 });
 
 test("a roof OSM tags gambrel is gabled until its height is known, then drawn by its faces along its ridge", () => {

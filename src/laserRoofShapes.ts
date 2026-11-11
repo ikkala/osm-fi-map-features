@@ -239,8 +239,6 @@ export function chooseRoofShape(fits: readonly RoofFit[], gambrel?: GambrelFit):
 export const MIN_SHAPED_AREA_M2 = 40;
 /** A gambrel roof's rise is at most this share of its building's height, other roofs' at most half */
 const MAX_GAMBREL_SHARE = 0.7;
-/** Storeys lower than this (m) do not fit in the walls: one of them is in a gambrel roof */
-const MIN_STOREY_M = 2.2;
 
 export interface LaserShapeMatch {
   /** Buildings given a pitched roof of the shape the points tell */
@@ -256,8 +254,8 @@ export interface LaserShapeMatch {
  * their points tell (shapeOf): a pitched one where the outline is nearly its box (GUESS_MIN_FILL), turned as the box
  * is in the map's frame, or a roof of wings drawn from their ridges (ridgeRoofs), its rise at most half the
  * building's height; flat where the points tell flat. A gambrel roof is drawn by its faces (gambrelFaces), its rise
- * a larger share of the building's height, and holds a storey (roofLevels) that the walls lose where theirs would be
- * too low. A building whose height is estimated takes the measured top too.
+ * a larger share of the building's height, and holds a storey (roofLevels): where OSM tells none in the roof, one of
+ * the walls' storeys (a register counts it among them). A building whose height is estimated takes the measured top too.
  */
 export function applyLaserShapes(buildings: Building[], shapeOf: (b: Building) => LaserRoofShape | undefined): LaserShapeMatch {
   const result: LaserShapeMatch = { pitched: 0, flattened: 0, gambrel: 0 };
@@ -310,9 +308,11 @@ export function applyLaserShapes(buildings: Building[], shapeOf: (b: Building) =
       delete b.roofAngle;
       delete b.roofShapeEstimated;
       delete b.roofHeightEstimated;
-      b.roofLevels ??= 1;
-      if (b.levels !== undefined && b.levels > 1 && (b.height - b.roofHeight - b.minHeight) / b.levels < MIN_STOREY_M) {
-        b.levels--;
+      if (b.roofLevels === undefined) {
+        b.roofLevels = 1;
+        if (b.levels !== undefined && b.levels > 1) {
+          b.levels--;
+        }
       }
       result.pitched++;
       result.gambrel++;
