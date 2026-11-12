@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { download, fetchLaserRoofs, mapSheet, roofOf } from "./laserScanning.ts";
+import { againOnNetworkError, download, fetchLaserRoofs, mapSheet, roofOf } from "./laserScanning.ts";
 import { memoryCache } from "./cache.ts";
 import type { Polygon } from "./geometry.ts";
 import { outlineKey } from "./ortho.ts";
@@ -89,4 +89,35 @@ test("a download cut off midway goes on from where it was cut", async (t) => {
   const bytes = await download("https://example.com/a.laz", { authorization: "Basic -" }, "a download");
   assert.deepEqual(bytes, file);
   assert.deepEqual(ranges, [null, "bytes=300-", "bytes=600-", "bytes=900-"]);
+});
+
+test("a request the network fails is made again, an error of another kind is not", async () => {
+  let calls = 0;
+  const res = await againOnNetworkError(async () => {
+    calls++;
+    if (calls < 3) {
+      throw new TypeError("fetch failed");
+    }
+    return new Response("ok");
+  }, 0);
+  assert.equal(await res.text(), "ok");
+  assert.equal(calls, 3);
+  let other = 0;
+  await assert.rejects(
+    againOnNetworkError(async () => {
+      other++;
+      throw new Error("no network");
+    }, 0),
+    /no network/,
+  );
+  assert.equal(other, 1);
+  let always = 0;
+  await assert.rejects(
+    againOnNetworkError(async () => {
+      always++;
+      throw new TypeError("fetch failed");
+    }, 0),
+    /fetch failed/,
+  );
+  assert.equal(always, 4);
 });

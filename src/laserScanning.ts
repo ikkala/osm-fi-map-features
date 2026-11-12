@@ -136,15 +136,32 @@ async function jsonOf(url: string, auth: Record<string, string>): Promise<unknow
   }
 }
 
+/**
+ * The request made again in a moment when the network fails it (fetch's TypeError), as when it went out on a kept-alive
+ * connection the server had just closed, which fetch itself does not retry for a POST
+ */
+export async function againOnNetworkError(request: () => Promise<Response>, waitMs: number = JOB_POLL_MS): Promise<Response> {
+  for (let retry = 1; ; retry++) {
+    try {
+      return await request();
+    } catch (err) {
+      if (!(err instanceof TypeError) || retry > RETRIES) {
+        throw err;
+      }
+      await new Promise((resolve) => setTimeout(resolve, waitMs * retry));
+    }
+  }
+}
+
 function start(sheet: string, auth: Record<string, string>): Promise<Response> {
-  return fetch(`${PROCESS_URL}/execution`, {
+  return againOnNetworkError(() => fetch(`${PROCESS_URL}/execution`, {
     method: "POST",
     headers: { ...auth, "content-type": "application/json", accept: "application/json" },
     body: JSON.stringify({
       id: "laserkeilausaineisto_05_karttalehti",
       inputs: { mapSheetInput: [sheet], fileFormatInput: "LAZ", dataSetInput: "Uusin" },
     }),
-  });
+  }));
 }
 
 /** A sheet's point cloud from the file service, or undefined when it has none for the sheet */
@@ -200,10 +217,10 @@ const RESUMES = 5;
  * Range requests, where the server answers them
  */
 export async function download(url: string, headers: Record<string, string>, what: string): Promise<Uint8Array> {
-  let res = await fetch(url, { headers });
+  let res = await againOnNetworkError(() => fetch(url, { headers }));
   for (let retry = 1; retry <= RETRIES && res.status >= 500; retry++) {
     await new Promise((resolve) => setTimeout(resolve, JOB_POLL_MS * retry));
-    res = await fetch(url, { headers });
+    res = await againOnNetworkError(() => fetch(url, { headers }));
   }
   if (!res.ok || !res.body) {
     const text = await res.text().catch(() => "");
@@ -227,7 +244,7 @@ export async function download(url: string, headers: Record<string, string>, wha
       if (resume >= RESUMES || received === 0) {
         throw err;
       }
-      res = await fetch(url, { headers: { ...headers, range: `bytes=${received}-` } });
+      res = await againOnNetworkError(() => fetch(url, { headers: { ...headers, range: `bytes=${received}-` } }));
       if (res.status !== 206) {
         throw new Error(`${what} was cut off at ${received} bytes and cannot go on (${res.status}): ${err instanceof Error ? err.message : String(err)}`);
       }
