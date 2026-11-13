@@ -19,4 +19,7 @@ npm run build       # dist/, which the package's exports point to
 - A change touches the README only when it adds or removes a module, an option, an export or a source, and then by a
   line or two pointing to the module. `src/readme.test.ts` holds the README to a budget of words: raise it only on
   purpose, not to make room for a change's rules.
+- The README restates no constant's value and counts none of the code's own things (modules, options, sources): one
+  changed makes it wrong. It names the constant, or says it in words that stay true when it is tuned. `src/docs.test.ts`
+  holds it to that as far as a test can, and to naming only constants the code has.
 - Comments: few and short, what the code does and briefly why.
