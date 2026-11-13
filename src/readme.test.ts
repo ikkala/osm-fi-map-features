@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-const README_WORDS_MAX = 3000;
+const README_WORDS_MAX = 2400;
 
 test("the README stays within its budget of words", () => {
   const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");

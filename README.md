@@ -86,34 +86,21 @@ register's `name`), `tampere-roof-tops-*.json` (a layer of 3D building parts by 
 photo, so maps of different places keep theirs; the images are not kept), and `mml-laser-roofs-<sheet>.json` (the
 roofs worked out from the laser scanning by outline, a file per map sheet; the point clouds are not kept).
 
-`edits` (`parseOsmEdits` of an OSM XML file) shows edits of the OSM data in the map before they are uploaded: the
-elements the file marks `action="modify"` take its tags (and its geometry when the file has a way's nodes; a way whose
-node moved is edited too), those marked `action="delete"` are left out, and new ones (negative ids) are added to the
-map's features and landmarks (not to its entrances or businesses), and so is a node the file tags that the fetched data lacks
-(a way's vertex that had no tags). A relation's edit changes only its tags (its members
-are kept) or leaves it out; new relations are not supported. Once uploaded,
-the edits are in the fetched data anyway and the file can go.
+`edits` (`readOsmEdits` or `parseOsmEdits` of OSM XML files) shows edits of the OSM data in the map before they are
+uploaded (`src/edits.ts`). Once uploaded, the edits are in the fetched data anyway and the file can go.
 
-The sources are asked for a box around all the map's tiles, unless `fetchPieceTiles` is given: then for each piece of
-the map, a square of that many tiles a side on a grid from tile `0, 0`, a box around the map's tiles in it. No request
-then grows with the map, nor asks for what lies between its parts, and a piece's responses stay cached while the map
-changes elsewhere. The pieces' responses are put together as one: an Overpass element in several of them (a way
-across a piece's edge) once, in Overpass' order, so that the map comes out as from one request; a register's entries
-alike once; and the elevation model's heights from a piece's grid, where it has the cells all around the point.
+The sources are asked for a box around all the map's tiles, unless `fetchPieceTiles` is given: then in pieces of the
+map that many tiles a side, so that no request grows with the map; the map comes out as from one request.
 
 The Overpass server is `https://overpass-api.de/api/interpreter` unless `overpassUrl` is given; mind its
 [usage policy](https://wiki.openstreetmap.org/wiki/Overpass_API#Public_Overpass_API_instances).
 
-For now the first tile asked for builds the whole area and the rest come from memory: bridge spans, tunnels
-and multipolygons reach over tile edges, so they are worked out over the whole area. The API is a tile at
-a time so that this can change without changing its users.
+The first tile asked for builds the whole area and the rest come from memory (`src/builder.ts`). The API is a tile
+at a time so that this can change without changing its users.
 
-`part` builds only some of the tiles, much faster, to try a change on a few of them: the sources are asked for the
-whole area as without it (so the cached responses serve), and of what they give only the elements and register
-entries reaching within `marginM` of those tiles are kept, each whole, and the tunnels' ways wherever they are,
-since a network's floors are worked out from end to end. The tiles come out as in the whole map unless something
-else they depend on reaches farther than that, such as a river levelled along its course. `info().tiles` still
-lists the whole map's tiles; `tile()` gives only those built.
+`part` builds only some of the tiles, much faster, to try a change on a few of them, from the same requests as the
+whole map (so the cached responses serve) and the features within `marginM` of them. `info().tiles` still lists the
+whole map's tiles; `tile()` gives only those built.
 
 ## How the map is built
 
@@ -143,12 +130,7 @@ and what a tile's fields hold in the types (`src/osm.ts` and the modules it name
   parking `src/bicycleParking.ts`, landmarks `src/landmarks.ts`, `src/seamarks.ts` and `src/rides.ts`.
 - People walking and cycling along each way (`footfall`, `cycling`): `src/footfall.ts`, with its constants in
   [Measured in Tampere](#measured-in-tampere).
-
-### Water
-
-Water areas still or flowing, their level, and the tiles' `waterways`: `src/waterways.ts`. The elevation model has
-the water's surface, uneven where an area takes in its banks, so a still water is set level and a flowing one falls
-along the OSM waterways in it, never rising downstream.
+- Water areas still or flowing, their level, and the tiles' `waterways`: `src/waterways.ts`.
 
 ### Flows
 
@@ -182,29 +164,16 @@ point is in, and `districtKindOf` the kind a city's districts are mapped as.
 
 Some constants could only be measured from one city's open data, Tampere's. They are kept together in
 `FINNISH_DEFAULTS_MEASURED_IN_TAMPERE` (`src/measuredDefaults.ts`, exported) and used on purpose for every Finnish
-city, until there is data of another city's own to measure them from:
+city, until there is data of another city's own to measure them from. Each field's meaning and what it was measured
+from are in the module:
 
-- `footfallModels`: the base and scale of people walking and cycling, fitted to the city's pedestrian and cycling counts
-- `vehiclesByRoadKind`: motor vehicles a day by `highway=*`, from the city's motor traffic counts
-- `stairSpacingM`: 18 m between the staircases of a block of flats, from the staircases mapped in OSM
-- `officeLevels`: 4 storeys, from which a building of the register's offices-and-factories class is offices, from the
-  city's own building register
-- `pitchedRoofsBefore` and `flatRoofRiseM`: buildings built before 1960 mostly have pitched roofs, and a top at most
-  3 m over the eaves is a flat roof's, from the city's 3D building parts (`src/roofTops.ts`): of the buildings without
-  `roof:shape` whose storeys are known, those of the 1920s to the 1950s rise a median 2.1–3.0 m over their storeys
-  and about half of them more than 3 m, those of the 1960s to the 2010s 0.6–1.8 m and 12–22 % of them more than 3 m
-  (machine rooms on flat roofs)
-- `chimneyHeight` and `chimneyMaterial`: an untagged chimney 12 times as tall as its base is wide (at most 100 m)
-  and brick, from the city's chimneys
-- `oldStoreys`: 3.5 m storeys before 1946, 3 m since, from the city's building register and 3D building parts:
-  `npm run measure-storeys -- <cache dir> [<year> ...]` (`scripts/measureStoreys.ts`, `src/storeyHeights.ts`) reads
-  a map's cached sources and fits, for the buildings whose storeys (OSM's, else the register's), year (OSM's, else the
-  register's) and roof top over the ground are known (houses, halls, sheds and churches left out, one register point
-  in the outline), the median height of each storey count from 2 up to a line: the rise of the roof and the plinth
-  plus the storeys times the storey's height, with a 90 % interval by resampling the buildings. Measured on Tampere's
-  sources of October 2026 (6,100 buildings): 3.46 m (90 %: 3.13–3.72) from 1920 to 1945 (490 buildings), 3.06 m
-  (2.97–3.16) from 1946 to 1959 and 2.95 m (2.92–2.98) since 1960; from before 1920 only 67 buildings, too few
-  (2.92–7.29), so they take the next era's
+- `footfallModels` and `vehiclesByRoadKind`, from the city's pedestrian, cycling and motor traffic counts
+- `stairSpacingM`, from the staircases mapped in OSM
+- `officeLevels`, from the city's own building register
+- `pitchedRoofsBefore` and `flatRoofRiseM`, from the city's 3D building parts (`src/roofTops.ts`)
+- `chimneyHeight` and `chimneyMaterial`, from the city's chimneys
+- `oldStoreys`, from the city's building register and 3D building parts: `npm run measure-storeys -- <cache dir>
+  [<year> ...]` (`scripts/measureStoreys.ts`, `src/storeyHeights.ts`) measures it from a map's cached sources
 
 ## Licences
 
