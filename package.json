@@ -32,6 +32,7 @@
   "devDependencies": {
     "@types/emscripten": "^1.41.6",
     "@types/node": "^24.13.6",
+    "jscpd": "5.4.2",
     "typescript": "^7.0.2"
   }
 }

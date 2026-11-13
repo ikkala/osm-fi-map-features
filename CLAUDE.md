@@ -6,7 +6,7 @@ it, and the modules' header comments how they work: read the ones you need befor
 ## Checks
 
 ```sh
-npm test            # the unit tests
+npm test            # the unit tests, and the code's copies under .jscpd.json's threshold (jscpd)
 npm run typecheck
 npm run build       # dist/, which the package's exports point to
 ```
@@ -23,3 +23,6 @@ npm run build       # dist/, which the package's exports point to
   changed makes it wrong. It names the constant, or says it in words that stay true when it is tuned. `src/docs.test.ts`
   holds it to that as far as a test can, and to naming only constants the code has.
 - Comments: few and short, what the code does and briefly why.
+- Rather than copy a stretch of code, share it. `src/duplicates.test.ts` holds the code's copies to `.jscpd.json`'s
+  threshold (`npx jscpd --reporters console` lists them): lower it when a change takes copies out, raise it only on
+  purpose.
