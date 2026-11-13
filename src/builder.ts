@@ -71,8 +71,9 @@ export interface MapOptions {
   tileSizeM: number;
   /**
    * Fetches the sources in pieces, squares of this many tiles a side on a grid from tile 0, 0, each around the map's
-   * tiles in it: no request grows with the map, and none asks for what is between its parts. By default in one piece
-   * around all the tiles.
+   * tiles in it: no request grows with the map, none asks for what is between its parts, and a piece's responses stay
+   * cached while the map changes elsewhere. Put together as from one request (mergeOverpass, uniques, elevationAt). By
+   * default in one piece around all the tiles.
    */
   fetchPieceTiles?: number;
   /** Where the sources' responses are kept */
@@ -86,7 +87,7 @@ export interface MapOptions {
   treeRegisters?: TreeRegisterSource[];
   /** The 3D building parts to take measured roof tops from, of those that cover the area; ROOF_TOP_SOURCES by default */
   roofTops?: RoofTopSource[];
-  /** Local edits of the OSM data, not uploaded (yet): applied to what is fetched, new elements to the map's features only */
+  /** Local edits of the OSM data, not uploaded (yet): applied to what is fetched, new elements to the map's features, entrances and landmarks */
   edits?: OsmEdit[];
   /**
    * Tunnels' floors known at points, from plans or surveys (the height of the way's surface, m, in the elevation

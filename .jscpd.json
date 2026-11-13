@@ -1,0 +1,7 @@
+{
+  "path": ["src", "scripts"],
+  "format": ["typescript"],
+  "ignore": ["**/*.test.ts", "**/node_modules/**"],
+  "reporters": ["threshold"],
+  "threshold": 1.0
+}
