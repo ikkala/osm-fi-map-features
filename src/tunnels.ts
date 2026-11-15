@@ -17,6 +17,8 @@ const MIN_ROAD_CLEARANCE_M = 2.2;
 export const CAR_PARK_CLEARANCE_M = 2.5;
 /** The roof over the room, under the ground (m) */
 export const ROOF_M = 1;
+/** The ground left over the roof (m), so that the ground's surface, smoothed between the model's points, stays over it */
+export const COVER_M = 0.3;
 /** The elevation model has the water's surface: the water is taken this deep over a tunnel (m) */
 export const WATER_DEPTH_M = 3;
 /** Under water this much ground stays between the water's bed and the roof, so a coarser model of the ground keeps some there (m) */
@@ -377,7 +379,7 @@ export function setTunnelFloors(
     for (const p of way.line) {
       through.set(key(p), [...(through.get(key(p)) ?? []), way]);
     }
-    const depth = ROOF_M + roomHeight(way);
+    const depth = COVER_M + ROOF_M + roomHeight(way);
     const half = ("width" in way ? way.width : RAIL_WIDTH_M) / 2 + ROOM_SIDE_M;
     const storeys = levels.get(way);
     way.line.forEach((p, i) => {
@@ -500,7 +502,7 @@ export function setTunnelFloors(
         const node = nodes.get(k);
         if (node) {
           node.half = Math.max(node.half, ...(through.get(k) ?? []).map((way) => ("width" in way ? way.width : RAIL_WIDTH_M) / 2 + ROOM_SIDE_M));
-          const depth = Math.max(...(through.get(k) ?? []).map((way) => ROOF_M + roomHeight(way)));
+          const depth = Math.max(...(through.get(k) ?? []).map((way) => COVER_M + ROOF_M + roomHeight(way)));
           if (node.stairs && node.portal !== undefined) {
             node.portal += node.depth - depth;
           }
