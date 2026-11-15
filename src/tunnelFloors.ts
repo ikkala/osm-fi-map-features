@@ -1,13 +1,14 @@
 // Tunnels' floors known from plans or surveys, which OSM does not tell: a JSON file of
 // { "floors": [{ "tunnel", "latitude", "longitude", "floor", "source" }] }, each the tunnel's name (as its ways have
-// it), a WGS84 point, the height of the way's surface there (m, in the elevation model's system, N2000) and the plan or
+// it, or for one without a name its way's OSM element, w123), a WGS84 point, the height of the way's surface there (m, in the elevation model's system, N2000) and the plan or
 // survey it is from. They go to MapBuilder as its tunnelFloors.
 import { field, items } from "./json.ts";
 import type { GeoPoint } from "./projection.ts";
 import { readText, type TextSource } from "./text.ts";
 
 export interface TunnelFloor {
-  /** The tunnel's name=*: the floor is held on its ways, not on another tunnel passing nearer */
+  /** The tunnel's name=*, or its way's OSM element (w123) where it has none: the floor is held on its ways, not on
+   * another tunnel passing nearer */
   name: string;
   at: GeoPoint;
   floor: number;

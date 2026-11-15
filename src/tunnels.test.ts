@@ -778,6 +778,8 @@ test("a known floor with the tunnel's name holds that tunnel's point, not anothe
   };
   assert.notEqual(floorAt100(), 80);
   assert.equal(floorAt100("Main"), 80);
+  // a tunnel without a name by its way's OSM element
+  assert.equal(floorAt100("w1"), 80);
 });
 
 test("between two known floors of a tunnel's name, and on to its portals, the floor runs straight, past a junction too", () => {

@@ -112,8 +112,9 @@ export interface KnownFloor {
   p: Point;
   floor: number;
   /**
-   * The tunnel's name=*: only its ways' points are looked at, so that another tunnel passing nearer does not take it,
-   * and between two known floors of one name the floor runs straight along its ways
+   * The tunnel's name=*, or for a tunnel without one its way's OSM element (w123): only its ways' points are looked at,
+   * so that another tunnel passing nearer does not take it, and between two known floors of one name the floor runs
+   * straight along its ways
    */
   name?: string;
 }
@@ -574,7 +575,8 @@ export function setTunnelFloors(
   // steeper than MAX_GRADE
   const knownAt: [string, number][] = [];
   const knownByName = new Map<string, [string, number][]>();
-  const named = (k: string, name: string | undefined) => name === undefined || (through.get(k) ?? []).some((way) => "name" in way && way.name === name);
+  const named = (k: string, name: string | undefined) =>
+    name === undefined || (through.get(k) ?? []).some((way) => ("name" in way && way.name === name) || way.osm === name);
   for (const { p, floor, name } of known) {
     let nearest: { k: string; d: number } | undefined;
     for (const [k, node] of nodes) {
