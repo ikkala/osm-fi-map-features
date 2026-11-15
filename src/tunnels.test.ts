@@ -610,6 +610,17 @@ test("a ramp down from a portal in a building goes down at one steady grade, how
   assert.deepEqual(floors("small"), open);
 });
 
+test("a ramp in through a house's front at a point of its outline, the front going on straight past it, opens it on both sides", () => {
+  // the front along n = 0 from e = -6 to 6, a point at e = 0 where the ramp goes in north
+  const house: Building = { osm: "w9", kind: "apartments", part: false, hasParts: false, height: 20, minHeight: 0, polygon: { outer: [[-6, 0], [0, 0], [6, 0], [6, 30], [-6, 30]], holes: [] } };
+  const approach = road("w2", [[0, -10], [0, 0]], { kind: "service", width: 4 });
+  const ramp = road("w1", [[0, 0], [0, 25]], { kind: "service", width: 4, tunnel: true, layer: -1, floor: [100, 95] });
+  openPortals([house], [ramp], [ramp, approach], () => 100);
+  const front = defined(house.passages).filter((o) => o.from[1] === 0 && o.to[1] === 0);
+  const width = front.reduce((sum, o) => sum + Math.abs(o.to[0] - o.from[0]), 0);
+  assert.ok(width >= 4 + 2 * 1 - 1e-6, `${JSON.stringify(front)}: as wide as the room`);
+});
+
 test("a ramp down into a basement opens the walls it crosses with its room over their lowest ground, from its floor there", () => {
   // a house from e = 0 to 20, n = 0 to 30, the ramp in at its corner from a way at 100 and under its east wall
   const house = (): Building => ({ osm: "w9", kind: "apartments", part: false, hasParts: false, height: 20, minHeight: 0, polygon: { outer: [[0, 0], [20, 0], [20, 30], [0, 30]], holes: [] } });

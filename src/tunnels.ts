@@ -260,7 +260,9 @@ function toCorners(rings: Point[][], o: Opening): Opening {
       const length = Math.hypot(c[0] - a[0], c[1] - a[1]);
       const along = (p: Point) => ((p[0] - a[0]) * (c[0] - a[0]) + (p[1] - a[1]) * (c[1] - a[1])) / length;
       const off = (p: Point) => Math.abs((p[0] - a[0]) * (c[1] - a[1]) - (p[1] - a[1]) * (c[0] - a[0])) / length;
-      if (length === 0 || off(o.from) > 0.01 || off(o.to) > 0.01) {
+      // on the edge itself, not on another edge in line with it
+      const beside = (p: Point) => off(p) > 0.01 || along(p) < -0.01 || along(p) > length + 0.01;
+      if (length === 0 || beside(o.from) || beside(o.to)) {
         continue;
       }
       const end = (p: Point): Point => {
