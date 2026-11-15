@@ -482,7 +482,8 @@ export function setTunnelFloors(
 
   // a car park under a building: the tunnels going down into it from a portal in a building, when no road but a
   // service way leads in among them, are as low as a car park, and their floors need that much less depth; a
-  // service way of it with lanes (a ramp with a lane each way) is as wide as they are, where its kind is one lane's
+  // service way of it with lanes (a ramp with a lane each way) is as wide as they are, where its width is its kind's,
+  // one lane's, not OSM's
   for (const group of meetingGroups(tunnels)) {
     const roads = group.ways.filter((way): way is Road => "width" in way);
     const vehicles = roads.filter((r) => !WALKWAYS.has(r.kind));
@@ -494,7 +495,7 @@ export function setTunnelFloors(
     ) {
       for (const r of roads) {
         r.room = Math.min(roomHeight(r), CAR_PARK_CLEARANCE_M);
-        if (r.kind === "service" && r.lanes !== undefined && r.lanes >= 2) {
+        if (r.kind === "service" && r.lanes !== undefined && r.lanes >= 2 && !r.widthTagged) {
           r.width = Math.max(r.width, r.lanes * LANE_WIDTH_M);
         }
       }
