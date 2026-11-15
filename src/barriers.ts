@@ -10,8 +10,10 @@ import { ROOM_SIDE_M } from "./tunnels.ts";
 
 /** An opening is this much (m) wider than the way through it */
 const OPENING_MARGIN_M = 0.4;
-/** A gate this close (m) to a barrier's line is in it */
+/** A gate this close (m) to a barrier's line, spanning along it (the cosine of the angle between them at least this), is
+ * in it, and opens it from post to post */
 const IN_BARRIER_M = 1;
+const GATE_ALONG_COS = Math.cos(Math.PI / 4);
 /** A barrier is on a deck or lid this far (m) out of its edge, which is at least this much over the ground (m) */
 const ON_DECK_M = 1.5;
 const OVER_GROUND_M = 1;
@@ -59,10 +61,7 @@ export function openBarriers(features: MapFeatures): number {
       }
     }
     for (const gate of features.gates) {
-      const at = alongIfNear(barrier.line, lengths, gate);
-      if (at !== undefined) {
-        cuts.push([at - gate.width / 2, at + gate.width / 2]);
-      }
+      cuts.push(...gateCuts(barrier.line, lengths, gate));
     }
     openings += cuts.length;
     for (const line of cutOut(barrier.line, lengths, cuts)) {
@@ -216,16 +215,28 @@ function cumulative(line: Point[]): number[] {
 }
 
 /** Meters along the line to the gate's point, when the gate is in the line */
-function alongIfNear(line: Point[], lengths: number[], gate: Gate): number | undefined {
+function gateCuts(line: Point[], lengths: number[], gate: Gate): [number, number][] {
+  const [ue, un] = [Math.cos((gate.across * Math.PI) / 180), Math.sin((gate.across * Math.PI) / 180)];
+  const posts: Point[] = [-1, 1].map((side) => [gate.point[0] + (ue * side * gate.width) / 2, gate.point[1] + (un * side * gate.width) / 2]);
+  const cuts: [number, number][] = [];
   for (let i = 0; i + 1 < line.length; i++) {
     const [a, b] = [line[i], line[i + 1]];
-    if (distanceToSegment(gate.point, a, b) <= IN_BARRIER_M) {
-      const length = lengths[i + 1] - lengths[i];
-      const t = length > 0 ? ((gate.point[0] - a[0]) * (b[0] - a[0]) + (gate.point[1] - a[1]) * (b[1] - a[1])) / (length * length) : 0;
-      return lengths[i] + Math.max(0, Math.min(1, t)) * length;
+    const length = lengths[i + 1] - lengths[i];
+    if (length <= 0 || distanceToSegment(gate.point, a, b) > IN_BARRIER_M) {
+      continue;
+    }
+    const [de, dn] = [(b[0] - a[0]) / length, (b[1] - a[1]) / length];
+    // a gate across the barrier, as one between it and a wall, is no opening in it
+    if (Math.abs(ue * de + un * dn) < GATE_ALONG_COS) {
+      continue;
+    }
+    const along = posts.map((p) => (p[0] - a[0]) * de + (p[1] - a[1]) * dn);
+    const [from, to] = [Math.max(0, Math.min(...along)), Math.min(length, Math.max(...along))];
+    if (to > from) {
+      cuts.push([lengths[i] + from, lengths[i] + to]);
     }
   }
-  return undefined;
+  return cuts;
 }
 
 /** The pieces of the line left between the cuts (meters along it), at least MIN_PIECE_M long */
