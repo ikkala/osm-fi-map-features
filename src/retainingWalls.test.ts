@@ -22,6 +22,13 @@ test("a retaining wall steps the ground: down to the slope's foot on its low sid
   }
 });
 
+test("a retaining wall drawn a little behind the model's edge is stepped down from it, the ground in front of it low", () => {
+  // the model's high ground going on 2.5 m out on the low side before it falls, to 80 at n = -6
+  const behind = (_e: number, n: number) => (n <= -6 ? 80 : n >= -2.5 ? 84 : 80 + ((n + 6) / 3.5) * 4);
+  const ground = stepAtWalls(behind, groundSteps([wall("w1", [[0, 0], [40, 0]])], behind));
+  assert.deepEqual([-7, -4, -2, -1, 1].map((n) => round(ground(20, n))), [80, 80, 80, 80, 84]);
+});
+
 test("a retaining wall's step eases in toward its free ends, not where another wall goes on", () => {
   const steps = groundSteps([wall("w1", [[0, 0], [20, 0]]), wall("w2", [[20, 0], [40, 0]])], blurred);
   const ground = stepAtWalls(blurred, steps);

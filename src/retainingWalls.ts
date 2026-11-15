@@ -25,6 +25,8 @@ const EASE_M = 4;
 const OVERREACH_M = 2;
 const RISE_M = 1;
 const BESIDE_M = 15;
+/** Level ground on a wall's low side this far out (m) before the model's slope starts is the wall's foot too */
+const LEAD_M = 3;
 /** Stretches are looked up in squares this big (m) */
 const CELL_M = 16;
 
@@ -118,7 +120,7 @@ export function groundSteps(barriers: readonly Barrier[], heightAt: (e: number, 
     const low = lean < 0 ? 1 : -1;
     for (const s of stretches) {
       const [down, up] = low === 1 ? [s.left, s.right] : [s.right, s.left];
-      const footOut = slopeEnd(down, -1);
+      const footOut = slopeEnd(down, -1, LEAD_M);
       const topIn = slopeEnd(up, 1);
       const stepped = footOut !== undefined && topIn !== undefined && up[topIn] - down[footOut] >= MIN_STEP_M;
       // a stretch with no step is kept with no reach, so the ground beside it is not taken for a stepped one's
@@ -186,10 +188,16 @@ function stepOnlyTheWall(line: { step: GroundStep; up: number[] }[]): void {
 
 /**
  * How far out (m) the ground stops falling (sign -1) or climbing (1) by at least FLAT_M a meter, for two meters on;
- * undefined where it does not within the heights (a bank going on past the wall, not the wall smoothed)
+ * undefined where it does not within the heights (a bank going on past the wall, not the wall smoothed). With `lead`,
+ * level ground up to that far out before it starts to fall or climb is passed over: the wall drawn a little behind
+ * the model's edge.
  */
-export function slopeEnd(heights: number[], sign: number): number | undefined {
-  for (let d = 0; d + 2 < heights.length; d++) {
+export function slopeEnd(heights: number[], sign: number, lead = 0): number | undefined {
+  let start = 0;
+  while (start < lead && start + 1 < heights.length && (heights[start + 1] - heights[start]) * sign < FLAT_M) {
+    start++;
+  }
+  for (let d = start < lead ? start : 0; d + 2 < heights.length; d++) {
     if ((heights[d + 1] - heights[d]) * sign < FLAT_M && (heights[d + 2] - heights[d + 1]) * sign < FLAT_M) {
       return d;
     }
