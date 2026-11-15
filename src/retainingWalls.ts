@@ -8,8 +8,10 @@ import type { Barrier } from "./osm.ts";
 
 /** A wall is looked at in stretches this long at most (m) */
 export const STRETCH_M = 1;
-/** The slope is followed out from a wall this far at most on either side (m), a meter at a time */
+/** The slope is followed out from a building's wall this far at most on either side (m), a meter at a time (buildingSteps) */
 export const REACH_M = 8;
+/** And from a retaining wall's this far: the model smooths a high one's step over more, wider still where two meet */
+const WALL_REACH_M = 12;
 /** The slope ends where the ground climbs or falls less than this a meter, over two meters */
 export const FLAT_M = 0.2;
 /** A stretch steps the ground only where its sides differ at least this much (m) */
@@ -98,7 +100,7 @@ export function groundSteps(barriers: readonly Barrier[], heightAt: (e: number, 
         const mid: Point = [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2];
         const out = (side: number) => {
           const heights: number[] = [];
-          for (let d = 0; d <= REACH_M; d++) {
+          for (let d = 0; d <= WALL_REACH_M; d++) {
             const h = heightAt(mid[0] - un * side * d, mid[1] + ue * side * d);
             if (h === undefined) {
               break;
@@ -211,34 +213,49 @@ export function stepAtWalls(
       return h;
     }
     // the nearest stretch, measured past its ends too, so the stretches of a turning wall leave no gap
-    let nearest: { step: GroundStep; t: number; distance: number } | undefined;
+    let nearest: { step: GroundStep; t: number; distance: number; high: boolean } | undefined;
     for (const step of near) {
-      const [de, dn] = [step.b[0] - step.a[0], step.b[1] - step.a[1]];
-      const t = Math.max(0, Math.min(1, ((e - step.a[0]) * de + (n - step.a[1]) * dn) / (de * de + dn * dn)));
-      const distance = Math.hypot(e - step.a[0] - de * t, n - step.a[1] - dn * t);
-      if (distance < (nearest?.distance ?? Infinity)) {
-        nearest = { step, t, distance };
+      const at = besideStep(step, e, n);
+      if (at.distance < (nearest?.distance ?? Infinity)) {
+        nearest = { step, ...at };
       }
     }
     if (!nearest) {
       return h;
     }
-    const { step, t, distance } = nearest;
-    const share = step.shareA + (step.shareB - step.shareA) * t;
-    const left = (step.b[0] - step.a[0]) * (n - step.a[1]) - (step.b[1] - step.a[1]) * (e - step.a[0]) > 0;
-    if (left === (step.low === 1)) {
-      return distance < step.footOut && h > step.foot ? h - (h - step.foot) * share : h;
+    const { step, t, distance, high } = nearest;
+    if (!high) {
+      return distance < step.footOut && h > step.foot ? h - (h - step.foot) * shareAt(step, t) : h;
     }
-    return distance < step.topIn && h < step.top ? h + (step.top - h) * share : h;
+    // on the high side, up to the highest the stretches with the point on theirs take it: inside a corner, where the
+    // model smooths two walls' steps together, one's slope may be followed out along the other's
+    let raised = h;
+    for (const other of near) {
+      const at = other === step ? nearest : besideStep(other, e, n);
+      if (at.high && at.distance < other.topIn && h < other.top) {
+        raised = Math.max(raised, h + (other.top - h) * shareAt(other, at.t));
+      }
+    }
+    return raised;
   };
 }
+
+/** Where a point is beside a stretch: how far along it (0 to 1) and from it, and whether on its high side */
+function besideStep(step: GroundStep, e: number, n: number): { t: number; distance: number; high: boolean } {
+  const [de, dn] = [step.b[0] - step.a[0], step.b[1] - step.a[1]];
+  const t = Math.max(0, Math.min(1, ((e - step.a[0]) * de + (n - step.a[1]) * dn) / (de * de + dn * dn)));
+  const left = de * (n - step.a[1]) - dn * (e - step.a[0]) > 0;
+  return { t, distance: Math.hypot(e - step.a[0] - de * t, n - step.a[1] - dn * t), high: left !== (step.low === 1) };
+}
+
+const shareAt = (step: GroundStep, t: number) => step.shareA + (step.shareB - step.shareA) * t;
 
 const cell = (v: number) => Math.floor(v / CELL_M);
 const cellKey = (x: number, y: number) => (x + 0x8000) * 0x10000 + (y + 0x8000);
 /** The cells' steps, of each list of them once: every tile's ground is stepped at the same ones */
 const stepCellsOf = new WeakMap<readonly GroundStep[], Map<number, GroundStep[]>>();
 
-/** The steps by the CELL_M squares within REACH_M of them */
+/** The steps by the CELL_M squares within WALL_REACH_M of them */
 function stepCells(steps: readonly GroundStep[]): Map<number, GroundStep[]> {
   const known = stepCellsOf.get(steps);
   if (known) {
@@ -246,7 +263,7 @@ function stepCells(steps: readonly GroundStep[]): Map<number, GroundStep[]> {
   }
   const cells = new Map<number, GroundStep[]>();
   for (const step of steps) {
-    const reach = REACH_M;
+    const reach = WALL_REACH_M;
     for (let x = cell(Math.min(step.a[0], step.b[0]) - reach); x <= cell(Math.max(step.a[0], step.b[0]) + reach); x++) {
       for (let y = cell(Math.min(step.a[1], step.b[1]) - reach); y <= cell(Math.max(step.a[1], step.b[1]) + reach); y++) {
         const list = cells.get(cellKey(x, y));
