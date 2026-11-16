@@ -98,6 +98,27 @@ test("under a bridge the floor goes level between its portals, not down under th
   assert.deepEqual(floors(([, n]) => n >= 0 && n <= 60), [83, 83, 83, 83, 83, 83, 83]);
 });
 
+test("a tunnel under a bridge's deck goes deep enough for its room and roof under the deck, coming up to its portals no steeper than a road tunnel", () => {
+  // a footway 40 m along under a bridge's end, its portals at the ground at 88, the deck over its middle at 88.3
+  const ground = () => 88;
+  const deck = (p: Point, layer: number) => (layer < 1 && p[1] >= 15 && p[1] <= 25 ? { deck: 88.3 } : undefined);
+  const floors = (deckOver?: (p: Point, layer: number) => { deck: number } | undefined) => {
+    const tunnel = road("w1", [[0, 0], [0, 40]], { kind: "footway", width: 5, tunnel: true, layer: -1 });
+    setTunnelFloors(features([road("w2", [[0, -20], [0, 0]], { kind: "footway", width: 2.5 }), tunnel, road("w3", [[0, 40], [0, 60]], { kind: "footway", width: 2.5 })]), ground, new Map(), ([, n]) => n >= 15 && n <= 25, [], deckOver);
+    return { floor: defined(tunnel.floor), room: roomHeight(tunnel) };
+  };
+  // without the deck, at the ground's level, and the deck over the roof
+  const level = floors();
+  assert.ok(Math.min(...level.floor) > 88.3 - ROOF_M - level.room);
+  // with it, the room and the roof under the deck over the middle
+  const under = floors(deck);
+  const middle = under.floor[Math.floor(under.floor.length / 2)];
+  assert.ok(middle <= 88.3 - ROOF_M - under.room + 1e-9, String(middle));
+  for (let i = 1; i < under.floor.length; i++) {
+    assert.ok(Math.abs(under.floor[i] - under.floor[i - 1]) <= 0.07 * 10 + 1e-9, String(under.floor));
+  }
+});
+
 test("a street ending at a bridge over a tunnel does not sink its floor under the model's ground there", () => {
   // the tunnel along under the bridge's end, the street's end over its room at the bridge, where the model is low
   const ground = (e: number, n: number) => (n <= 0 || n >= 60 ? 83 : e > 4 ? 88 : 85);
