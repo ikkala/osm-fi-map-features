@@ -7,6 +7,8 @@ import type { Building } from "./osm.ts";
 
 /** A ridge's end within this (m) of the outline is on it */
 const SNAP_M = 0.5;
+/** A triangle narrower than this (m) in plan stands upright: one from the eaves to a gable's apex on the same wall */
+const UPRIGHT_M = 0.1;
 
 /**
  * A roof as triangles over the outline: each point east, north and its share of the roof's height (0 at the eaves,
@@ -173,6 +175,13 @@ function addSlope(faces: RoofFaces, slope: Slope): void {
       faces.triangles.push(base + a, base + b, base + c);
     }
   };
+  // a triangle from the side to a point of the ridge on the side's own line (a gable's apex on the wall beyond it),
+  // apart from its corners, would stand upright in the wall: the slope goes on along the ridge instead, a valley up to it
+  const standing = (a: Point, b: Point, c: Point) => {
+    const base = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const apart = Math.min(Math.hypot(c[0] - a[0], c[1] - a[1]), Math.hypot(c[0] - b[0], c[1] - b[1]));
+    return apart > UPRIGHT_M && Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) < UPRIGHT_M * base;
+  };
   let i = 0;
   let k = 0;
   while (i < side.length - 1 || k < ridge.length - 1) {
@@ -185,6 +194,9 @@ function addSlope(faces: RoofFaces, slope: Slope): void {
         onSide = false;
       } else if (!onSide && !byRidge && bySide) {
         onSide = true;
+      }
+      if (onSide && standing(side[i].point, side[i + 1].point, ridge[k].point)) {
+        onSide = false;
       }
     }
     if (onSide) {
