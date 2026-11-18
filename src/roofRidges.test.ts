@@ -153,3 +153,26 @@ test("a slope's side turning in near the ridge's end folds no triangle under it"
   const area = Math.abs(outer.reduce((sum, [x, y], i) => sum + x * outer[(i + 1) % outer.length][1] - outer[(i + 1) % outer.length][0] * y, 0)) / 2;
   assert.ok(Math.abs(covered - area) < 0.01, `${covered} over ${area}`);
 });
+
+test("cross gables over a hipped roof: no triangle upright in the wall beside a gable, a valley from its foot instead", () => {
+  // a block 32 by 19 m, two gables on its south side with their feet on it, the main ridge hipped at both ends; the
+  // gables' apexes vertices of the outline, a centimetre off its line as coordinates rounded put them
+  const south: Point[] = [[0, 0], [5.5, 0], [8, 0.01], [10.5, 0], [21.5, 0], [24, 0.01], [26.5, 0], [32, 0]];
+  const block = building([...south, [32, 19], [0, 19]]);
+  const ridges: Point[][] = [[[8, 9.5], [24, 9.5]], [[8, 0.01], [8, 9.5]], [[24, 0.01], [24, 9.5]]];
+  assert.equal(ridgeRoofs([block], ridges), 1);
+  const faces = block.roofFaces;
+  assert.ok(faces);
+  // beside each gable, towards the corner, the roof rises from the eaves as the hip's slope or the gable's does
+  for (const p of [[27.5, 1], [4.5, 1]] satisfies Point[]) {
+    const share = shareAt(faces, p);
+    assert.ok(share !== undefined && share < 0.3, `${share} at ${p}`);
+  }
+  // and no triangle stands upright: each is wider than a sliver in plan
+  const at = (i: number) => [faces.points[3 * i], faces.points[3 * i + 1]];
+  for (let t = 0; t < faces.triangles.length; t += 3) {
+    const [a, b, c] = [0, 1, 2].map((k) => at(faces.triangles[t + k]));
+    const twice = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]));
+    assert.ok(twice > 0.1 * Math.max(Math.hypot(b[0] - a[0], b[1] - a[1]), Math.hypot(c[0] - a[0], c[1] - a[1]), Math.hypot(c[0] - b[0], c[1] - b[1])), `upright ${a} ${b} ${c}`);
+  }
+});
