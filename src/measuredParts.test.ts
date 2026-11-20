@@ -74,6 +74,28 @@ test("what no measured part covers goes to the part nearest it", () => {
   assert.ok(Math.abs(parts.reduce((sum, p) => sum + area(p), 0) - 400) < 1e-6);
 });
 
+test("a sliver the parts leave along the outline goes to the part it runs along, not as a thin wall to a taller one", () => {
+  // both parts a little inside the outline: what they leave is a ring round them, its middle in the tower
+  const b = outline();
+  const inset = (x: number, width: number, top: number) => part(x, width, top, 0.2, 9.6);
+  const { parts } = splitByMeasuredParts([b], [inset(0.2, 27.8, 24), inset(28, 11.8, 6)]);
+  const bounds = (p: Building | undefined) => {
+    const xs = p?.polygon.outer.map(([x]) => x) ?? [];
+    const ys = p?.polygon.outer.map(([, y]) => y) ?? [];
+    return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+  };
+  const hall = bounds(parts.find((p) => p.height === 6));
+  const tower = bounds(parts.find((p) => p.height === 24));
+  assert.deepEqual([hall.maxX, hall.minY, hall.maxY], [40, 0, 10]);
+  assert.deepEqual([tower.minX, tower.minY, tower.maxY], [0, 0, 10]);
+  assert.ok(tower.maxX < 28.5, `the tower reaches ${tower.maxX}`);
+  assert.ok(Math.abs(parts.reduce((sum, p) => sum + area(p), 0) - 400) < 1e-6);
+  // a sliver near the hall but beyond a narrow tower along the outline: the tower's, the hall in one piece
+  const across = splitByMeasuredParts([outline()], [part(0, 40, 24, 0.3, 0.6), part(0, 40, 6, 0.9, 9.1)]).parts;
+  assert.equal(across.length, 2);
+  assert.equal(bounds(across.find((p) => p.height === 24)).minY, 0);
+});
+
 test("an outline is left as it is when its parts are of about one height, cover too little of it, or it is no ordinary building", () => {
   const near = outline();
   assert.equal(splitByMeasuredParts([near], [part(0, 20, 18), part(20, 20, 21)]).split, 0);

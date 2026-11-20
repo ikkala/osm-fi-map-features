@@ -636,7 +636,8 @@ export class MapBuilder {
             `${source.title}: ${parts.length} parts (${partsCached ? "cached" : "fetched"}), ${match.heights} buildings' heights measured ` +
               `(${match.roofs} given a hipped roof, ${match.lowered} down to the laser scanning's roof), ` +
               `${match.uncovered} too little covered, ${match.rejected} with tops fitting neither their storeys nor a roof, ` +
-              `${split.split} split into ${split.parts.length} parts of their heights (${split.failed} that could not be cut)`,
+              `${split.split} split into ${split.parts.length} parts of their heights (${split.failed} that could not be cut, ` +
+              `${split.slivers} whose slivers could not be)`,
           );
           if (match.heights > 0 || split.split > 0) {
             otherAttributions.push(source.attribution);
