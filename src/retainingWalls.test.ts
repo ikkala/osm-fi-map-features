@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Point } from "./geometry.ts";
 import type { Barrier } from "./osm.ts";
-import { groundSteps, stepAtWalls } from "./retainingWalls.ts";
+import { groundSteps, stepAtWalls, type GroundStep } from "./retainingWalls.ts";
 import { defined } from "./testing.ts";
 
 function wall(osm: string, line: Point[]): Barrier {
@@ -22,6 +22,13 @@ test("a retaining wall steps the ground: down to the slope's foot on its low sid
   }
 });
 
+test("a retaining wall drawn a little behind the model's edge is stepped down from it, the ground in front of it low", () => {
+  // the model's high ground going on 2.5 m out on the low side before it falls, to 80 at n = -6
+  const behind = (_e: number, n: number) => (n <= -6 ? 80 : n >= -2.5 ? 84 : 80 + ((n + 6) / 3.5) * 4);
+  const ground = stepAtWalls(behind, groundSteps([wall("w1", [[0, 0], [40, 0]])], behind));
+  assert.deepEqual([-7, -4, -2, -1, 1].map((n) => round(ground(20, n))), [80, 80, 80, 80, 84]);
+});
+
 test("a retaining wall's step eases in toward its free ends, not where another wall goes on", () => {
   const steps = groundSteps([wall("w1", [[0, 0], [20, 0]]), wall("w2", [[20, 0], [40, 0]])], blurred);
   const ground = stepAtWalls(blurred, steps);
@@ -38,6 +45,24 @@ test("a retaining wall's stretch with no step leaves the ground beside it as it 
   const ground = stepAtWalls(ending, groundSteps([wall("w1", [[0, 0], [40, 0]])], ending));
   assert.equal(round(ground(10, -2)), 80);
   assert.equal(round(ground(23, -2)), 82);
+});
+
+test("a high retaining wall the model smooths over many meters is stepped up to its slope's top", () => {
+  // a wall along n = 0 holding up 86 over 80, the model's slope from n = -2 to 9
+  const wide = (_e: number, n: number) => (n <= -2 ? 80 : n >= 9 ? 86 : 80 + ((n + 2) / 11) * 6);
+  const ground = stepAtWalls(wide, groundSteps([wall("w1", [[0, 0], [40, 0]])], wide));
+  assert.deepEqual([1, 5, 8].map((n) => round(ground(20, n))), [86, 86, 86]);
+});
+
+test("on the high side, the ground is taken up to the highest top of the stretches it is beside, not the nearest's", () => {
+  const step = (a: Point, b: Point, top: number): GroundStep => ({ wall: "w1", a, b, low: 1, foot: 80, footOut: 3, top, topIn: 6, shareA: 1, shareB: 1 });
+  // walls along e = 0 and n = 0, holding up the ground northeast of them; inside their corner, 1 m from the first,
+  // whose slope ran out along the other's at a lower top, and 4 m from the other
+  const corner = [step([0, 0], [0, 10], 82), step([10, 0], [0, 0], 84)];
+  const ground = stepAtWalls(() => 81, corner);
+  assert.equal(ground(1, 4), 84);
+  // on the low side of the nearest, its foot
+  assert.equal(ground(-1, 4), 80);
 });
 
 test("a retaining wall with a bank going on up past it, not flattening within reach, leaves the ground as it is", () => {

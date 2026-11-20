@@ -391,7 +391,12 @@ export class MapBuilder {
       logger.log(`${covered.tunnels} tunnels in cuts get lids, ${covered.crossings} ways over them become bridges`);
       logger.log(`${uncoverAtGrade(features, heightAt)} tunnels run at the ground under buildings`);
       const knownFloors = (this.#options.tunnelFloors ?? []).map(({ at, floor, name }) => ({ p: projection.toMeters(at), floor, name }));
-      const tunnels = setTunnelFloors(features, heightAt, levels, underBridges([...features.roads, ...features.rails], bridgeOutlines), knownFloors);
+      // the bridges' decks as they will be set below, on copies, for the tunnels under them to go deep enough
+      const early = { roads: features.roads.map((r) => ({ ...r })), rails: features.rails.map((r) => ({ ...r })) };
+      setBridgeDecks(early.roads, heightAt, indoors);
+      setBridgeDecks(early.rails, heightAt, indoors);
+      const earlyDecks = decksOver([...early.roads, ...early.rails].filter((w) => w.bridge && w.deck), bridgeOutlines);
+      const tunnels = setTunnelFloors(features, heightAt, levels, underBridges([...features.roads, ...features.rails], bridgeOutlines), knownFloors, earlyDecks);
       logger.log(`${tunnels.floors} tunnel ways under hills and lakes get floors, ${tunnels.ramps} ways out of their portals ramps, ${tunnels.walls.length} stretches of ground raised over portals`);
       if (knownFloors.length > 0) {
         logger.log(`${tunnels.known} of ${knownFloors.length} known tunnel floors on a tunnel`);
@@ -631,7 +636,8 @@ export class MapBuilder {
             `${source.title}: ${parts.length} parts (${partsCached ? "cached" : "fetched"}), ${match.heights} buildings' heights measured ` +
               `(${match.roofs} given a hipped roof, ${match.lowered} down to the laser scanning's roof), ` +
               `${match.uncovered} too little covered, ${match.rejected} with tops fitting neither their storeys nor a roof, ` +
-              `${split.split} split into ${split.parts.length} parts of their heights (${split.failed} that could not be cut)`,
+              `${split.split} split into ${split.parts.length} parts of their heights (${split.failed} that could not be cut, ` +
+              `${split.slivers} whose slivers could not be)`,
           );
           if (match.heights > 0 || split.split > 0) {
             otherAttributions.push(source.attribution);

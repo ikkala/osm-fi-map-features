@@ -47,6 +47,8 @@ export interface Road {
   kind: string;
   /** Meters */
   width: number;
+  /** The width is OSM's (width=* or est_width=*), not its kind's */
+  widthTagged?: true;
   layer: number;
   bridge: boolean;
   tunnel: boolean;
@@ -970,10 +972,12 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
       } else if (road.highway && ROAD_WIDTHS[road.highway] !== undefined) {
         const width = roadWidth(road);
         const walkway = NOT_FOR_VEHICLES.has(road.highway);
+        const osmWidth = (meters(road.width) ?? meters(road["est_width"]) ?? 0) > 0;
         const way: Road = {
           osm,
           kind: road.highway,
           width,
+          ...(osmWidth && { widthTagged: true as const }),
           ...layering(road),
           ...optionalName(road),
           ...oneway(road),

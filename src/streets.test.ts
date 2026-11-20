@@ -92,6 +92,21 @@ test("fences open where ways cross them and at their gates, but not for bridges 
   assert.ok(map.barriers.every((b) => b.osm === "w4"));
 });
 
+test("a gate opens a fence it spans along only, from post to post: not a wall it stands across from, nor a fence going on from its post", () => {
+  // a wall along n = 0; a gate 0.9 m north of it spanning north from it, 1.4 m from post to post; a fence going on
+  // north from its far post
+  const map = features([], [fence("w1", [[0, 0], [20, 0]]), fence("w2", [[10, 1.6], [10, 2.4]])]);
+  map.gates.push({ point: [10, 0.9], across: 90, width: 1.4 });
+  assert.equal(openBarriers(map), 0);
+  assert.deepEqual(
+    map.barriers.map((b) => b.line),
+    [
+      [[0, 0], [20, 0]],
+      [[10, 1.6], [10, 2.4]],
+    ],
+  );
+});
+
 test("a bridge's parapet stays whole over a path passing under the deck, opening at its gates alone", () => {
   const map = features([road("w1", "footway", [[10, -5], [10, 5]], { width: 2 })], [{ osm: "w2", kind: "wall", height: 1.1, parapet: true, line: [[0, 0], [100, 0]] }]);
   assert.equal(openBarriers(map), 0);

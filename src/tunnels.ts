@@ -17,6 +17,8 @@ const MIN_ROAD_CLEARANCE_M = 2.2;
 export const CAR_PARK_CLEARANCE_M = 2.5;
 /** The roof over the room, under the ground (m) */
 export const ROOF_M = 1;
+/** The ground left over the roof (m), so that the ground's surface, smoothed between the model's points, stays over it */
+export const COVER_M = 0.3;
 /** The elevation model has the water's surface: the water is taken this deep over a tunnel (m) */
 export const WATER_DEPTH_M = 3;
 /** Under water this much ground stays between the water's bed and the roof, so a coarser model of the ground keeps some there (m) */
@@ -110,8 +112,9 @@ export interface KnownFloor {
   p: Point;
   floor: number;
   /**
-   * The tunnel's name=*: only its ways' points are looked at, so that another tunnel passing nearer does not take it,
-   * and between two known floors of one name the floor runs straight along its ways
+   * The tunnel's name=*, or for a tunnel without one its way's OSM element (w123): only its ways' points are looked at,
+   * so that another tunnel passing nearer does not take it, and between two known floors of one name the floor runs
+   * straight along its ways
    */
   name?: string;
 }
@@ -260,7 +263,9 @@ function toCorners(rings: Point[][], o: Opening): Opening {
       const length = Math.hypot(c[0] - a[0], c[1] - a[1]);
       const along = (p: Point) => ((p[0] - a[0]) * (c[0] - a[0]) + (p[1] - a[1]) * (c[1] - a[1])) / length;
       const off = (p: Point) => Math.abs((p[0] - a[0]) * (c[1] - a[1]) - (p[1] - a[1]) * (c[0] - a[0])) / length;
-      if (length === 0 || off(o.from) > 0.01 || off(o.to) > 0.01) {
+      // on the edge itself, not on another edge in line with it
+      const beside = (p: Point) => off(p) > 0.01 || along(p) < -0.01 || along(p) > length + 0.01;
+      if (length === 0 || beside(o.from) || beside(o.to)) {
         continue;
       }
       const end = (p: Point): Point => {
@@ -364,6 +369,7 @@ export function setTunnelFloors(
   levels: ReadonlyMap<Way, number[]> = new Map(),
   underBridge: (p: Point) => boolean = () => false,
   known: readonly KnownFloor[] = [],
+  deckOver?: (p: Point, layer: number) => { deck: number } | undefined,
 ): { floors: number; ramps: number; walls: PortalWall[]; basements: Road[]; known: number } {
   const tunnels: Way[] = [...features.roads, ...features.rails].filter((w) => w.tunnel && !w.lid && w.line.length >= 2);
   const key = pointKey;
@@ -375,7 +381,7 @@ export function setTunnelFloors(
     for (const p of way.line) {
       through.set(key(p), [...(through.get(key(p)) ?? []), way]);
     }
-    const depth = ROOF_M + roomHeight(way);
+    const depth = COVER_M + ROOF_M + roomHeight(way);
     const half = ("width" in way ? way.width : RAIL_WIDTH_M) / 2 + ROOM_SIDE_M;
     const storeys = levels.get(way);
     way.line.forEach((p, i) => {
@@ -478,7 +484,8 @@ export function setTunnelFloors(
 
   // a car park under a building: the tunnels going down into it from a portal in a building, when no road but a
   // service way leads in among them, are as low as a car park, and their floors need that much less depth; a
-  // service way of it with lanes (a ramp with a lane each way) is as wide as they are, where its kind is one lane's
+  // service way of it with lanes (a ramp with a lane each way) is as wide as they are, where its width is its kind's,
+  // one lane's, not OSM's
   for (const group of meetingGroups(tunnels)) {
     const roads = group.ways.filter((way): way is Road => "width" in way);
     const vehicles = roads.filter((r) => !WALKWAYS.has(r.kind));
@@ -490,7 +497,7 @@ export function setTunnelFloors(
     ) {
       for (const r of roads) {
         r.room = Math.min(roomHeight(r), CAR_PARK_CLEARANCE_M);
-        if (r.kind === "service" && r.lanes !== undefined && r.lanes >= 2) {
+        if (r.kind === "service" && r.lanes !== undefined && r.lanes >= 2 && !r.widthTagged) {
           r.width = Math.max(r.width, r.lanes * LANE_WIDTH_M);
         }
       }
@@ -498,7 +505,7 @@ export function setTunnelFloors(
         const node = nodes.get(k);
         if (node) {
           node.half = Math.max(node.half, ...(through.get(k) ?? []).map((way) => ("width" in way ? way.width : RAIL_WIDTH_M) / 2 + ROOM_SIDE_M));
-          const depth = Math.max(...(through.get(k) ?? []).map((way) => ROOF_M + roomHeight(way)));
+          const depth = Math.max(...(through.get(k) ?? []).map((way) => COVER_M + ROOF_M + roomHeight(way)));
           if (node.stairs && node.portal !== undefined) {
             node.portal += node.depth - depth;
           }
@@ -545,7 +552,7 @@ export function setTunnelFloors(
   const inWater = ([e, n]: Point) =>
     waters.some(({ polygon, box }) => e >= box.minX && e <= box.maxX && n >= box.minY && n <= box.maxY && pointInPolygon([e, n], polygon));
   for (const [k, node] of nodes) {
-    const around = [node.p, ...node.next.map(({ key: q }) => nodes.get(q)?.p).filter((q) => q !== undefined).map((q): Point => [(node.p[0] + q[0]) / 2, (node.p[1] + q[1]) / 2])];
+    const around = pointsAround(nodes, node);
     // under water across the room's width too: a water's surface falls across it where it flows
     const wet = [...around, ...acrossRoom(nodes, node)].filter(inWater);
     // the model has no ground under a bridge: the tunnel there only has to fit under its deck
@@ -558,7 +565,11 @@ export function setTunnelFloors(
 
   // deep enough under the ways crossing over: from there the floor rises no steeper than MAX_GRADE, also to
   // the portals, whose ways leading on then ramp down to them
-  const crossed = spread(nodes, underCrossings(features, tunnels, nodes, heightAt, underBridge), (length) => MAX_GRADE * length);
+  const crossed = spread(
+    nodes,
+    [...underCrossings(features, tunnels, nodes, heightAt, underBridge), ...(deckOver ? underDecks(nodes, through, deckOver) : [])],
+    (length) => MAX_GRADE * length,
+  );
   for (const [k, node] of nodes) {
     node.floor = Math.min(node.floor, crossed.get(k) ?? Infinity);
   }
@@ -569,7 +580,8 @@ export function setTunnelFloors(
   // steeper than MAX_GRADE
   const knownAt: [string, number][] = [];
   const knownByName = new Map<string, [string, number][]>();
-  const named = (k: string, name: string | undefined) => name === undefined || (through.get(k) ?? []).some((way) => "name" in way && way.name === name);
+  const named = (k: string, name: string | undefined) =>
+    name === undefined || (through.get(k) ?? []).some((way) => ("name" in way && way.name === name) || way.osm === name);
   for (const { p, floor, name } of known) {
     let nearest: { k: string; d: number } | undefined;
     for (const [k, node] of nodes) {
@@ -717,33 +729,17 @@ export function fitRoomsUnderDecks(roads: Road[], deckOver: (p: Point, layer: nu
  */
 export function setTunnelRooms(roads: Road[]): number {
   const tunnels = roads.filter((r) => r.tunnel && !WALKWAYS.has(r.kind) && r.line.length >= 2);
-  const parent = tunnels.map((_, i) => i);
-  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
-  const byKey = new Map<string, number>();
-  tunnels.forEach((way, i) => {
-    for (const p of way.line) {
-      const other = byKey.get(pointKey(p));
-      if (other === undefined) {
-        byKey.set(pointKey(p), i);
-      } else {
-        parent[find(i)] = find(other);
+  const lowered: Road[] = [];
+  for (const { ways } of meetingGroups(tunnels)) {
+    const heights = ways.flatMap((way) => ("maxHeight" in way && way.maxHeight !== undefined ? [way.maxHeight] : []));
+    const height = heights.length > 0 ? Math.max(...heights) : undefined;
+    for (const way of tunnels.filter((t) => ways.includes(t))) {
+      if (height !== undefined && height < ROAD_CLEARANCE_M) {
+        way.room = Math.max(MIN_ROAD_CLEARANCE_M, height);
+        lowered.push(way);
       }
     }
-  });
-  const tallest = new Map<number, number>();
-  tunnels.forEach((way, i) => {
-    if (way.maxHeight !== undefined) {
-      tallest.set(find(i), Math.max(tallest.get(find(i)) ?? 0, way.maxHeight));
-    }
-  });
-  const lowered: Road[] = [];
-  tunnels.forEach((way, i) => {
-    const height = tallest.get(find(i));
-    if (height !== undefined && height < ROAD_CLEARANCE_M) {
-      way.room = Math.max(MIN_ROAD_CLEARANCE_M, height);
-      lowered.push(way);
-    }
-  });
+  }
   // a walkway's tunnel meeting one of them, or beside it in one hall, is no taller
   let walkways = 0;
   for (const way of roads.filter((r) => r.tunnel && WALKWAYS.has(r.kind) && r.line.length >= 2)) {
@@ -1080,6 +1076,30 @@ function underCrossings(
           }
         }
       }
+    }
+  }
+  return floors;
+}
+
+/** A node's point and the points halfway to its neighbours */
+function pointsAround(nodes: Map<string, Node>, node: Node): Point[] {
+  return [node.p, ...node.next.map(({ key: q }) => nodes.get(q)?.p).filter((q) => q !== undefined).map((q): Point => [(node.p[0] + q[0]) / 2, (node.p[1] + q[1]) / 2])];
+}
+
+/**
+ * The floors the bridges' decks over tunnels need at the tunnels' points (deckOver: the deck over a point, over a way
+ * on a layer, as the decks will be set): the room and roof under the deck, the deck as thick as a tunnel's roof. The
+ * elevation model has no ground under a bridge, and at a bridge's end has it up at the deck, so that a tunnel under a
+ * bridge's end would otherwise come out at the deck's height.
+ */
+function underDecks(nodes: Map<string, Node>, through: Map<string, Way[]>, deckOver: (p: Point, layer: number) => { deck: number } | undefined): [string, number][] {
+  const floors: [string, number][] = [];
+  for (const [k, node] of nodes) {
+    const layer = Math.max(...(through.get(k) ?? []).map((way) => way.layer), -Infinity);
+    const around = pointsAround(nodes, node);
+    const decks = around.map((p) => deckOver(p, Number.isFinite(layer) ? layer : 0)?.deck).filter((d) => d !== undefined);
+    if (decks.length > 0) {
+      floors.push([k, Math.min(...decks) - (node.depth - COVER_M)]);
     }
   }
   return floors;
