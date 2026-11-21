@@ -186,6 +186,21 @@ test("the ways leading on from an outline's ways meet its deck: an approach's de
   assert.deepEqual(east.deck, [100, 98]);
 });
 
+test("a way passing under an outline's bridge, with a node of its own just beside the bridge's line, does not meet the deck", () => {
+  const { road, footway } = ways();
+  // a road out of a tunnel's portal and the way it goes on as, joined under the bridge 0.48 m off the road's line
+  const approach: DeckLine = { bridge: false, line: [[50, -40], [50, -0.48]], deck: [90, 90] };
+  const onward: DeckLine = { bridge: false, line: [[50, -0.48], [50, 40]] };
+  const lines = [road, footway, approach, onward];
+  const { decks } = setOutlineDecks([outline], lines, () => 90, () => 0.06);
+  assert.equal(lines.length, 4);
+  assert.deepEqual(approach.deck, [90, 90]);
+  assert.equal(onward.deck, undefined);
+  assert.deepEqual(onward.line, [[50, -0.48], [50, 40]]);
+  // and the deck has no piece down to them
+  assert.ok(decks.length > 0 && decks.every((d) => d.heights.every((h) => h === 100)));
+});
+
 test("a way on the ground higher than the deck it meets goes down to it in a cut", () => {
   const { road, footway } = ways();
   const west: DeckLine = { bridge: false, line: [[-40, 5], [0, 5]] };

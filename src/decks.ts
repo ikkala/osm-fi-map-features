@@ -19,8 +19,11 @@ export interface DeckLine {
 const ON_OUTLINE_SHARE = 0.5;
 /** Lines are sampled this often (m) */
 const SAMPLE_M = 1;
-/** A way's end this near (m) a way on an outline meets it */
+/** A way's end this near (m) a ramp meets it, and the ends of ways leading on this near each other join */
 const TOUCH_M = 0.5;
+/** A way's end this near (m) a way on an outline meets it, at a node they share: a way passing under the bridge may
+ * have a node of its own just beside the bridge's line */
+const SHARED_M = 0.01;
 /** A way on an outline reaching on past it at most this far (m) has the deck to its end */
 const END_REACH_M = 5;
 /** A way leading on meets a deck less than this (m) off as it is */
@@ -127,7 +130,7 @@ export function setOutlineDecks<T extends DeckLine>(
         ["end", l.line[l.line.length - 1]],
       ];
       for (const [which, p] of ends) {
-        const m = members.find((m) => m.deck && nearestOnLine(m.line, p).distance <= TOUCH_M);
+        const m = members.find((m) => m.deck && nearestOnLine(m.line, p).distance <= SHARED_M);
         if (m?.deck) {
           meets.set(l, { ...meets.get(l), [which]: deckAt(m.line, m.deck, p) });
         }
@@ -234,7 +237,7 @@ function leadingOn<T extends DeckLine>(lines: T[], members: T[], on: Set<T>, box
     return b.maxX >= box.minX - TOUCH_M && b.minX <= box.maxX + TOUCH_M && b.maxY >= box.minY - TOUCH_M && b.minY <= box.maxY + TOUCH_M;
   });
   const ends = (l: T): Point[] => [l.line[0], l.line[l.line.length - 1]];
-  const onward = near.filter((l) => ends(l).some((p) => members.some((m) => nearestOnLine(m.line, p).distance <= TOUCH_M)));
+  const onward = near.filter((l) => ends(l).some((p) => members.some((m) => nearestOnLine(m.line, p).distance <= SHARED_M)));
   for (let i = 0; i < onward.length; i++) {
     const from = ends(onward[i]);
     for (const l of near) {
