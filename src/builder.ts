@@ -433,9 +433,11 @@ export class MapBuilder {
       // the decks stay straight: a way under one with too little room goes down into a cut
       const bridges = [...features.roads, ...features.rails].filter((w) => w.bridge && w.deck);
       const over = new Set<string>();
-      const cuts = lowerUnderBridges(features.roads, bridges, bridgeOutlines, heightAt, over, features.rails) + lowerUnderBridges(features.rails, bridges, bridgeOutlines, heightAt, over, features.roads);
+      const cuts =
+        lowerUnderBridges(features.roads, bridges, bridgeOutlines, heightAt, over, features.rails, features.bridgeDecks) +
+        lowerUnderBridges(features.rails, bridges, bridgeOutlines, heightAt, over, features.roads, features.bridgeDecks);
       logger.log(`${cuts} ways lowered into cuts under ${over.size} bridges too low over them (their ends may be too low): ${[...over].join(", ")}`);
-      logger.log(`${fitRoomsUnderDecks(features.roads, decksOver(bridges, bridgeOutlines))} tunnels under bridges' decks get a lower room`);
+      logger.log(`${fitRoomsUnderDecks(features.roads, decksOver(bridges, bridgeOutlines, features.bridgeDecks))} tunnels under bridges' decks get a lower room`);
       // after the decks: the railways end at their bridges' and approaches' heights, and tramways stay under the decks
       // over them by a tram's room
       const beds = setTrackBeds(

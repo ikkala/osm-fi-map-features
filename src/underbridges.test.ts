@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Point } from "./geometry.ts";
-import type { Rail, Road } from "./osm.ts";
+import type { BridgeDeck, BridgeOutline, Rail, Road } from "./osm.ts";
 import { lowerUnderBridges, underBridges } from "./underbridges.ts";
 
 function road(osm: string, line: Point[], extra: Partial<Road> = {}): Road {
@@ -64,6 +64,28 @@ test("a cut whose eased ramps would reach a junction has its ramps rise at once 
   assert.ok(Math.abs(Math.min(...cut.floor) - 96.3) < 1e-9);
   assert.ok(Math.max(...cut.line.map(([, n]) => n)) < 32);
   assert.equal(street.floor, undefined);
+});
+
+test("under an outline the deck is the one built there: lower than its bridge way's, or none where it is left open", () => {
+  // the outline from n = -20 to 20 over e -10 to 10, its deck built only north of the bridge way, at 99.5
+  const outline: BridgeOutline = { osm: "w9", polygon: { outer: [[-10, -20], [10, -20], [10, 20], [-10, 20]], holes: [] } };
+  const built: BridgeDeck = { osm: "w9", vertices: [[-10, 10], [10, 10], [10, 20], [-10, 20]], triangles: [0, 1, 2, 0, 2, 3], heights: [99.5, 99.5, 99.5, 99.5] };
+  const path = () => road("w2", [[-60, 15], [60, 15]], { kind: "footway", width: 2.5 });
+  const high = () => road("w1", [[-30, 0], [30, 0]], { layer: 1, bridge: true, deck: [102, 102] });
+  // the bridge way's deck 4 m over the ground leaves the path room enough; the deck built over it 1.5 m does not
+  const under = [high(), path()];
+  assert.equal(lowerUnderBridges(under, [under[0]], [outline], () => 98), 0);
+  const cut = [high(), path()];
+  assert.equal(lowerUnderBridges(cut, [cut[0]], [outline], () => 98, undefined, undefined, [built]), 1);
+  const floor = cut.find((w) => w.osm === "w2" && w.floor)?.floor;
+  assert.ok(floor && Math.abs(Math.min(...floor) - (99.5 - 1 - 2.7)) < 1e-9);
+  // south of the bridge way the outline has no deck: a path there under it stays as it is
+  const low = () => road("w1", [[-30, 0], [30, 0]], { layer: 1, bridge: true, deck: [100, 100] });
+  const south = () => road("w3", [[-60, -15], [60, -15]], { kind: "footway", width: 2.5 });
+  const open = [low(), south()];
+  assert.equal(lowerUnderBridges(open, [open[0]], [outline], () => 98), 1);
+  const left = [low(), south()];
+  assert.equal(lowerUnderBridges(left, [left[0]], [outline], () => 98, undefined, undefined, [built]), 0);
 });
 
 test("a way that would go deeper than 3 m, or ends under the bridge, is left as it is", () => {

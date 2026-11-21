@@ -4,8 +4,8 @@
 // down into a cut under it instead, ramping down to the floor the room needs, or to its own ground spanned along it
 // from either side of the bridge, and up again.
 import { deckAt } from "./bridges.ts";
-import { distanceToSegment, indexBoxes, MinHeap, pointInPolygon, pointKey, type Point } from "./geometry.ts";
-import { bounds, NOT_FOR_VEHICLES, type BridgeOutline, type Rail, type Road } from "./osm.ts";
+import { distanceToSegment, indexBoxes, MinHeap, pointInPolygon, pointKey, type Point, type Rect } from "./geometry.ts";
+import { bounds, NOT_FOR_VEHICLES, type BridgeDeck, type BridgeOutline, type Rail, type Road } from "./osm.ts";
 
 /** Room a way needs under a deck (m), and the deck's thickness */
 const ROOM_M = { people: 2.7, vehicles: 4.2, trams: 4.7, trains: 5.5 };
@@ -41,8 +41,13 @@ const TRAMS = new Set(["tram", "light_rail"]);
 
 type Way = Road | Rail;
 
-/** The deck over a point of a way on a layer (and its bridge's id): a bridge's within its width, or its outline's */
-export function decksOver(bridges: Way[], outlines: BridgeOutline[]): (p: Point, layer: number) => { deck: number; osm: string } | undefined {
+/**
+ * The deck over a point of a way on a layer (and its bridge's id): a bridge's within its width, or its outline's. With
+ * the outlines' decks as built (setOutlineDecks), an outline's is theirs where they are over the point, the lower of it
+ * and a bridge's there, and none where they leave the outline open; else the nearest bridge way's in the outline.
+ */
+export function decksOver(bridges: Way[], outlines: BridgeOutline[], decks?: BridgeDeck[]): (p: Point, layer: number) => { deck: number; osm: string } | undefined {
+  const built = decks && builtDeckAt(decks);
   const spans = bridges
     .filter((b) => b.bridge && b.deck && b.line.length >= 2)
     .map((b) => ({ osm: b.osm, line: b.line, deck: b.deck ?? [], box: bounds(b.line), half: ("width" in b ? b.width : RAIL_WIDTH_M) / 2 + DECK_EDGE_M, layer: Math.max(b.layer, 1) }));
@@ -63,14 +68,63 @@ export function decksOver(bridges: Way[], outlines: BridgeOutline[]): (p: Point,
         }
       }
     }
+    const within = nearest && nearest.d <= 0 ? nearest : undefined;
+    if (built) {
+      // an outline's deck is over ways under its layer, as a bridge's is
+      const piece = layer < 1 ? built([e, n]) : undefined;
+      return piece && (!within || piece.deck < within.deck) ? piece : within;
+    }
     if (!nearest || nearest.d > OUTLINE_REACH_M) {
       return undefined;
     }
-    if (nearest.d <= 0) {
-      return nearest;
+    if (within) {
+      return within;
     }
     const inOutline = shapes.some(({ polygon, box }) => e >= box.minX && e <= box.maxX && n >= box.minY && n <= box.maxY && pointInPolygon([e, n], polygon));
     return inOutline ? nearest : undefined;
+  };
+}
+
+/** The lowest of the decks' triangles over a point, at its height there (and its outline's id) */
+function builtDeckAt(decks: BridgeDeck[]): (p: Point) => { deck: number; osm: string } | undefined {
+  const triangles = decks.flatMap((d) => {
+    const found: { osm: string; corners: Point[]; heights: number[]; box: Rect }[] = [];
+    for (let i = 0; i + 2 < d.triangles.length; i += 3) {
+      const ks = [d.triangles[i], d.triangles[i + 1], d.triangles[i + 2]];
+      const corners = ks.map((k) => d.vertices[k]);
+      found.push({ osm: d.osm, corners, heights: ks.map((k) => d.heights[k]), box: bounds(corners) });
+    }
+    return found;
+  });
+  if (triangles.length === 0) {
+    return () => undefined;
+  }
+  const near = indexBoxes(
+    triangles.map((t) => t.box),
+    bounds(triangles.flatMap((t) => t.corners)),
+  );
+  return ([e, n]) => {
+    let lowest: { deck: number; osm: string } | undefined;
+    for (const index of near({ minX: e, minY: n, maxX: e, maxY: n })) {
+      const { corners, heights, osm } = triangles[index];
+      const [[ax, ay], [bx, by], [cx, cy]] = corners;
+      const area = (bx - ax) * (cy - ay) - (cx - ax) * (by - ay);
+      if (Math.abs(area) < 1e-9) {
+        continue;
+      }
+      // barycentric weights of b and c; inside where all three are at least 0
+      const wb = ((e - ax) * (cy - ay) - (cx - ax) * (n - ay)) / area;
+      const wc = ((bx - ax) * (n - ay) - (e - ax) * (by - ay)) / area;
+      const wa = 1 - wb - wc;
+      if (wa < -1e-9 || wb < -1e-9 || wc < -1e-9) {
+        continue;
+      }
+      const deck = wa * heights[0] + wb * heights[1] + wc * heights[2];
+      if (!lowest || deck < lowest.deck) {
+        lowest = { deck, osm };
+      }
+    }
+    return lowest;
   };
 }
 
@@ -122,12 +176,14 @@ export function tramBedCeiling(
 /**
  * Lowers the ways passing under bridges (`deck`) and bridge outlines into cuts where the deck leaves them less than
  * ROOM_M and its thickness over the ground: the stretch is split off the way with a `floor`, at that depth under
- * the deck and ramping up to the ground, easing out of the bottom (EASE_M) into no steeper than GRADE. Ways of a kind on a layer go down together where they
- * meet, at one height there, the ramps rising from the deepest places along them all, so that paths meeting under a
- * bridge stay joined. A cut is left out where MAX_DEPTH_M would leave less than LEAST_ROOM_M, where a way ends in it, and where
- * another way meets it (of another kind or layer, a bridge or a way on one, or one of `others`: a junction or a level
- * crossing, which would be left over it); so are the bridges themselves and the ways on them. Returns how many cuts;
- * the OSM ids of the bridges over them go into `over` (a cut may tell of a bridge's ends too low in the model).
+ * the deck and ramping up to the ground, easing out of the bottom (EASE_M) into no steeper than GRADE. Ways of a kind
+ * on a layer go down together where they meet, at one height there, the ramps rising from the deepest places along
+ * them all, so that paths meeting under a bridge stay joined. A cut is left out where MAX_DEPTH_M would leave less
+ * than LEAST_ROOM_M, where a way ends in it, and where another way meets it (of another kind or layer, a bridge or a
+ * way on one, or one of `others`: a junction or a level crossing, which would be left over it); so are the bridges
+ * themselves and the ways on them. An outline's deck is the one built (decks), where given (decksOver). Returns how
+ * many cuts; the OSM ids of the bridges over them go into `over` (a cut may tell of a bridge's ends too low in the
+ * model).
  */
 export function lowerUnderBridges<T extends Way>(
   ways: T[],
@@ -136,8 +192,9 @@ export function lowerUnderBridges<T extends Way>(
   heightAt: (e: number, n: number) => number | undefined,
   over: Set<string> = new Set(),
   others: Way[] = ways,
+  decks?: BridgeDeck[],
 ): number {
-  const deckOver = decksOver(bridges, outlines);
+  const deckOver = decksOver(bridges, outlines, decks);
   const classOf = (way: Way) => ("width" in way ? (NOT_FOR_VEHICLES.has(way.kind) ? "people" : "vehicles") : TRAMS.has(way.kind) ? "trams" : "trains");
   const eligible = ways.filter((w) => !w.bridge && !w.tunnel && !w.deck && !w.floor && !w.lid && w.line.length >= 2);
   // each way's samples, every SAMPLE_M along it and at its points, and which point a sample is (-1: none)
