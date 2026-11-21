@@ -14,8 +14,15 @@ const TRAM_BED_ROOM_M = 4;
 const DECK_THICKNESS_M = 1;
 /** A way ramps down into a cut no steeper than this */
 const GRADE = { people: 0.08, vehicles: 0.06, trains: 0.03 };
-/** A way needing to go down more than this (m) is left as it is */
+/** A ramp out of a cut's bottom rises EASE_M · d² (m) d meters from it until it has its grade, so that the floor
+ * bends gently there: by EASE_M · 100 m² from the line between its heights 10 m either side */
+const EASE_M = 0.0012;
+/** A cut's floor keeps the points it needs to stay within this (m) of its heights */
+const FLOOR_TOLERANCE_M = 0.02;
+/** A cut goes no deeper than this (m). Where the room needs more, the way goes down this far if that leaves it the
+ * least room of its kind (a person's, a bus's, a tram's, a train's), else it is left as it is */
 const MAX_DEPTH_M = 3;
+const LEAST_ROOM_M = { people: 2.2, vehicles: 3.5, trams: TRAM_BED_ROOM_M, trains: 4.8 };
 /** A deck reaches this far (m) beyond its way's edges, and the cut's bottom a meter more */
 const DECK_EDGE_M = 0.5;
 const BOTTOM_SIDE_M = 1;
@@ -115,9 +122,9 @@ export function tramBedCeiling(
 /**
  * Lowers the ways passing under bridges (`deck`) and bridge outlines into cuts where the deck leaves them less than
  * ROOM_M and its thickness over the ground: the stretch is split off the way with a `floor`, at that depth under
- * the deck and ramping up to the ground no steeper than GRADE. Ways of a kind on a layer go down together where they
+ * the deck and ramping up to the ground, easing out of the bottom (EASE_M) into no steeper than GRADE. Ways of a kind on a layer go down together where they
  * meet, at one height there, the ramps rising from the deepest places along them all, so that paths meeting under a
- * bridge stay joined. A cut is left out where it would go deeper than MAX_DEPTH_M, where a way ends in it, and where
+ * bridge stay joined. A cut is left out where MAX_DEPTH_M would leave less than LEAST_ROOM_M, where a way ends in it, and where
  * another way meets it (of another kind or layer, a bridge or a way on one, or one of `others`: a junction or a level
  * crossing, which would be left over it); so are the bridges themselves and the ways on them. Returns how many cuts;
  * the OSM ids of the bridges over them go into `over` (a cut may tell of a bridge's ends too low in the model).
@@ -163,7 +170,7 @@ export function lowerUnderBridges<T extends Way>(
       }
     }
     const kind = classOf(way);
-    return { way, along, length, ds, pointOf, sampleOf, room: ROOM_M[kind], grade: GRADE[kind === "trams" ? "trains" : kind], group: `${kind}|${way.layer}` };
+    return { way, along, length, ds, pointOf, sampleOf, room: ROOM_M[kind], least: LEAST_ROOM_M[kind], grade: GRADE[kind === "trams" ? "trains" : kind], group: `${kind}|${way.layer}` };
   });
   // a sample's node: a point shared by the ways of a group is one node
   const nodeId = (w: number, i: number) => {
@@ -234,7 +241,7 @@ export function lowerUnderBridges<T extends Way>(
   };
   // where the deck is too low over a way, or the model's ground under it over the way's own: the floor it needs
   // there, and the bridge; where the deck would need it deeper than MAX_DEPTH_M
-  const needs = new Map<string, { floor: number; osm: string }>();
+  const needs = new Map<string, { floor: number; osm: string; room: number }>();
   const tooDeep = new Set<string>();
   lines.forEach((line, w) => {
     let own: (number | undefined)[] | undefined;
@@ -246,61 +253,73 @@ export function lowerUnderBridges<T extends Way>(
       }
       own ??= spanned(w);
       const base = own[i] ?? ground;
-      const room = deck.deck - DECK_THICKNESS_M - line.room;
+      const underside = deck.deck - DECK_THICKNESS_M;
+      // the floor the room needs, or no deeper than MAX_DEPTH_M where that leaves the least room
+      const room = Math.max(underside - line.room, base - MAX_DEPTH_M);
       const floor = Math.min(room, base);
       const id = nodeId(w, i);
-      if (base - room > MAX_DEPTH_M) {
+      if (underside - room < line.least) {
         tooDeep.add(id);
       } else if (ground - floor > (floor === room ? MIN_DEPTH_M : MIN_RISE_M) && floor < (needs.get(id)?.floor ?? Infinity)) {
-        needs.set(id, { floor, osm: deck.osm });
+        needs.set(id, { floor, osm: deck.osm, room: underside - floor });
       }
     }
   });
   if (needs.size === 0) {
     return 0;
   }
-  // the floor: the lowest of what each place needs, rising from it at the grade along the ways, spreading only
-  // while under the ground
-  const floors = new Map<string, number>();
-  const at = new Map<string, [number, number]>();
-  const heap = new MinHeap<string>();
-  for (const [id, { floor }] of needs) {
-    floors.set(id, floor);
-    heap.push(id, floor);
-  }
+  const needAt = new Map<string, [number, number]>();
   for (const [w, line] of lines.entries()) {
     line.ds.forEach((_, i) => {
       const id = nodeId(w, i);
-      if (needs.has(id) && !at.has(id)) {
-        at.set(id, [w, i]);
+      if (needs.has(id) && !needAt.has(id)) {
+        needAt.set(id, [w, i]);
       }
     });
   }
-  const inCut = (id: string) => {
-    const [w, i] = at.get(id) ?? [-1, -1];
-    const ground = w >= 0 ? groundOf(w, i) : undefined;
-    return ground !== undefined && (floors.get(id) ?? Infinity) < ground - MIN_DEPTH_M;
-  };
-  const neighbours = (id: string): { id: string; w: number; i: number; d: number }[] => {
-    const [w0, i0] = at.get(id) ?? [-1, -1];
-    return membersOf(id, w0, i0).flatMap(([w, i]) =>
-      [i - 1, i + 1].filter((j) => j >= 0 && j < lines[w].ds.length).map((j) => ({ id: nodeId(w, j), w, i: j, d: Math.abs(lines[w].ds[j] - lines[w].ds[i]) })),
-    );
-  };
-  for (let top = heap.pop(); top; top = heap.pop()) {
-    if (top.value > (floors.get(top.item) ?? Infinity) || !inCut(top.item)) {
-      continue;
+  // the floor: the lowest of what each place needs, rising from it along the ways (easing out of the bottom, or at
+  // once at the grade), spreading only while under the ground; and where each place is
+  const spread = (eased: boolean) => {
+    const floors = new Map<string, number>();
+    const at = new Map(needAt);
+    const heap = new MinHeap<string>();
+    for (const [id, { floor }] of needs) {
+      floors.set(id, floor);
+      heap.push(id, floor);
     }
-    const [w0] = at.get(top.item) ?? [0];
-    for (const next of neighbours(top.item)) {
-      const floor = top.value + lines[w0].grade * next.d;
-      if (floor < (floors.get(next.id) ?? Infinity)) {
-        floors.set(next.id, floor);
-        at.set(next.id, [next.w, next.i]);
-        heap.push(next.id, floor);
+    const inCut = (id: string) => {
+      const [w, i] = at.get(id) ?? [-1, -1];
+      const ground = w >= 0 ? groundOf(w, i) : undefined;
+      return ground !== undefined && (floors.get(id) ?? Infinity) < ground - MIN_DEPTH_M;
+    };
+    const neighbours = (id: string): { id: string; w: number; i: number; d: number }[] => {
+      const [w0, i0] = at.get(id) ?? [-1, -1];
+      return membersOf(id, w0, i0).flatMap(([w, i]) =>
+        [i - 1, i + 1].filter((j) => j >= 0 && j < lines[w].ds.length).map((j) => ({ id: nodeId(w, j), w, i: j, d: Math.abs(lines[w].ds[j] - lines[w].ds[i]) })),
+      );
+    };
+    // each place's floor as the rise from the place it spreads from
+    const from = new Map<string, { floor: number; d: number }>();
+    for (let top = heap.pop(); top; top = heap.pop()) {
+      if (top.value > (floors.get(top.item) ?? Infinity) || !inCut(top.item)) {
+        continue;
+      }
+      const [w0] = at.get(top.item) ?? [0];
+      const { grade } = lines[w0];
+      const source = from.get(top.item) ?? { floor: top.value, d: 0 };
+      for (const next of neighbours(top.item)) {
+        const d = source.d + next.d;
+        const floor = source.floor + (eased ? rise(grade, d) : grade * d);
+        if (floor < (floors.get(next.id) ?? Infinity)) {
+          floors.set(next.id, floor);
+          at.set(next.id, [next.w, next.i]);
+          from.set(next.id, { floor: source.floor, d });
+          heap.push(next.id, floor);
+        }
       }
     }
-  }
+    return { floors, at, inCut, neighbours };
+  };
   // the points of all the ways, by which ways have them
   const usedBy = new Map<string, Set<Way>>();
   for (const way of [...ways, ...others]) {
@@ -309,53 +328,66 @@ export function lowerUnderBridges<T extends Way>(
     }
   }
   // the cuts: the places under the ground and the ramps' tops around them, joined along the ways; each kept whole or
-  // left out whole
+  // left out whole. Their ramps ease out of the bottom, or where such a cut is left out (its longer ramps reaching a
+  // junction or an end), rise at once at the grade: the places of those cuts are within the eased one's
   const kept = new Map<number, Set<number>>();
-  const done = new Set<string>();
+  const chosen = new Map<string, number>();
   let count = 0;
-  for (const start of floors.keys()) {
-    if (done.has(start) || !inCut(start)) {
-      continue;
-    }
-    const cut = [start];
-    done.add(start);
-    for (let k = 0; k < cut.length; k++) {
-      if (inCut(cut[k])) {
-        for (const next of neighbours(cut[k])) {
-          if (!done.has(next.id) && floors.has(next.id)) {
-            done.add(next.id);
-            cut.push(next.id);
+  const failed = new Set<string>();
+  for (const eased of [true, false]) {
+    const { floors, at, inCut, neighbours } = spread(eased);
+    const done = new Set<string>();
+    for (const start of floors.keys()) {
+      if (done.has(start) || !inCut(start) || (!eased && !failed.has(start))) {
+        continue;
+      }
+      const cut = [start];
+      done.add(start);
+      for (let k = 0; k < cut.length; k++) {
+        if (inCut(cut[k])) {
+          for (const next of neighbours(cut[k])) {
+            if (!done.has(next.id) && floors.has(next.id)) {
+              done.add(next.id);
+              cut.push(next.id);
+            }
           }
         }
       }
-    }
-    const wrong = cut.some((id) => {
-      if (tooDeep.has(id)) {
-        return true;
+      const wrong = cut.some((id) => {
+        if (tooDeep.has(id)) {
+          return true;
+        }
+        const [w0, i0] = at.get(id) ?? [0, 0];
+        const list = membersOf(id, w0, i0);
+        // a way ending here and no other going on
+        if (list.length === 1 && (i0 === 0 || i0 === lines[w0].ds.length - 1)) {
+          return true;
+        }
+        // a way of another kind, or one not lowered, meeting it here
+        const point = lines[w0].pointOf[i0];
+        const mine = new Set<Way>(list.map(([w]) => lines[w].way));
+        return point >= 0 && [...(usedBy.get(pointKey(lines[w0].way.line[point])) ?? [])].some((way) => !mine.has(way));
+      });
+      if (wrong) {
+        for (const id of cut) {
+          failed.add(id);
+        }
+        continue;
       }
-      const [w0, i0] = at.get(id) ?? [0, 0];
-      const list = membersOf(id, w0, i0);
-      // a way ending here and no other going on
-      if (list.length === 1 && (i0 === 0 || i0 === lines[w0].ds.length - 1)) {
-        return true;
-      }
-      // a way of another kind, or one not lowered, meeting it here
-      const point = lines[w0].pointOf[i0];
-      const mine = new Set<Way>(list.map(([w]) => lines[w].way));
-      return point >= 0 && [...(usedBy.get(pointKey(lines[w0].way.line[point])) ?? [])].some((way) => !mine.has(way));
-    });
-    if (wrong) {
-      continue;
-    }
-    count++;
-    for (const id of cut) {
-      const need = needs.get(id);
-      if (need) {
-        over.add(need.osm);
-      }
-      const [w0, i0] = at.get(id) ?? [0, 0];
-      for (const [w, i] of membersOf(id, w0, i0)) {
-        kept.set(w, (kept.get(w) ?? new Set<number>()).add(i));
+      count++;
+      for (const id of cut) {
+        const need = needs.get(id);
+        if (need) {
+          over.add(need.osm);
+        }
+        const floor = floors.get(id);
+        if (floor !== undefined) {
+          chosen.set(id, floor);
+        }
+        const [w0, i0] = at.get(id) ?? [0, 0];
+        for (const [w, i] of membersOf(id, w0, i0)) {
+          kept.set(w, (kept.get(w) ?? new Set<number>()).add(i));
+        }
       }
     }
   }
@@ -371,20 +403,22 @@ export function lowerUnderBridges<T extends Way>(
         runs.push([i, i]);
       }
     }
-    const pieces: { line: Point[]; floor?: number[] }[] = [];
+    const pieces: { line: Point[]; floor?: number[]; room?: number }[] = [];
     let from = 0;
     for (const [a, b] of runs.filter(([a, b]) => b > a)) {
       pieces.push({ line: stretch(way.line, along, from, ds[a]) });
-      // the samples every other SAMPLE_M, and the way's points
-      const kept = [];
+      // the way's points, and of the samples those the floor's shape needs: a ramp at its grade has none between its
+      // ends, so that heights and coordinates rounded in a map's tiles do not make it waver
+      const run: number[] = [];
       for (let i = a; i <= b; i++) {
-        if (i === a || i === b || pointOf[i] >= 0 || Math.round(ds[i] / SAMPLE_M) % 2 === 0) {
-          kept.push(i);
-        }
+        run.push(i);
       }
+      const heightOf = (i: number) => Math.min(chosen.get(nodeId(w, i)) ?? Infinity, groundOf(w, i) ?? Infinity);
+      const kept = simplified(run, (i) => ds[i], heightOf, FLOOR_TOLERANCE_M, (i) => pointOf[i] >= 0);
       pieces.push({
         line: kept.map((i) => pointAt(w, i)),
-        floor: kept.map((i) => Math.min(floors.get(nodeId(w, i)) ?? Infinity, groundOf(w, i) ?? Infinity)),
+        floor: kept.map(heightOf),
+        room: Math.min(lines[w].room, ...run.map((i) => needs.get(nodeId(w, i))?.room ?? Infinity)),
       });
       from = ds[b];
     }
@@ -399,7 +433,7 @@ export function lowerUnderBridges<T extends Way>(
       if (piece.floor) {
         copy.floor = piece.floor;
         if ("width" in copy) {
-          copy.room = lines[w].room;
+          copy.room = piece.room;
         }
       }
       added.push(copy);
@@ -408,12 +442,53 @@ export function lowerUnderBridges<T extends Way>(
     if (head.floor) {
       way.floor = head.floor;
       if ("width" in way) {
-        way.room = lines[w].room;
+        way.room = head.room;
       }
     }
   }
   ways.push(...added);
   return count;
+}
+
+/**
+ * Of indices in order along a line (at x), the first, the last, those that must stay, and between them those that
+ * keep y within tolerance of the straight lines between the ones kept (Douglas-Peucker)
+ */
+function simplified(indices: number[], x: (i: number) => number, y: (i: number) => number, tolerance: number, must: (i: number) => boolean): number[] {
+  const keep = new Set<number>([0, indices.length - 1]);
+  const spans: [number, number][] = [];
+  let start = 0;
+  for (let k = 1; k < indices.length; k++) {
+    if (k === indices.length - 1 || must(indices[k])) {
+      keep.add(k);
+      spans.push([start, k]);
+      start = k;
+    }
+  }
+  for (let span = spans.pop(); span; span = spans.pop()) {
+    const [s, e] = span;
+    const [xs, xe, ys, ye] = [x(indices[s]), x(indices[e]), y(indices[s]), y(indices[e])];
+    let worst = -1;
+    let most = tolerance;
+    for (let k = s + 1; k < e; k++) {
+      const off = Math.abs(y(indices[k]) - (ys + ((ye - ys) * (x(indices[k]) - xs)) / (xe - xs || 1)));
+      if (off > most) {
+        most = off;
+        worst = k;
+      }
+    }
+    if (worst >= 0) {
+      keep.add(worst);
+      spans.push([s, worst], [worst, e]);
+    }
+  }
+  return indices.filter((_, k) => keep.has(k));
+}
+
+/** How much a ramp at a grade rises d meters from a cut's bottom: EASE_M · d² until it has the grade, then on at it */
+function rise(grade: number, d: number): number {
+  const eased = grade / (2 * EASE_M);
+  return d < eased ? EASE_M * d * d : EASE_M * eased * eased + grade * (d - eased);
 }
 
 /** The part of a line from `from` to `to` meters along it; along is each point's distance */
