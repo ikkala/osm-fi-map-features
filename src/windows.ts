@@ -1,7 +1,7 @@
 // Guesses window rows (one per storey) for ordinary buildings by their kind; other kinds are too varied to
 // guess and get none, and neither do walls tagged without windows.
 import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
-import { orientedBox, pointInPolygon, ringCentroid } from "./geometry.ts";
+import { orientedBox, pointInPolygon, ringArea, ringCentroid } from "./geometry.ts";
 import { bounds, type Building, type BuildingUse, type WindowStyle } from "./osm.ts";
 
 /** building=* values and their windows */
@@ -37,7 +37,7 @@ const BY_KIND: Record<string, WindowStyle> = {
   police: "office",
 };
 
-/** The building register's main uses and their windows; work is offices and factories alike (see officeLevels) */
+/** The building register's main uses and their windows; work is offices and factories alike (see byUse) */
 const BY_USE: Partial<Record<BuildingUse, WindowStyle>> = {
   house: "house",
   holiday: "house",
@@ -45,11 +45,29 @@ const BY_USE: Partial<Record<BuildingUse, WindowStyle>> = {
   public: "office",
 };
 
+/** The register's uses of homes: a place of worship that is one (a parish's flats with its hall) is windowed as one */
+const HOMES: ReadonlySet<BuildingUse | undefined> = new Set(["house", "holiday", "apartments"]);
+
+/** A low work building of wood larger than this (m²) is a hall (a warehouse, a shop on glued beams), not a house */
+const MAX_WOODEN_HOUSE_M2 = 500;
+
 function byUse(b: Building): WindowStyle | undefined {
   if (b.use === "work") {
-    return (b.levels ?? 0) >= FINNISH_DEFAULTS_MEASURED_IN_TAMPERE.officeLevels ? "office" : undefined;
+    if ((b.levels ?? 0) >= FINNISH_DEFAULTS_MEASURED_IN_TAMPERE.officeLevels) {
+      return "office";
+    }
+    return woodenHouse(b) ? "house" : undefined;
   }
   return b.use === undefined ? undefined : BY_USE[b.use];
+}
+
+/**
+ * Walls of wood (the facade's, else the frame's) around a house's floor: a low work building so is a house put to
+ * work rather than a factory, few of which are of wood
+ */
+function woodenHouse(b: Building): boolean {
+  const wooden = b.material === undefined ? b.frameMaterial === "wood" : b.material === "wood";
+  return wooden && Math.abs(ringArea(b.polygon.outer)) <= MAX_WOODEN_HOUSE_M2;
 }
 
 /** Kinds that say nothing of what a building is: its use in the register, or the outline around a part, decides */
@@ -60,12 +78,15 @@ const SLENDER = 5;
 
 /**
  * Sets the windows of every building by its kind, or for a building=yes by its register use; a generic part
- * takes after its building. Special, windowless, slender, glass and open buildings get none. Returns how many got windows.
+ * takes after its building. Special (unless a place of worship the register has as homes), windowless, slender, glass
+ * and open buildings get none.
+ * Returns how many got windows.
  */
 export function assignWindows(buildings: Building[]): number {
+  const special = (b: Building) => b.special === true && !(b.worship === true && HOMES.has(b.use));
   // a whole building so slender is a tower; the parts of a building (bays, stairwells) may well be slender
-  const tower = (b: Building) => b.special === true || b.height - b.minHeight > SLENDER * orientedBox(b.polygon.outer).length;
-  const unusual = (b: Building) => b.special === true || b.windowless === true || b.shelter !== undefined || b.material === "glass";
+  const tower = (b: Building) => special(b) || b.height - b.minHeight > SLENDER * orientedBox(b.polygon.outer).length;
+  const unusual = (b: Building) => special(b) || b.windowless === true || b.shelter !== undefined || b.material === "glass";
   const own = (b: Building): WindowStyle | undefined =>
     GENERIC_KINDS.has(b.kind) ? byUse(b) : BY_KIND[b.kind];
   const outlines = buildings

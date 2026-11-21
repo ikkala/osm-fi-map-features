@@ -1110,6 +1110,21 @@ test("walls tagged window=no or windows=no are windowless, and storeys in a roof
   ]);
 });
 
+test("a place of worship is special and marked as one", () => {
+  const { features } = parseOsm(
+    [
+      { type: "way", id: 38, tags: { building: "yes", amenity: "place_of_worship" }, geometry: square(0, 0, 10) },
+      { type: "way", id: 39, tags: { building: "yes", historic: "castle" }, geometry: square(20, 0, 10) },
+    ],
+    origin,
+  );
+  const building = (osm: string) => defined(features.buildings.find((b) => b.osm === osm));
+  assert.deepEqual(["w38", "w39"].map((osm) => [building(osm).special, building(osm).worship]), [
+    [true, true],
+    [true, undefined],
+  ]);
+});
+
 test("a building's street address is its street, or its place, and its house number as tagged", () => {
   const { features } = parseOsm(
     [

@@ -163,6 +163,8 @@ export interface Building {
   windows?: WindowStyle;
   /** Tagged as no ordinary building (see isSpecial): a tower, a chimney, a church, a monument, ... */
   special?: boolean;
+  /** amenity=place_of_worship, which makes it special: a parish's block of flats may be one too (windows.ts) */
+  worship?: boolean;
   /** A pitched roof (see RoofShape); no shape is a flat roof */
   roofShape?: RoofShape;
   /** OSM has no roof:shape: the shape is a guess, or flat by default */
@@ -1503,6 +1505,7 @@ function building(osm: string, tags: Tags, kind: string, part: boolean, polygon:
     ...(LATTICES.has(tags["tower:construction"] ?? "") && { lattice: true }),
     ...((tags.window === "no" || tags.windows === "no") && { windowless: true }),
     ...(isSpecial(tags) && { special: true }),
+    ...(tags.amenity === "place_of_worship" && { worship: true }),
     ...optionalName(tags),
     ...optionalAddress(tags),
     polygon,
@@ -2289,6 +2292,7 @@ function fillUnderFloatingParts(features: MapFeatures): Building[] {
         ...(outline.material && { material: outline.material }),
         ...(outline.frameMaterial && { frameMaterial: outline.frameMaterial }),
         ...(outline.special && { special: true }),
+        ...(outline.worship && { worship: true }),
         ...(outline.lattice && { lattice: true }),
         polygon: part.polygon,
       });

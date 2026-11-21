@@ -14,13 +14,18 @@ test("assignWindows goes by kind, and for building=yes by the register's use", (
   const church = square(20, 10, { kind: "church", use: "apartments" });
   const registered = square(40, 10, { use: "house" });
   const unknown = square(60, 10);
-  // offices and factories alike: offices when tall
+  // offices and factories alike: offices when tall, a house when low, of wood and of a house's size
   const hall = square(80, 10, { use: "work", levels: 2 });
   const offices = square(140, 10, { use: "work", levels: 5 });
+  const wooden = square(160, 10, { use: "work", levels: 2, frameMaterial: "wood" });
+  const panelled = square(180, 10, { use: "work", material: "wood", frameMaterial: "concrete" });
+  const clad = square(200, 10, { use: "work", material: "metal", frameMaterial: "wood" });
+  const woodenHall = square(220, 30, { use: "work", material: "wood" });
   const glass = square(100, 10, { kind: "office", material: "glass" });
   const shelter = square(120, 10, { kind: "roof", shelter: "roof" });
-  assert.equal(assignWindows([flats, church, registered, unknown, hall, glass, shelter, offices]), 3);
+  assert.equal(assignWindows([flats, church, registered, unknown, hall, glass, shelter, offices, wooden, panelled, clad, woodenHall]), 5);
   assert.equal(offices.windows, "office");
+  assert.deepEqual([wooden.windows, panelled.windows, clad.windows, woodenHall.windows], ["house", "house", undefined, undefined]);
   assert.equal(flats.windows, "apartments");
   // the OSM kind wins over the register
   assert.equal(church.windows, undefined);
@@ -75,6 +80,14 @@ test("assignWindows leaves out special buildings, the parts in them and slender 
   assert.deepEqual([shaft.windows, pod.windows, chimney.windows], [undefined, undefined, undefined]);
   assert.equal(block.windows, "apartments");
   assert.equal(bay.windows, "apartments");
+});
+
+test("assignWindows windows a place of worship the register has as homes, as its use", () => {
+  const parish = square(0, 20, { special: true, worship: true, use: "apartments", levels: 4 });
+  const church = square(40, 20, { special: true, worship: true, use: "public" });
+  const monument = square(80, 20, { special: true, use: "apartments" });
+  assert.equal(assignWindows([parish, church, monument]), 1);
+  assert.deepEqual([parish.windows, church.windows, monument.windows], ["apartments", undefined, undefined]);
 });
 
 test("isSpecial knows towers, churches and sights by their tags", () => {
