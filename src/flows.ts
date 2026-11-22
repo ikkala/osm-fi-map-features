@@ -8,12 +8,13 @@ import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
 import { type Road } from "./osm.ts";
 import type { Point } from "./geometry.ts";
 import { WALKWAYS } from "./ways.ts";
+import { inTunnel } from "./profile.ts";
 
 export type FlowMode = "walking" | "cycling" | "driving";
 
 /** The parts of a map Road the flows use */
 export type FlowRoad = Pick<Road, "kind" | "line"> &
-  Partial<Pick<Road, "osm" | "name" | "footfall" | "cycling" | "motorVehicle" | "service" | "sidewalks" | "tunnel" | "floor" | "lid">>;
+  Partial<Pick<Road, "osm" | "name" | "footfall" | "cycling" | "motorVehicle" | "service" | "sidewalks" | "tunnel" | "atGrade" | "passage" | "floor" | "lid">>;
 
 /** A count at a point, made the year's average day */
 export interface FlowCount {
@@ -68,7 +69,7 @@ const FEW_ALLOWED_SHARE = 0.2;
 export function estimateMotorTraffic(road: FlowRoad): number {
   const byKind = FINNISH_DEFAULTS_MEASURED_IN_TAMPERE.vehiclesByRoadKind;
   const base = road.kind === "service" && road.service !== undefined ? (SERVICE_TRAFFIC[road.service] ?? byKind.service) : (byKind[road.kind] ?? 0);
-  const hidden = road.tunnel === true && road.floor === undefined && road.lid === undefined;
+  const hidden = inTunnel(road) && road.floor === undefined && road.lid === undefined;
   if (hidden || (road.motorVehicle !== undefined && NOT_ALLOWED.has(road.motorVehicle))) {
     return 0;
   }

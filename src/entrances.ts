@@ -5,6 +5,7 @@ import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
 import { distanceToRing, nearestOnSegment, orientedBox, RectGrid, ringArea, ringCentroid, type Point, type Rect, type Ring } from "./geometry.ts";
 import { bounds, type Building, type Entrance, type GeoBox, type OverpassResponse, type Road } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
+import { inTunnel, isBridge } from "./profile.ts";
 
 /** A block of flats this narrow (m) and this rectangular (area / oriented box) is a slab */
 const MAX_SLAB_WIDTH_M = 20;
@@ -69,7 +70,7 @@ export function assignEntrances(buildings: Building[], entrances: Entrance[]): n
  * Returns how many buildings got some.
  */
 export function guessEntrances(buildings: Building[], roads: Road[]): number {
-  const streets = streetGrid(roads.filter((r) => STREETS.has(r.kind) && !r.tunnel && !r.bridge));
+  const streets = streetGrid(roads.filter((r) => STREETS.has(r.kind) && !inTunnel(r) && !isBridge(r)));
   let count = 0;
   for (const b of buildings) {
     const ring = b.polygon.outer;

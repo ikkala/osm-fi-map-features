@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
 import type { Dam, Landmark, Pier, Piste, PowerLine } from "./landmarks.ts";
 import type { Pitch, PitchOutline } from "./pitches.ts";
-import type { ProfileKind } from "./profile.ts";
+import { inTunnel, type AsBuilt, type ProfileKind } from "./profile.ts";
 import type { Ride } from "./rides.ts";
 import type { Seamark } from "./seamarks.ts";
 import { field, isObject, items, optionalNumber, optionalString } from "./json.ts";
@@ -42,7 +42,8 @@ export interface GeoBox {
   east: number;
 }
 
-export interface Road {
+/** A way as OSM tags it: its `bridge` and `tunnel` are OSM's, where the stages built it otherwise its AsBuilt's facts */
+export interface Road extends AsBuilt {
   /** OSM element, e.g. "w123" for way 123 */
   osm: string;
   /** highway=* value */
@@ -105,11 +106,15 @@ export interface Road {
   bridgeColour?: string;
   /** A boardwalk (bridge=boardwalk): planks laid on the ground, which its deck follows (see bridges.ts) */
   boardwalk?: boolean;
+  /** The room over the way where it passes under a structure (maxheight:physical=*, else maxheight=*, m), when OSM tells */
+  clearance?: number;
+  /** Bridges: the room under the deck (min_height=*, m), when OSM tells */
+  roomUnder?: number;
 }
 
 export type Sidewalks = "both" | "left" | "right" | "none" | "separate";
 
-export interface Rail {
+export interface Rail extends AsBuilt {
   osm: string;
   /** railway=* value */
   kind: string;
@@ -129,6 +134,10 @@ export interface Rail {
   floor?: number[];
   /** Other railways: the track bed (m above sea level) at every point of line, the ground smoothed along it */
   bed?: number[];
+  /** The room over the way where it passes under a structure (maxheight:physical=*, else maxheight=*, m), when OSM tells */
+  clearance?: number;
+  /** Bridges: the room under the deck (min_height=*, m), when OSM tells */
+  roomUnder?: number;
   /** In a map's tiles: what the way's surface lies on (profile.ts), its heights the field the kind names */
   profile?: ProfileKind;
 }
@@ -988,6 +997,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
           ...(road.highway === "steps" ? stepping(road) : {}),
           ...surfaceOf(road),
           ...bridgeLooks(road),
+          ...clearances(road),
           line,
         };
         const storeys = storeysOf(road);
@@ -1003,16 +1013,16 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
             passages.push(passage);
             tagged.push({ road: way, passage });
             through.add(way);
-          } else if ((way.tunnel || road.covered === "yes" || road.covered === "arcade") && way.layer >= -1) {
+          } else if ((inTunnel(way) || road.covered === "yes" || road.covered === "arcade") && way.layer >= -1) {
             maybePassages.push({ road: way, passage, arcade: road.covered === "arcade" });
-            if (road.covered === "yes" && !way.tunnel) {
+            if (road.covered === "yes" && !inTunnel(way)) {
               covered.push(way);
             }
           }
         }
       }
       if (tags.railway && RAIL_KINDS.has(tags.railway)) {
-        const rail: Rail = { osm, kind: tags.railway, ...layering(tags), line, ...preferredDirection(tags) };
+        const rail: Rail = { osm, kind: tags.railway, ...layering(tags), line, ...preferredDirection(tags), ...clearances(tags) };
         const storeys = storeysOf(tags);
         if (storeys) {
           levels.set(rail, storeys);
@@ -1067,7 +1077,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   // the points from which ways indoors under the ground go on under it, and the ends of those that do
   const under = new Set<string>();
   const basements = new Set<string>();
-  for (const r of features.roads.filter((r) => r.tunnel)) {
+  for (const r of features.roads.filter(inTunnel)) {
     for (const p of [r.line[0], r.line[r.line.length - 1]]) {
       reached.set(pointKey(p), 0);
       if (!levels.has(r)) {
@@ -1658,6 +1668,13 @@ function bridgeLooks(tags: Tags): { bridgeStructure?: string; bridgeColour?: str
   }
   const structure = tags["bridge:structure"];
   return { ...(structure && { bridgeStructure: structure }), ...(tags.colour && { bridgeColour: tags.colour }), ...(tags.bridge === "boardwalk" && !tunnel && { boardwalk: true }) };
+}
+
+/** The room OSM tells over a way under a structure (maxheight:physical=*, else maxheight=*) and under a bridge's deck (min_height=*), in meters */
+function clearances(tags: Tags): { clearance?: number; roomUnder?: number } {
+  const clearance = meters(tags["maxheight:physical"]) ?? meters(tags.maxheight);
+  const roomUnder = layering(tags).bridge ? meters(tags.min_height) : undefined;
+  return { ...(clearance !== undefined && { clearance }), ...(roomUnder !== undefined && { roomUnder }) };
 }
 
 function layering(tags: Tags): { layer: number; bridge: boolean; tunnel: boolean } {

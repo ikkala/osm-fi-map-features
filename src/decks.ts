@@ -6,6 +6,7 @@ import { crests, deckAt, pointAlong, rounded, upperHull } from "./bridges.ts";
 import { crossing, dedupe, distanceToSegment, nearestOnLine, nearestOnSegment, nearestPlace, orientedBox, pointInPolygon, pointInRing, ringArea, triangulate, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
 import { DeckIndex } from "./deckIndex.ts";
 import { bounds, type BridgeDeck, type BridgeOutline } from "./osm.ts";
+import { isBridge } from "./profile.ts";
 import { GRADE, RAIL_WIDTH_M, WALKWAYS } from "./ways.ts";
 
 /** A road or railway: a bridge's (bridge, deck) or not */
@@ -79,7 +80,7 @@ export function setOutlineDecks<T extends DeckLine>(
     const box = bounds(outline.polygon.outer);
     const members = lines.filter((l) => {
       const deck = l.deck;
-      if (!l.bridge || !deck || deck.length !== l.line.length || l.line.length < 2) {
+      if (!isBridge(l) || !deck || deck.length !== l.line.length || l.line.length < 2) {
         return false;
       }
       const b = boxOf(l.line);
@@ -141,7 +142,7 @@ export function setOutlineDecks<T extends DeckLine>(
   // the ways leading on meet the decks, and the ways on the ground ending on their ramps meet those in turn
   const done = new Set<T>(on);
   const queue = [...meets];
-  const ground = (o: T) => !o.bridge && !o.deck && !o.floor && !o.lid && o.line.length >= 2;
+  const ground = (o: T) => !isBridge(o) && !o.deck && !o.floor && !o.lid && o.line.length >= 2;
   for (let next = queue.shift(); next; next = queue.shift()) {
     const [l, { start, end }] = next;
     if (done.has(l)) {

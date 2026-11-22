@@ -274,3 +274,55 @@ test("a boardwalk with a floor (a ramp down to a tunnel) is decked as a bridge, 
   setBridgeDecks([ramp], ground);
   assert.deepEqual([ramp.line, ramp.deck, ramp.boardwalk], [[[0, 0], [20, 0]], [100, 100], undefined]);
 });
+
+test("a deck rises over a way under it to the room OSM tells, easing back at its grade, its landings and approaches rising where that grade cannot reach them", () => {
+  // level ground at 100; a 60 m bridge from e = 0 to e = 60, the way under it at e = 50 with the room it needs: the
+  // deck's top 106 over e = 48 .. 52
+  const flat = () => 100;
+  const west: BridgeLine = { bridge: false, line: [[-100, 0], [0, 0]] };
+  const bridge: BridgeLine = { bridge: true, line: [[0, 0], [60, 0]] };
+  const east: BridgeLine = { bridge: false, line: [[60, 0], [160, 0]] };
+  const lines = [west, bridge, east];
+  const least = (l: BridgeLine) => (l === bridge ? [48, 49, 50, 51, 52].map((e) => ({ p: [e, 0] satisfies Point, h: 106 })) : []);
+  setBridgeDecks(lines, flat, undefined, undefined, { least, grade: () => 0.1 });
+  const deck = defined(bridge.deck);
+  const at = (e: number) => deckAt(bridge.line, deck, [e, 0]);
+  assert.ok(Math.abs(at(50) - 106) < 1e-9 && Math.abs(at(48) - 106) < 1e-9);
+  // down at the grade on either side
+  assert.ok(Math.abs(at(30) - 104.2) < 1e-9);
+  assert.ok(Math.abs(at(60) - 105.2) < 1e-9 && Math.abs(at(0) - 101.2) < 1e-9);
+  // the approaches split off as embankments down at the grade to the ground: 52 m east, 12 m west
+  const ramps = lines.filter((l) => !l.bridge && l.deck);
+  assert.equal(ramps.length, 2);
+  const eastRamp = defined(ramps.find((l) => l.line.some(([e]) => e > 60)));
+  assert.deepEqual(eastRamp.line, [[60, 0], [112, 0]]);
+  assert.ok(Math.abs(defined(eastRamp.deck)[0] - 105.2) < 1e-9 && Math.abs(defined(eastRamp.deck)[1] - 100) < 1e-9);
+  const westRamp = defined(ramps.find((l) => l.line.some(([e]) => e < 0)));
+  assert.ok(Math.abs(Math.min(...westRamp.line.map(([e]) => e)) + 12) < 1e-9);
+});
+
+test("a deck high enough over the way under it stays as it is", () => {
+  const bridge: BridgeLine = { bridge: true, line: [[10, 0], [20, 0], [30, 0]] };
+  const road: BridgeLine = { bridge: false, line: [[0, 0], [10, 0]] };
+  setBridgeDecks([road, bridge], heightAt, undefined, undefined, { least: () => [{ p: [20, 0], h: 101 }], grade: () => 0.2 });
+  assert.deepEqual(bridge.deck, [100, 102, 104]);
+  assert.equal(road.deck, undefined);
+});
+
+test("a landing rises no more than its embankment can come down at the grade by a way of other users it crosses", () => {
+  // as above, but a street crossing the west approach at grade 5 m out: the west landing up 0.5 m at most
+  const flat = () => 100;
+  const west: BridgeLine = { bridge: false, line: [[-100, 0], [-5, 0], [0, 0]] };
+  const street: BridgeLine = { bridge: false, line: [[-5, -20], [-5, 0], [-5, 20]] };
+  const bridge: BridgeLine = { bridge: true, line: [[0, 0], [60, 0]] };
+  const east: BridgeLine = { bridge: false, line: [[60, 0], [160, 0]] };
+  const least = (l: BridgeLine) => (l === bridge ? [48, 49, 50, 51, 52].map((e) => ({ p: [e, 0] satisfies Point, h: 106 })) : []);
+  const crosses = (l: BridgeLine, [e, n]: Point) => l === west && e === -5 && n === 0;
+  setBridgeDecks([west, street, bridge, east], flat, undefined, undefined, { least, grade: () => 0.1, crosses });
+  const deck = defined(bridge.deck);
+  const at = (e: number) => deckAt(bridge.line, deck, [e, 0]);
+  assert.ok(Math.abs(at(0) - 100.5) < 1e-9);
+  // the deck no steeper than the grade from there: 105.3 at e = 48, short of the room
+  assert.ok(Math.abs(at(48) - 105.3) < 1e-9 && at(50) < 106);
+  assert.deepEqual(street.deck, undefined);
+});

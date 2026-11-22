@@ -123,7 +123,8 @@ Where to look:
 - The ground, one model of it in layers each stage asks for: `src/ground.ts`; under bridges `src/bareGround.ts`.
   Where the elevation model's 2 m grid smooths a step: `src/retainingWalls.ts`, `src/flights.ts` (steps up an edge)
   and `src/buildingSteps.ts` (a building cut into a slope).
-- A way's vertical profile in the tiles (`profile`: what its surface lies on, its heights the field it names):
+- A way's vertical profile in the tiles (`profile`: what its surface lies on, its heights the field it names), and
+  whether the map builds it as a bridge or in a tunnel where the stages differ from OSM (`isBridge`, `inTunnel`):
   `src/profile.ts`.
 - Ways' users and dimensions (widths, clearances, the decks', lids' and roofs' thickness and reach, grades), which
   the modules building around them share: `src/ways.ts`, exported as data in `WAY_DIMENSIONS`.

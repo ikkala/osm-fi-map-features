@@ -3,6 +3,7 @@
 import { fillUnderFloatingParts, markBuildingsWithParts, groundFloatingBuildings, raiseRoofsOverRoads } from "./buildingParts.ts";
 import { crossing, dedupe, distanceToRing, indexBoxes, nearestOnLine, pointInPolygon, pointInRing, pointKey, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
 import { bounds, PASSAGE_HEIGHT_M, WALKWAY_PASSAGE_HEIGHT_M, type Building, type ParseResult, type Passage, type PassageRoom, type Rail, type Road } from "./osm.ts";
+import { inTunnel, isBridge } from "./profile.ts";
 import { ridgeRoofs } from "./roofRidges.ts";
 import { WALKWAYS } from "./ways.ts";
 
@@ -83,7 +84,7 @@ const RAIL_HALL_HEIGHT_M = 6;
 export function openRailHalls(buildings: Building[], rails: Rail[]): number {
   const before = new Map(buildings.map((b) => [b, b.passages?.length ?? 0]));
   const passages = rails
-    .filter((r) => !r.tunnel && !r.bridge && r.line.length >= 2)
+    .filter((r) => !inTunnel(r) && !isBridge(r) && r.line.length >= 2)
     .map((r) => ({ line: r.line, width: RAIL_DOOR_WIDTH_M, height: RAIL_HALL_HEIGHT_M - 1 }));
   openPassages(buildings, passages, false);
   let count = 0;
@@ -526,7 +527,7 @@ export function passagesOnToWalls(tagged: { road: Road; passage: Passage }[], ro
       const goesOn = (at.get(pointKey(end)) ?? []).filter((r) => r !== road && !passageRoads.has(r));
       // ways on the ground go on from it, whatever their layers (an arcade under its building's floors is often
       // tagged a layer over the street's)
-      if (goesOn.length === 0 || goesOn.some((r) => r.tunnel || r.bridge || r.layer < 0 !== road.layer < 0)) {
+      if (goesOn.length === 0 || goesOn.some((r) => inTunnel(r) || isBridge(r) || r.layer < 0 !== road.layer < 0)) {
         continue;
       }
       const inside = buildings.find(
@@ -571,8 +572,8 @@ export interface ThroughBuildings {
 
 /**
  * Fits the parsed buildings to the ways through them: marks the outlines drawn by their parts and shapes the roofs
- * along ridges, finds the tunnels and covered ways that run through buildings (they become passages, no longer
- * tunnels), fills under the parts raised off the ground and grounds the buildings floating over nothing, carries the
+ * along ridges, finds the tunnels and covered ways that run through buildings (built as passages, no longer in
+ * tunnels: `passage`), fills under the parts raised off the ground and grounds the buildings floating over nothing, carries the
  * passages on to their buildings' walls and opens the walls and rooms for them, and lifts open roofs over roads.
  */
 export function openBuildings(parsed: ParseResult): ThroughBuildings {
@@ -591,13 +592,13 @@ export function openBuildings(parsed: ParseResult): ThroughBuildings {
     }
   }
   for (const { road, passage, arcade } of maybePassages) {
-    if (road.tunnel && [road.line[0], road.line[road.line.length - 1]].some((p) => basements.has(pointKey(p)))) {
+    if (inTunnel(road) && [road.line[0], road.line[road.line.length - 1]].some((p) => basements.has(pointKey(p)))) {
       continue;
     }
-    const groundFloor = !road.tunnel && road.layer >= 0 && (levels.get(road) ?? [0]).every((storey) => storey === 0);
+    const groundFloor = !inTunnel(road) && road.layer >= 0 && (levels.get(road) ?? [0]).every((storey) => storey === 0);
     const goesOn = (p: Point) => groundFloor && (ways.get(pointKey(p)) ?? 0) > 1;
     if (runsThroughBuildings(passage.line, features.buildings, arcade, goesOn)) {
-      road.tunnel = false;
+      road.passage = true;
       passages.push(passage);
       found.add(road);
       through.add(road);

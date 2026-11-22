@@ -5,6 +5,7 @@ import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
 import { distanceToSegment, nearestOnSegment, type Point } from "./geometry.ts";
 import { type Building, type Road } from "./osm.ts";
 import { WALKWAYS } from "./ways.ts";
+import { inTunnel } from "./profile.ts";
 
 export type Mode = "walking" | "cycling";
 
@@ -145,7 +146,7 @@ function kindFactors(roads: Road[], mode: Mode): { factors: Map<Road, number>; s
         }
         return found;
       };
-      if (road.tunnel) {
+      if (inTunnel(road)) {
         factor = 0;
       } else if (mode === "cycling") {
         if (!sidepath && (road.sidewalks === "separate" || beside())) {
@@ -158,7 +159,7 @@ function kindFactors(roads: Road[], mode: Mode): { factors: Map<Road, number>; s
       } else if (WITHOUT_SIDEWALKS.has(road.kind) || beside()) {
         factor = 0;
       }
-    } else if (!walkway && mode === "walking" && road.sidewalks !== undefined && road.sidewalks !== "none" && road.sidewalks !== "separate" && !road.tunnel) {
+    } else if (!walkway && mode === "walking" && road.sidewalks !== undefined && road.sidewalks !== "none" && road.sidewalks !== "separate" && !inTunnel(road)) {
       // a road without sidewalks by its kind, with one tagged
       factor = TAGGED_SIDEWALK_FACTOR * (road.sidewalks === "both" ? 1 : 0.5);
     }

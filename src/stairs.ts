@@ -3,6 +3,7 @@
 // A staircase whose landings the elevation model puts out of line climbs one riser all the way instead.
 import { distanceToRing, pointInRing, pointKey, type Point, type Ring } from "./geometry.ts";
 import type { Building, Road } from "./osm.ts";
+import { offStructures } from "./profile.ts";
 
 /** A way's points this close to the part's outline (m) are on it: OSM draws the way between its points */
 const ON_PART_M = 0.3;
@@ -115,7 +116,7 @@ export function setStaircaseDecks(roads: Road[], heightAt: (e: number, n: number
     }
     // each flight telling its count and the way it climbs, all the same way along the staircase
     const telling = flights.every(
-      ({ road: r }) => !r.bridge && !r.tunnel && !r.deck && !r.floor && !r.lid && (r.stepCount ?? 0) > 0 && r.incline !== undefined,
+      ({ road: r }) => offStructures(r) && (r.stepCount ?? 0) > 0 && r.incline !== undefined,
     );
     const climbs = flights.map(({ road: r, reversed }) => (r.incline === "up" ? 1 : -1) * (reversed ? -1 : 1));
     if (looped || flights.length < 2 || !telling || climbs.some((c) => c !== climbs[0])) {

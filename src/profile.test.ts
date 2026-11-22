@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Point } from "./geometry.ts";
 import type { Rail, Road } from "./osm.ts";
-import { onGround, profileOf } from "./profile.ts";
+import { inTunnel, isBridge, offStructures, onGround, profileOf } from "./profile.ts";
 
 const line: Point[] = [
   [0, 0],
@@ -43,4 +43,19 @@ test("a way's profile is what the map built it on, its heights those of the kind
     (["ground", "bed", "lid", "bored", "cut", "approach", "deck", "boardwalk"] as const).filter(onGround),
     ["ground", "bed", "lid"],
   );
+  assert.deepEqual([road({}), rail({ bed: two }), road({ tunnel: true, lid: two }), road({ deck: two }), road({ floor: two })].map(offStructures), [true, true, false, false, false]);
+});
+
+test("where the stages build a way otherwise than OSM tags it, its profile is as built", () => {
+  const two = [90, 91];
+  assert.deepEqual(
+    [
+      road({ overLid: true, deck: two }),
+      road({ tunnel: true, atGrade: true }),
+      road({ tunnel: true, passage: true }),
+      rail({ tunnel: true, atGrade: true, floor: two }),
+    ].map(profileOf),
+    [{ kind: "deck", heights: two }, { kind: "ground" }, { kind: "ground" }, { kind: "cut", heights: two }],
+  );
+  assert.deepEqual([isBridge(road({ overLid: true })), isBridge(road({})), inTunnel(road({ tunnel: true })), inTunnel(road({ tunnel: true, passage: true }))], [true, false, true, false]);
 });

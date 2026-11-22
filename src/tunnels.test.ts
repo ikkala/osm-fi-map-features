@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Point, Polygon } from "./geometry.ts";
 import type { Building, MapFeatures, Rail, Road } from "./osm.ts";
+import { inTunnel } from "./profile.ts";
 import { defined } from "./testing.ts";
 import { BED_M, CAR_PARK_CLEARANCE_M, COVER_M, WALL_FOOTING_M, densify, fitRoomsUnderDecks, openPortals, portalWallsAt, raiseToWalls, roomHeight, setTunnelFloors, setTunnelRooms, uncoverAtGrade, WATER_DEPTH_M } from "./tunnels.ts";
 import { CLEARANCE_M, ROOF_M } from "./ways.ts";
@@ -313,7 +314,8 @@ test("tunnels on level ground run at the ground: railways anywhere, roads and pa
   const map = features([underArena, underStreet, deep], [railway]);
   map.buildings.push(arena, deck, house);
   assert.equal(uncoverAtGrade(map, level), 2);
-  assert.deepEqual([railway.tunnel, underArena.tunnel, underStreet.tunnel, deep.tunnel], [false, false, true, true]);
+  assert.deepEqual([railway, underArena, underStreet, deep].map(inTunnel), [false, false, true, true]);
+  assert.deepEqual([railway.tunnel, underArena.atGrade], [true, true]);
   // the arena's walls open for the railway, as tall as a railway tunnel's room
   assert.ok(arena.passages?.some((o) => o.height === CLEARANCE_M.trains));
   // the roof over the railway becomes a deck over its room, without the posts of a roof
@@ -322,7 +324,7 @@ test("tunnels on level ground run at the ground: railways anywhere, roads and pa
   assert.deepEqual([arena.minHeight, arena.height], [CLEARANCE_M.trains, 20]);
   assert.deepEqual([house.minHeight, house.height], [CLEARANCE_M.trains, 24]);
   // under a hill a railway stays in its tunnel
-  const underHill: Rail = { ...railway, tunnel: true };
+  const underHill: Rail = { osm: "w1", kind: "rail", layer: -1, bridge: false, tunnel: true, line: railway.line };
   assert.equal(uncoverAtGrade(features([], [underHill]), hill), 0);
 });
 
@@ -334,7 +336,7 @@ test("a tunnel's short branch into a building stays in the tunnel it leaves", ()
   const map = features([tunnel, branch]);
   map.buildings.push(house);
   assert.equal(uncoverAtGrade(map, () => 100), 0);
-  assert.deepEqual([tunnel.tunnel, branch.tunnel], [true, true]);
+  assert.deepEqual([tunnel, branch].map(inTunnel), [true, true]);
   // alone it would run at the ground
   const alone = features([road("w3", branch.line, { tunnel: true, layer: -1, kind: "footway", width: 2.5 })]);
   alone.buildings.push({ ...house, passages: undefined });

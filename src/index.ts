@@ -106,7 +106,7 @@ export { lightPhases, type Light, type LightSector, type Seamark, type SeamarkKi
 export { readText, type TextSource } from "./text.ts";
 export { tileName, tileRect, type Heights, type Tile, type TileKey } from "./tiles.ts";
 export { stepReach, tileGroundAt } from "./ground.ts";
-export { onGround, profileOf, type Profile, type ProfileKind } from "./profile.ts";
+export { inTunnel, isBridge, onGround, profileOf, type AsBuilt, type Profile, type ProfileKind } from "./profile.ts";
 export { parseTunnelFloors, readTunnelFloors, type TunnelFloor } from "./tunnelFloors.ts";
 export type { Waterway, WaterwayKind } from "./waterways.ts";
 export { WAY_DIMENSIONS, type WayUser } from "./ways.ts";

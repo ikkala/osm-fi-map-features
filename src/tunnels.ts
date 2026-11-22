@@ -6,6 +6,7 @@
 import { pointAlong } from "./bridges.ts";
 import { distanceToRing, MinHeap, nearestOnLine, pointInPolygon, pointKey, type Point } from "./geometry.ts";
 import { openPassages } from "./passages.ts";
+import { inTunnel, isBridge, offStructures, profileOf } from "./profile.ts";
 import { bounds, LANE_WIDTH_M, type Building, type MapFeatures, type Opening, type Rail, type Road } from "./osm.ts";
 import { CLEARANCE_M, isRoad, ROOF_M, ROOM_SIDE_M, STAIRS_GRADE, TUNNEL_GRADE, userOf, WALKWAYS, widthOf, type Way } from "./ways.ts";
 
@@ -119,7 +120,7 @@ export interface PortalWall {
 }
 
 /**
- * Turns tunnels (`layer` >= -1, not in a cut) that run at the ground under buildings into ground ways,
+ * Builds tunnels (`layer` >= -1, not in a cut) that run at the ground under buildings as ground ways (atGrade),
  * opening the buildings' walls and raising what is over them. The elevation model leaves buildings out, so
  * such a way's ground is level with its ends. Tunnels joined at a point are one network, which runs at the
  * ground or under it as a whole. Returns how many ways run at the ground.
@@ -131,7 +132,7 @@ export function uncoverAtGrade(features: MapFeatures, heightAt: (e: number, n: n
   const underBuilding = ([e, n]: Point) =>
     buildings.some(({ polygon, box }) => e >= box.minX && e <= box.maxX && n >= box.minY && n <= box.maxY && pointInPolygon([e, n], polygon));
   const tunnels = [...features.roads, ...features.rails]
-    .filter((way) => way.tunnel && !way.lid && way.layer >= -1 && way.line.length >= 2)
+    .filter((way) => profileOf(way).kind === "bored" && way.layer >= -1 && way.line.length >= 2)
     .map((way) => {
       const points = densify(way.line, AT_GRADE_STEP_M);
       const ground = points.map((p) => heightAt(...p));
@@ -167,7 +168,7 @@ export function uncoverAtGrade(features: MapFeatures, heightAt: (e: number, n: n
       continue;
     }
     for (const { way } of network) {
-      way.tunnel = false;
+      way.atGrade = true;
       passages.push({
         line: way.line,
         width: widthOf(way),
@@ -276,7 +277,7 @@ export function openPortals(buildings: Building[], basements: Road[], roads: Roa
   // the ends of the ways not in a tunnel, and the point next to each
   const outside = new Map<string, Point>();
   for (const r of roads) {
-    if (!r.tunnel && r.line.length >= 2) {
+    if (!inTunnel(r) && r.line.length >= 2) {
       outside.set(pointKey(r.line[0]), r.line[1]);
       outside.set(pointKey(r.line[r.line.length - 1]), r.line[r.line.length - 2]);
     }
@@ -354,7 +355,7 @@ export function setTunnelFloors(
   known: readonly KnownFloor[] = [],
   deckOver?: (p: Point, layer: number) => { deck: number } | undefined,
 ): { floors: number; ramps: number; walls: PortalWall[]; basements: Road[]; known: number } {
-  const tunnels: Way[] = [...features.roads, ...features.rails].filter((w) => w.tunnel && !w.lid && w.line.length >= 2);
+  const tunnels: Way[] = [...features.roads, ...features.rails].filter((w) => profileOf(w).kind === "bored" && w.line.length >= 2);
   const key = pointKey;
   const nodes = new Map<string, Node>();
   // the ways through each point, for its depth again once the car parks' rooms are set
@@ -678,7 +679,7 @@ export function fitRoomsUnderDecks(roads: Road[], deckOver: (p: Point, layer: nu
   let count = 0;
   for (const way of roads) {
     const floor = way.floor;
-    if (!way.tunnel || way.lid || !floor || way.line.length < 2) {
+    if (profileOf(way).kind !== "bored" || !floor || way.line.length < 2) {
       continue;
     }
     let room = roomHeight(way);
@@ -708,7 +709,7 @@ export function fitRoomsUnderDecks(roads: Road[], deckOver: (p: Point, layer: nu
  * many tunnels got a room.
  */
 export function setTunnelRooms(roads: Road[]): number {
-  const tunnels = roads.filter((r) => r.tunnel && !WALKWAYS.has(r.kind) && r.line.length >= 2);
+  const tunnels = roads.filter((r) => inTunnel(r) && !WALKWAYS.has(r.kind) && r.line.length >= 2);
   const lowered: Road[] = [];
   for (const { ways } of meetingGroups(tunnels)) {
     const heights = ways.flatMap((way) => ("maxHeight" in way && way.maxHeight !== undefined ? [way.maxHeight] : []));
@@ -722,7 +723,7 @@ export function setTunnelRooms(roads: Road[]): number {
   }
   // a walkway's tunnel meeting one of them, or beside it in one hall, is no taller
   let walkways = 0;
-  for (const way of roads.filter((r) => r.tunnel && WALKWAYS.has(r.kind) && r.line.length >= 2)) {
+  for (const way of roads.filter((r) => inTunnel(r) && WALKWAYS.has(r.kind) && r.line.length >= 2)) {
     const keys = new Set(way.line.map(pointKey));
     const touching = lowered.filter(
       (t) => t.line.some((p) => keys.has(pointKey(p))) || linesWithin(way.line, t.line, way.width / 2 + t.width / 2 + ROOM_SIDE_M * 2),
@@ -800,7 +801,7 @@ function inFromPortal(nodes: Map<string, Node>, start: string, length: number): 
 function levelWaysOver(roads: Road[], tunnels: Way[], walls: PortalWall[], modelAt: (e: number, n: number) => number | undefined): PortalWall[] {
   const meeting = new Set(tunnels.flatMap((t) => t.line.map(pointKey)));
   const candidates = roads
-    .filter((r) => !r.tunnel && !r.bridge && !r.deck && !r.lid && !r.floor && r.line.length >= 2 && !r.line.some((p) => meeting.has(pointKey(p))))
+    .filter((r) => offStructures(r) && r.line.length >= 2 && !r.line.some((p) => meeting.has(pointKey(p))))
     .map((road) => ({ road, box: bounds(road.line) }));
   const levelled: PortalWall[] = [];
   for (const wall of walls) {
@@ -974,7 +975,7 @@ function underCrossings(
 ): [string, number][] {
   const inTunnels = new Set(tunnels);
   const over = [...features.roads, ...features.rails]
-    .filter((w) => !inTunnels.has(w) && !w.tunnel && !w.bridge && w.line.length >= 2)
+    .filter((w) => !inTunnels.has(w) && !inTunnel(w) && !isBridge(w) && w.line.length >= 2)
     .map((way) => ({ way, box: bounds(way.line), half: widthOf(way) / 2 }));
   const roofs = features.buildings
     .filter((b) => b.shelter !== undefined)

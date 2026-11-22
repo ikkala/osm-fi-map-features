@@ -2,6 +2,7 @@
 // parts raised off the ground, buildings floating over nothing, and open roofs over roads.
 import { indexBoxes, pointInPolygon, ringArea, ringCentroid, type Point, type Polygon } from "./geometry.ts";
 import { bounds, LEVEL_HEIGHT_M, type Building, type MapFeatures } from "./osm.ts";
+import { inTunnel } from "./profile.ts";
 import { WALKWAYS } from "./ways.ts";
 
 /** Least height of an untagged roof over a road (vehicles in Finland may be 4.4 m tall) */
@@ -10,7 +11,7 @@ const ROOF_OVER_ROAD_M = 5;
 /** Lifts open roofs without a tagged height that a road runs under to ROOF_OVER_ROAD_M; a carport is for cars. */
 export function raiseRoofsOverRoads(features: MapFeatures): void {
   const roofs = features.buildings.filter((b) => b.shelter !== undefined && b.shelter !== "carport" && b.heightEstimated && b.height < ROOF_OVER_ROAD_M);
-  const roads = features.roads.filter((r) => !WALKWAYS.has(r.kind) && !r.tunnel);
+  const roads = features.roads.filter((r) => !WALKWAYS.has(r.kind) && !inTunnel(r));
   const near = indexBoxes(roads.map((road) => bounds(road.line)), bounds(roofs.flatMap((roof) => roof.polygon.outer)));
   for (const roof of roofs) {
     const box = bounds(roof.polygon.outer);
@@ -159,7 +160,7 @@ export function fillUnderFloatingParts(features: MapFeatures): Building[] {
   const buildings = features.buildings;
   const outlines = buildings.filter((b) => b.hasParts).map((b) => ({ b, box: bounds(b.polygon.outer) }));
   const parts = buildings.filter((b) => b.part);
-  const ways = [...features.roads, ...features.rails].filter((w) => !w.tunnel).map((w) => ({ line: w.line, box: bounds(w.line) }));
+  const ways = [...features.roads, ...features.rails].filter((w) => !inTunnel(w)).map((w) => ({ line: w.line, box: bounds(w.line) }));
   const fillers: Building[] = [];
   for (const part of parts) {
     if (part.minHeight <= 0 || OVERHANGING_PARTS.has(part.kind)) {
@@ -208,7 +209,7 @@ const MIN_OVER_BUILDINGS = 0.5;
  */
 export function groundFloatingBuildings(features: MapFeatures): void {
   const all = features.buildings.map((b) => ({ b, box: bounds(b.polygon.outer) }));
-  const ways = [...features.roads, ...features.rails].filter((w) => !w.tunnel).map((w) => ({ line: w.line, box: bounds(w.line) }));
+  const ways = [...features.roads, ...features.rails].filter((w) => !inTunnel(w)).map((w) => ({ line: w.line, box: bounds(w.line) }));
   type Box = ReturnType<typeof bounds>;
   const meet = (a: Box, b: Box) => a.maxX >= b.minX && a.minX <= b.maxX && a.maxY >= b.minY && a.minY <= b.maxY;
   for (const { b, box } of all) {

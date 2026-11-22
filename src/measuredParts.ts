@@ -9,6 +9,7 @@ import { storeyHeight } from "./ages.ts";
 import { distanceToRing, distanceToSegment, pointInPolygon, ringArea, ringCentroid, type Point, type Polygon, type Ring } from "./geometry.ts";
 import { bounds, type Building, type Road } from "./osm.ts";
 import { measurable, type MeasuredPart } from "./roofTops.ts";
+import { inTunnel } from "./profile.ts";
 
 /** A piece of a measured part within an outline smaller than this (m²) is left out, and a part made smaller too */
 const MIN_PIECE_M2 = 10;
@@ -162,7 +163,7 @@ function segmentsWithin(a: Point, b: Point, c: Point, d: Point, reach: number): 
 function waysCrossing(roads: Road[]): (polygon: Polygon) => boolean {
   const index = new Map<string, { segment: Point[]; reach: number }[]>();
   for (const road of roads) {
-    const reach = road.tunnel ? road.width / 2 + TUNNEL_ROOM_M : 0;
+    const reach = inTunnel(road) ? road.width / 2 + TUNNEL_ROOM_M : 0;
     for (let i = 0; i + 1 < road.line.length; i++) {
       const segment = [road.line[i], road.line[i + 1]];
       const box = bounds(segment);

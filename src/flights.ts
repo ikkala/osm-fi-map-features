@@ -5,6 +5,7 @@
 // to its foot, and past its foot lowered to the foot found a few meters on.
 import type { Point } from "./geometry.ts";
 import type { Road } from "./osm.ts";
+import { inTunnel, isBridge } from "./profile.ts";
 
 /** Risers are at least this tall (m): a flight climbing less than its count of them in the model is smoothed */
 const MIN_RISER_M = 0.12;
@@ -41,7 +42,7 @@ export function flightSteps(roads: readonly Road[], heightAt: (e: number, n: num
   const flights: FlightStep[] = [];
   for (const way of roads) {
     const count = way.stepCount;
-    if (way.kind !== "steps" || count === undefined || way.tunnel || way.bridge || way.layer !== 0 || way.line.length < 2) {
+    if (way.kind !== "steps" || count === undefined || inTunnel(way) || isBridge(way) || way.layer !== 0 || way.line.length < 2) {
       continue;
     }
     const [a, c] = [way.line[0], way.line[way.line.length - 1]];

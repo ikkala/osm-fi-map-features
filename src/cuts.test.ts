@@ -4,6 +4,7 @@ import { coverCutTunnels, cutLid, fitLidsToDecks } from "./cuts.ts";
 import { LID_THICKNESS_M, LEAST_CLEARANCE_M, MIN_CLEARANCE_M } from "./ways.ts";
 import type { Point } from "./geometry.ts";
 import type { Building, MapFeatures, Rail, Road } from "./osm.ts";
+import { isBridge } from "./profile.ts";
 
 // ground at 102 with a cut to 95 along n = 0 (up to 4 m either side), east of e = 0
 const cut = (e: number, n: number) => (e >= 0 && Math.abs(n) <= 4 ? 95 : 102);
@@ -38,7 +39,7 @@ test("coverCutTunnels leaves each tunnel in a shallow cut its users' least room 
   assert.deepEqual(tram.lid, [95 + MIN_CLEARANCE_M.trams + LID_THICKNESS_M, 95 + MIN_CLEARANCE_M.trams + LID_THICKNESS_M]);
 });
 
-test("coverCutTunnels gives the tunnel a lid, makes the ways over it bridges and opens walls over it", () => {
+test("coverCutTunnels gives the tunnel a lid, builds the ways over it as bridges and opens walls over it", () => {
   const tram = rail("w1", [[10, 0], [60, 0]], { kind: "light_rail", layer: -1, tunnel: true });
   // a railway over the tunnel, a street leading on from its portal, and a deep tunnel
   const railway = rail("w2", [[30, -40], [30, 40]]);
@@ -53,8 +54,8 @@ test("coverCutTunnels gives the tunnel a lid, makes the ways over it bridges and
   // the railway is split where it crosses the lid (7.5 m either way: half the tram's 3 m and the lid's edges)
   const pieces = features.rails.filter((r) => r.osm === "w2");
   assert.deepEqual(
-    pieces.map((r) => [r.line[0][1], r.line[r.line.length - 1][1], r.bridge]),
-    [[-40, -3.5, false], [-3.5, 3.5, true], [3.5, 40, false]],
+    pieces.map((r) => [r.line[0][1], r.line[r.line.length - 1][1], r.bridge, isBridge(r)]),
+    [[-40, -3.5, false, false], [-3.5, 3.5, false, true], [3.5, 40, false, false]],
   );
   assert.deepEqual(pieces.map((r) => r.onLid), [undefined, true, undefined]);
   assert.deepEqual([street.bridge, street.line.length], [false, 2]);

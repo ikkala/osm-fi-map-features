@@ -5,6 +5,7 @@
 import { deckAt } from "./bridges.ts";
 import { clipPolyline, distanceToSegment, pointKey, polygonTest, RectGrid, ringArea, type Point, type Polygon, type Rect } from "./geometry.ts";
 import { bounds, type Area, type GeoBox, type OverpassResponse } from "./osm.ts";
+import { inTunnel } from "./profile.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { tileName, tileRect, type Tile } from "./tiles.ts";
 
@@ -137,7 +138,7 @@ export function setWaterLevels(areas: Area[], lines: WaterwayLine[], heightAt: (
   // each line's points in the water, levelled to fall downstream
   const runs = new Map<WaterwayLine, { point: Point; along: Point; waters: Water[]; height: number }[]>();
   for (const line of lines) {
-    if (line.tunnel || line.dry) {
+    if (inTunnel(line) || line.dry) {
       continue;
     }
     const points = [];

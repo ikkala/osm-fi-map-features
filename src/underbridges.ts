@@ -1,11 +1,14 @@
 // Ways under bridges. A bridge's deck runs straight from the ground at its ends, and a way under it, on the bare
-// ground there (bareGround.ts), often has too little room under the deck. The deck stays straight; the way goes down
-// into a cut under it instead, ramping down to the floor the room needs, and up again.
+// ground there (bareGround.ts), often has too little room under the deck. Where OSM tells the room there (the way's
+// maxheight, the bridge's min_height), a road's deck rises to give it and the way stays on the ground (leastDecks,
+// bridges.ts); elsewhere the deck stays straight and the way goes down into a cut under it, ramping down to the floor
+// the room needs, and up again.
 import { deckAt } from "./bridges.ts";
 import { DeckIndex } from "./deckIndex.ts";
-import { distanceToSegment, indexBoxes, MinHeap, pointInPolygon, pointKey, type Point, type Rect } from "./geometry.ts";
+import { crossing, distanceToSegment, indexBoxes, MinHeap, nearestOnLine, pointInPolygon, pointKey, type Point, type Rect } from "./geometry.ts";
 import { bounds, type BridgeDeck, type BridgeOutline } from "./osm.ts";
 import { DECK_EDGE_M, DECK_THICKNESS_M, GRADE, STAIRS_GRADE, isRoad, MIN_CLEARANCE_M, TRAM_CUT_CLEARANCE_M, TRAMWAYS, userOf, widthOf, type Way } from "./ways.ts";
+import { inTunnel, isBridge, offStructures } from "./profile.ts";
 
 /** A ramp out of a cut's bottom rises EASE_M · d² (m) d meters from it until it has its grade, so that the floor
  * bends gently there: by EASE_M · 100 m² from the line between its heights 10 m either side */
@@ -18,6 +21,93 @@ const MAX_DEPTH_M = 3;
 /** A way is looked at this often (m), and lowered by less than this (m) not at all */
 const SAMPLE_M = 1;
 const MIN_DEPTH_M = 0.05;
+
+/**
+ * The least top of each road's bridge deck over the ways under it (not boardwalks, not in tunnels, on a lower layer) where
+ * OSM tells the room there: the way's clearance, else the bridge's roomUnder, over the way's ground at its nearest
+ * point, and the deck's thickness. Looked at every SAMPLE_M along the bridge where its deck, as wide as it and
+ * DECK_EDGE_M past its sides, is over the way's width near where the way crosses under its line: not a way meeting
+ * it, leading on from it or running beside it (setBridgeDecks raises the deck to them). A railway's deck stays: its
+ * line keeps its gentle grade far past the approaches the map raises, and its tracks side by side would part.
+ */
+export function leastDecks(ways: readonly Way[], heightAt: (e: number, n: number) => number | undefined): Map<Way, { p: Point; h: number }[]> {
+  const bridges = ways.filter((w) => isBridge(w) && isRoad(w) && !w.boardwalk && w.line.length >= 2);
+  const under = ways.filter((w) => !isBridge(w) && !inTunnel(w) && w.line.length >= 2);
+  const reach = (w: Way): Rect => {
+    const box = bounds(w.line);
+    const half = widthOf(w) / 2;
+    return { minX: box.minX - half, minY: box.minY - half, maxX: box.maxX + half, maxY: box.maxY + half };
+  };
+  const boxes = under.map(reach);
+  const near = boxes.length > 0 ? indexBoxes(boxes, bounds(boxes.flatMap((r): Point[] => [[r.minX, r.minY], [r.maxX, r.maxY]]))) : () => [];
+  const least = new Map<Way, { p: Point; h: number }[]>();
+  for (const bridge of bridges) {
+    const half = widthOf(bridge) / 2 + DECK_EDGE_M;
+    const box = reach(bridge);
+    const candidates = near({ minX: box.minX - half, minY: box.minY - half, maxX: box.maxX + half, maxY: box.maxY + half })
+      .map((i) => under[i])
+      .filter((w) => w.layer < Math.max(bridge.layer, 1) && (w.clearance ?? bridge.roomUnder) !== undefined && !meets(w, bridge))
+      .map((way) => ({ way, at: crossings(bridge.line, way.line), reach: widthOf(way) / 2 + half }))
+      .filter(({ at }) => at.length > 0);
+    if (candidates.length === 0) {
+      continue;
+    }
+    const found: { p: Point; h: number }[] = [];
+    for (const p of samples(bridge.line)) {
+      let h = -Infinity;
+      for (const { way, at, reach } of candidates) {
+        const room = way.clearance ?? bridge.roomUnder ?? 0;
+        const { distance, point } = nearestOnLine(way.line, p);
+        const near = distance <= reach && at.some((x) => Math.hypot(x[0] - point[0], x[1] - point[1]) <= reach);
+        const ground = near ? heightAt(...point) : undefined;
+        if (ground !== undefined) {
+          h = Math.max(h, ground + room + DECK_THICKNESS_M);
+        }
+      }
+      if (h > -Infinity) {
+        found.push({ p, h });
+      }
+    }
+    if (found.length > 0) {
+      least.set(bridge, found);
+    }
+  }
+  return least;
+}
+
+/** Whether two ways share a point */
+function meets(a: Way, b: Way): boolean {
+  const points = new Set(a.line.map(pointKey));
+  return b.line.some((p) => points.has(pointKey(p)));
+}
+
+/** Where two lines cross */
+function crossings(a: Point[], b: Point[]): Point[] {
+  const found: Point[] = [];
+  for (let i = 0; i + 1 < a.length; i++) {
+    for (let j = 0; j + 1 < b.length; j++) {
+      const hit = crossing(a[i], a[i + 1], b[j], b[j + 1], 0);
+      if (hit) {
+        found.push([a[i][0] + (a[i + 1][0] - a[i][0]) * hit.at, a[i][1] + (a[i + 1][1] - a[i][1]) * hit.at]);
+      }
+    }
+  }
+  return found;
+}
+
+/** A line's points every SAMPLE_M along it, its own points among them */
+function samples(line: Point[]): Point[] {
+  const found: Point[] = [line[0]];
+  for (let i = 1; i < line.length; i++) {
+    const [a, c] = [line[i - 1], line[i]];
+    const length = Math.hypot(c[0] - a[0], c[1] - a[1]);
+    for (let d = SAMPLE_M; d < length; d += SAMPLE_M) {
+      found.push([a[0] + ((c[0] - a[0]) * d) / length, a[1] + ((c[1] - a[1]) * d) / length]);
+    }
+    found.push(c);
+  }
+  return found;
+}
 
 /**
  * The highest a tramway's bed may be at a point under a deck, leaving a tram its room: under the decks of the bridges
@@ -47,8 +137,8 @@ export function tramBedCeiling(
  * its users' MIN_CLEARANCE_M (a tramway TRAM_CUT_CLEARANCE_M) and its thickness over the ground: the stretch is split off the way with a `floor`, at that depth under
  * the deck and ramping up to the ground, easing out of the bottom (EASE_M) into no steeper than GRADE, steps as stairs (STAIRS_GRADE). Ways of a kind
  * on a layer go down together where they meet, at one height there, the ramps rising from the deepest places along
- * them all, so that paths meeting under a bridge stay joined. A cut is left out where a way ends in it, and where another
- * way meets it (of another kind or layer, a bridge or a
+ * them all, so that paths meeting under a bridge stay joined. A cut is left out where the deck leaves the room OSM
+ * tells (the way's clearance, the bridge's roomUnder), where a way ends in it, and where another way meets it (of another kind or layer, a bridge or a
  * way on one, or one of `others`: a junction or a level crossing, which would be left over it); so are the bridges
  * themselves and the ways on them. An outline's deck is the one built (decks), where given (DeckIndex). Returns how
  * many cuts; the OSM ids of the bridges over them go into `over` (a cut may tell of a bridge's ends too low in the
@@ -65,7 +155,7 @@ export function lowerUnderBridges<T extends Way>(
 ): number {
   const index = new DeckIndex(bridges, outlines, decks);
   const deckOver = (p: Point, layer: number) => index.over(p, layer);
-  const eligible = ways.filter((w) => !w.bridge && !w.tunnel && !w.deck && !w.floor && !w.lid && w.line.length >= 2);
+  const eligible = ways.filter((w) => offStructures(w) && w.line.length >= 2);
   // each way's samples, every SAMPLE_M along it and at its points, and which point a sample is (-1: none)
   const lines = eligible.map((way) => {
     const along = [0];
@@ -135,6 +225,11 @@ export function lowerUnderBridges<T extends Way>(
         continue;
       }
       const underside = deck.deck - DECK_THICKNESS_M;
+      // where the deck leaves the room OSM tells (raised for it, leastDecks), the way stays on the ground
+      const told = line.way.clearance ?? deck.room;
+      if (told !== undefined && underside - ground >= told - 1e-6) {
+        continue;
+      }
       // the floor the room needs, no deeper than MAX_DEPTH_M
       const floor = Math.max(underside - line.room, ground - MAX_DEPTH_M);
       const id = nodeId(w, i);
@@ -157,13 +252,17 @@ export function lowerUnderBridges<T extends Way>(
   }
   // the floor: the lowest of what each place needs, rising from it along the ways (easing out of the bottom, or at
   // once at the grade), spreading only while under the ground; and where each place is
-  const spread = (eased: boolean) => {
+  // a source of a cut: the places under one bridge's deck along the ways of one group
+  const sourceOf = (id: string) => `${needs.get(id)?.osm}|${lines[(needAt.get(id) ?? [0])[0]].group}`;
+  const spread = (eased: boolean, sources: ReadonlySet<string>) => {
     const floors = new Map<string, number>();
     const at = new Map(needAt);
     const heap = new MinHeap<string>();
     for (const [id, { floor }] of needs) {
-      floors.set(id, floor);
-      heap.push(id, floor);
+      if (sources.has(sourceOf(id))) {
+        floors.set(id, floor);
+        heap.push(id, floor);
+      }
     }
     const inCut = (id: string) => {
       const [w, i] = at.get(id) ?? [-1, -1];
@@ -205,33 +304,32 @@ export function lowerUnderBridges<T extends Way>(
       usedBy.set(pointKey(p), (usedBy.get(pointKey(p)) ?? new Set<Way>()).add(way));
     }
   }
-  // the cuts: the places under the ground and the ramps' tops around them, joined along the ways; each kept whole or
-  // left out whole. Their ramps ease out of the bottom, or where such a cut is left out (its longer ramps reaching a
-  // junction or an end), rise at once at the grade: the places of those cuts are within the eased one's
-  const kept = new Map<number, Set<number>>();
-  const chosen = new Map<string, number>();
-  let count = 0;
-  const failed = new Set<string>();
-  for (const eased of [true, false]) {
-    const { floors, at, inCut, neighbours } = spread(eased);
+  // the cuts: the places under the ground and the ramps' tops around them, joined along the ways, from the sources
+  // spread together; each cut kept whole or left out whole, with its sources
+  const cutsOf = (eased: boolean, sources: ReadonlySet<string>) => {
+    const { floors, at, inCut, neighbours } = spread(eased, sources);
     const done = new Set<string>();
+    const cuts: { ids: string[]; wrong: boolean; sources: Set<string> }[] = [];
     for (const start of floors.keys()) {
-      if (done.has(start) || !inCut(start) || (!eased && !failed.has(start))) {
+      if (done.has(start) || !inCut(start)) {
         continue;
       }
-      const cut = [start];
+      const ids = [start];
       done.add(start);
-      for (let k = 0; k < cut.length; k++) {
-        if (inCut(cut[k])) {
-          for (const next of neighbours(cut[k])) {
+      for (let k = 0; k < ids.length; k++) {
+        if (inCut(ids[k])) {
+          for (const next of neighbours(ids[k])) {
             if (!done.has(next.id) && floors.has(next.id)) {
               done.add(next.id);
-              cut.push(next.id);
+              ids.push(next.id);
             }
           }
         }
       }
-      const wrong = cut.some((id) => {
+      const wrong = ids.some((id) => {
+        if (chosen.has(id)) {
+          return true;
+        }
         const [w0, i0] = at.get(id) ?? [0, 0];
         const list = membersOf(id, w0, i0);
         // a way ending here and no other going on
@@ -243,28 +341,52 @@ export function lowerUnderBridges<T extends Way>(
         const mine = new Set<Way>(list.map(([w]) => lines[w].way));
         return point >= 0 && [...(usedBy.get(pointKey(lines[w0].way.line[point])) ?? [])].some((way) => !mine.has(way));
       });
-      if (wrong) {
-        for (const id of cut) {
-          failed.add(id);
+      cuts.push({ ids, wrong, sources: new Set(ids.filter((id) => needs.has(id)).map(sourceOf)) });
+    }
+    return { cuts, floors, at };
+  };
+  // Each source is tried alone first, so that one left out (its cut reaching a junction or an end) costs the others
+  // nothing, then those kept together, leaving out those whose cuts then meet such a place. Their ramps ease out of
+  // the bottom; the sources left out try again with ramps rising at once at the grade, shorter, their cuts kept where
+  // they reach no place of the eased ones.
+  const kept = new Map<number, Set<number>>();
+  const chosen = new Map<string, number>();
+  let count = 0;
+  let tried = new Set([...needs.keys()].map(sourceOf));
+  for (const eased of [true, false]) {
+    const failed = new Set<string>();
+    const good = new Set([...tried].filter((source) => cutsOf(eased, new Set([source])).cuts.every((cut) => !cut.wrong)));
+    tried.forEach((source) => good.has(source) || failed.add(source));
+    for (;;) {
+      const { cuts, floors, at } = cutsOf(eased, good);
+      const bad = cuts.filter((cut) => cut.wrong);
+      if (bad.length > 0) {
+        for (const source of bad.flatMap((cut) => [...cut.sources])) {
+          good.delete(source);
+          failed.add(source);
         }
         continue;
       }
-      count++;
-      for (const id of cut) {
-        const need = needs.get(id);
-        if (need) {
-          over.add(need.osm);
-        }
-        const floor = floors.get(id);
-        if (floor !== undefined) {
-          chosen.set(id, floor);
-        }
-        const [w0, i0] = at.get(id) ?? [0, 0];
-        for (const [w, i] of membersOf(id, w0, i0)) {
-          kept.set(w, (kept.get(w) ?? new Set<number>()).add(i));
+      for (const { ids } of cuts) {
+        count++;
+        for (const id of ids) {
+          const need = needs.get(id);
+          if (need) {
+            over.add(need.osm);
+          }
+          const floor = floors.get(id);
+          if (floor !== undefined) {
+            chosen.set(id, floor);
+          }
+          const [w0, i0] = at.get(id) ?? [0, 0];
+          for (const [w, i] of membersOf(id, w0, i0)) {
+            kept.set(w, (kept.get(w) ?? new Set<number>()).add(i));
+          }
         }
       }
+      break;
     }
+    tried = failed;
   }
   // a cut's floor rises only to meet the ground: between two lower places along a way, under the ground, it runs
   // straight, with no ridge of its own (where the needs of the ways meeting it leave it rising and falling again)
