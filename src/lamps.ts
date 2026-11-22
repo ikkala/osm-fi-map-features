@@ -4,6 +4,7 @@ import { DeckIndex } from "./deckIndex.ts";
 import { indexBoxes, nearestOnLine, type Point } from "./geometry.ts";
 import { bounds, type Road, type StreetLamp } from "./osm.ts";
 import { WALKWAYS } from "./ways.ts";
+import { inTunnel } from "./profile.ts";
 
 /** A lamp faces the nearest street this close to it (m to the centre line), else the nearest path this close */
 const STREET_REACH_M = 15;
@@ -30,7 +31,7 @@ interface Nearest {
  */
 export function placeLamps(lamps: StreetLamp[], roads: Road[]): { facing: number; heights: number; onDecks: number } {
   const reach = Math.max(STREET_REACH_M, PATH_REACH_M);
-  const candidates = roads.filter((r) => !r.tunnel && r.line.length >= 2).map((road) => ({ road, box: bounds(road.line) }));
+  const candidates = roads.filter((r) => !inTunnel(r) && r.line.length >= 2).map((road) => ({ road, box: bounds(road.line) }));
   const near = indexBoxes(
     candidates.map(({ box }) => ({ minX: box.minX - reach, minY: box.minY - reach, maxX: box.maxX + reach, maxY: box.maxY + reach })),
     bounds(lamps.map((lamp) => lamp.point)),

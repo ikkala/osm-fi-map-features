@@ -15,6 +15,7 @@
 import { indexBoxes, pointInPolygon, pointKey, type Point, type Rect } from "./geometry.ts";
 import type { HeightAt } from "./ground.ts";
 import { bounds, type BridgeOutline } from "./osm.ts";
+import { inTunnel, isBridge } from "./profile.ts";
 import { COVER_M, roomHeight } from "./tunnels.ts";
 import { DECK_EDGE_M, isRoad, ROOF_M, ROOM_SIDE_M, widthOf, type Way } from "./ways.ts";
 
@@ -48,7 +49,7 @@ interface Span {
  */
 export function bareUnderBridges(ways: readonly Way[], outlines: readonly BridgeOutline[], below: HeightAt): HeightAt {
   const spans: Span[] = [];
-  const bridges = ways.filter((way) => way.bridge && !(isRoad(way) && way.boardwalk) && way.line.length >= 2);
+  const bridges = ways.filter((way) => isBridge(way) && !(isRoad(way) && way.boardwalk) && way.line.length >= 2);
   // a span's ends: its bridge ways' ends that meet no other bridge way's end
   const ends = new Map<string, number>();
   for (const way of bridges) {
@@ -81,7 +82,7 @@ export function bareUnderBridges(ways: readonly Way[], outlines: readonly Bridge
       const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
       return length > 1e-6 ? [{ a, ue: (b[0] - a[0]) / length, un: (b[1] - a[1]) / length, length, half, joint: false, from: 0, to: length }] : [];
     });
-  const passing = ways.flatMap((way) => (way.bridge || way.tunnel ? [] : segments(way, widthOf(way) / 2 + GAP_EDGE_M)));
+  const passing = ways.flatMap((way) => (isBridge(way) || inTunnel(way) ? [] : segments(way, widthOf(way) / 2 + GAP_EDGE_M)));
   const needs = tunnelTops(ways, below);
   const tunnels = ways.flatMap((way) => {
     const top = needs.get(way);
@@ -189,8 +190,8 @@ export function bareUnderBridges(ways: readonly Way[], outlines: readonly Bridge
  * not in a tunnel meets one), and its room, roof and cover over that; none for a network without a portal
  */
 function tunnelTops(ways: readonly Way[], below: HeightAt): Map<Way, number> {
-  const tunnels = ways.filter((w) => w.tunnel && !w.bridge && w.line.length >= 2);
-  const open = new Set(ways.filter((w) => !w.tunnel).flatMap((w) => w.line.map(pointKey)));
+  const tunnels = ways.filter((w) => inTunnel(w) && !isBridge(w) && w.line.length >= 2);
+  const open = new Set(ways.filter((w) => !inTunnel(w)).flatMap((w) => w.line.map(pointKey)));
   // the networks: tunnels' ways sharing a point
   const parent = tunnels.map((_, i) => i);
   const root = (i: number): number => (parent[i] === i ? i : (parent[i] = root(parent[i])));

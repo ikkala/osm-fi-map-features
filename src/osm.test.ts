@@ -5,6 +5,7 @@ import { inheritFromOutlines } from "./buildingParts.ts";
 import { openDoorways, openPassages, openRailHalls, passagesOnToWalls } from "./passages.ts";
 import { areaKind, compassDegrees, elementsWithin, meters, mergeOverpass, overpassQuery, type Building, type OverpassResponse, type Rail, type Road, type Tree } from "./osm.ts";
 import type { Point } from "./geometry.ts";
+import { inTunnel } from "./profile.ts";
 import { LocalProjection } from "./projection.ts";
 import { cutIntoTiles, tilePieces, tilesCovering, tilesCoveringAny } from "./tiles.ts";
 import { defined, parseWorld } from "./testing.ts";
@@ -102,6 +103,30 @@ test("parseOsm reads a road's maxheight in meters, not a walkway's", () => {
     origin,
   );
   assert.deepEqual(features.roads.map((r) => [r.osm, r.maxHeight]), [["w1", 2.3], ["w2", undefined], ["w3", undefined]]);
+});
+
+test("parseOsm reads the room OSM tells under a structure: a way's maxheight:physical, else its maxheight, and a bridge's min_height", () => {
+  const { features } = parseWorld(
+    [
+      { type: "way", id: 1, tags: { highway: "primary", maxheight: "4.2", "maxheight:physical": "4.6" }, geometry: [at(0, 0), at(20, 0)] },
+      { type: "way", id: 2, tags: { highway: "footway", "maxheight:physical": "2.8 m" }, geometry: [at(0, 10), at(20, 10)] },
+      { type: "way", id: 3, tags: { highway: "service", maxheight: "none" }, geometry: [at(0, 20), at(20, 20)] },
+      { type: "way", id: 4, tags: { highway: "cycleway", bridge: "yes", layer: "1", min_height: "5.2" }, geometry: [at(0, 30), at(20, 30)] },
+      // min_height on no bridge is something else's
+      { type: "way", id: 5, tags: { highway: "footway", min_height: "3" }, geometry: [at(0, 40), at(20, 40)] },
+      { type: "way", id: 6, tags: { railway: "rail", maxheight: "5.5" }, geometry: [at(0, 50), at(20, 50)] },
+    ],
+    origin,
+  );
+  const ways = [...features.roads, ...features.rails];
+  assert.deepEqual(ways.map((w) => [w.osm, w.clearance, w.roomUnder]), [
+    ["w1", 4.6, undefined],
+    ["w2", 2.8, undefined],
+    ["w3", undefined, undefined],
+    ["w4", undefined, 5.2],
+    ["w5", undefined, undefined],
+    ["w6", 5.5, undefined],
+  ]);
 });
 
 test("parseOsm reads the way trains usually go on a track", () => {
@@ -237,14 +262,14 @@ test("parseOsm keeps a ramp into a garage under a house in its tunnel, and the c
   ];
   const { features } = parseWorld([...ramp, ...corridors], origin);
   // the corridor at level 0 goes on from the lift, which OSM does not have: it is left out, and the lift's house shut
-  assert.deepEqual(features.roads.map((r) => [r.osm, r.tunnel]), [["w90", true], ["w92", true]]);
+  assert.deepEqual(features.roads.map((r) => [r.osm, inTunnel(r)]), [["w90", true], ["w92", true]]);
   assert.deepEqual(features.buildings.map((b) => b.passages), [undefined, undefined]);
   // without them the ramp is taken for a passage through the house
-  assert.deepEqual(parseWorld(ramp, origin).features.roads.map((r) => [r.osm, r.tunnel]), [["w90", false]]);
+  assert.deepEqual(parseWorld(ramp, origin).features.roads.map((r) => [r.osm, inTunnel(r)]), [["w90", false]]);
   // out of a tunnel on a storey a corridor goes on at its level into a building, and up in it
   const onStorey = ramp.map((e) => (e.id === 90 ? { ...e, tags: { ...e.tags, level: "-1" } } : e));
   const corridor = parseWorld([...onStorey, ...corridors], origin).features.roads.find((r) => r.osm === "w92");
-  assert.equal(corridor?.tunnel, false);
+  assert.equal(corridor && inTunnel(corridor), false);
 });
 
 test("parseOsm tells the ends of the ways indoors it leaves out, where a bridge may go into a building", () => {
@@ -671,7 +696,7 @@ test("a way through a building opens its walls and is drawn on the ground", () =
     ],
   );
 
-  const tunnel = (osm: string) => defined(features.roads.find((r) => r.osm === osm)).tunnel;
+  const tunnel = (osm: string) => inTunnel(defined(features.roads.find((r) => r.osm === osm)));
   assert.deepEqual([tunnel("w41"), tunnel("w42"), tunnel("w43")], [false, false, true]);
 });
 
@@ -753,7 +778,8 @@ test("a tunnel through a building is taken for a passage, a ramp into it or a de
     origin,
   );
   const road = (osm: string) => defined(features.roads.find((r) => r.osm === osm));
-  assert.deepEqual([road("w51").tunnel, road("w52").tunnel, road("w53").tunnel], [false, true, true]);
+  assert.deepEqual([road("w51"), road("w52"), road("w53")].map(inTunnel), [false, true, true]);
+  assert.deepEqual([road("w51").tunnel, road("w51").passage], [true, true]);
   // only the west and east walls open, for w51
   assert.deepEqual(defined(features.buildings[0].passages).map((o) => Math.round(o.from[0])).sort((a, b) => a - b), [0, 20]);
 });

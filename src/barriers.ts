@@ -6,6 +6,7 @@ import { crossing, distanceToSegment, pointKey, type Point } from "./geometry.ts
 import { deckAt } from "./bridges.ts";
 import { DeckIndex } from "./deckIndex.ts";
 import { bounds, type Barrier, type Gate, type MapFeatures } from "./osm.ts";
+import { inTunnel, isBridge, profileOf } from "./profile.ts";
 import { ROOM_SIDE_M, widthOf } from "./ways.ts";
 
 /** An opening is this much (m) wider than the way through it */
@@ -34,7 +35,7 @@ const MIN_PIECE_M = 0.3;
  */
 export function openBarriers(features: MapFeatures): number {
   const ways = [
-    ...[...features.roads.map((r) => ({ line: r.line, width: r.width, over: r.bridge || r.tunnel })), ...features.rails.map((r) => ({ line: r.line, width: widthOf(r), over: r.bridge || r.tunnel }))]
+    ...[...features.roads.map((r) => ({ line: r.line, width: r.width, over: isBridge(r) || inTunnel(r) })), ...features.rails.map((r) => ({ line: r.line, width: widthOf(r), over: isBridge(r) || inTunnel(r) }))]
       .filter((w) => !w.over && w.line.length >= 2),
     ...portals(features),
   ].map((w) => ({ ...w, box: bounds(w.line) }));
@@ -72,7 +73,7 @@ export function openBarriers(features: MapFeatures): number {
 }
 /** The tunnels' lines from PORTAL_M out of their ends that no other tunnel goes on from to PORTAL_M in, as wide as their rooms */
 function portals(features: MapFeatures): { line: Point[]; width: number }[] {
-  const tunnels = [...features.roads, ...features.rails].filter((w) => w.tunnel && !w.lid && w.line.length >= 2);
+  const tunnels = [...features.roads, ...features.rails].filter((w) => profileOf(w).kind === "bored" && w.line.length >= 2);
   const points = new Map<string, number>();
   for (const way of tunnels) {
     for (const p of new Set(way.line.map(pointKey))) {

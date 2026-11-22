@@ -2,6 +2,7 @@
 // track runs, only its layer, so a track runs at a height for its layer and ramps between pieces where they join.
 import { distanceToSegment, pointKey, type Point, type Ring } from "./geometry.ts";
 import type { Area } from "./osm.ts";
+import { inTunnel } from "./profile.ts";
 
 /** attraction=* values that are rides; the rest (animal, maze, ...) are left out */
 export const RIDE_KINDS = new Set([
@@ -58,7 +59,7 @@ export interface Ride {
  */
 export function setCourseHeights(rides: Ride[]): number {
   const courses = rides.filter((r) => r.line && r.line.length >= 2);
-  const own = (r: Ride) => (r.tunnel ? 0 : r.layer !== undefined && r.layer > 0 ? r.layer * LAYER_M : GROUND_M);
+  const own = (r: Ride) => (inTunnel(r) ? 0 : r.layer !== undefined && r.layer > 0 ? r.layer * LAYER_M : GROUND_M);
   const atEnds = new Map<string, number[]>();
   for (const course of courses) {
     const line = course.line ?? [];
@@ -85,7 +86,7 @@ export function setCourseHeights(rides: Ride[]): number {
       along = alongOf(line);
     }
     ride.line = line;
-    const anchors = ride.tunnel
+    const anchors = inTunnel(ride)
       ? new Map([[0, 0]])
       : new Map([
           [0, mean(line[0])],
@@ -94,7 +95,7 @@ export function setCourseHeights(rides: Ride[]): number {
         ]);
     entries.push({ ride, anchors });
   }
-  const crossings = crossCourses(entries.filter((c) => !c.ride.tunnel)).map(({ a, b }) => {
+  const crossings = crossCourses(entries.filter((c) => !inTunnel(c.ride))).map(({ a, b }) => {
     const [ha, hb] = [heightAt(a.course, a.along), heightAt(b.course, b.along)];
     const [la, lb] = [a.course.ride.layer ?? 0, b.course.ride.layer ?? 0];
     const aOver = la !== lb ? la > lb : ha !== hb ? ha > hb : a.along > b.along;
@@ -227,7 +228,7 @@ function boxesMeet(a: Box, b: Box): boolean {
  * raised channel): within CHANNEL_REACH_M of its line all round. The course carries that water.
  */
 export function withoutCourseWater(areas: Area[], rides: Ride[]): Area[] {
-  const lines = rides.filter((r) => r.line && !r.tunnel && WATER_COURSES.has(r.kind)).map((r) => r.line ?? []);
+  const lines = rides.filter((r) => r.line && !inTunnel(r) && WATER_COURSES.has(r.kind)).map((r) => r.line ?? []);
   if (lines.length === 0) {
     return areas;
   }

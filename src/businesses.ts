@@ -12,6 +12,7 @@ import {
   type OverpassResponse,
   type Road,
 } from "./osm.ts";
+import { inTunnel } from "./profile.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { WALKWAYS } from "./ways.ts";
 
@@ -105,7 +106,7 @@ export function placeBusinesses(buildings: Building[], businesses: Business[], r
   }
   const streetCells = new Cells<Road>();
   for (const road of roads) {
-    if (!road.tunnel && road.line.length >= 2 && (road.kind === "pedestrian" || !WALKWAYS.has(road.kind))) {
+    if (!inTunnel(road) && road.line.length >= 2 && (road.kind === "pedestrian" || !WALKWAYS.has(road.kind))) {
       streetCells.add(road, bounds(road.line));
     }
   }

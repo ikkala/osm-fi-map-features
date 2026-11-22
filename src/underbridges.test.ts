@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Point } from "./geometry.ts";
 import type { BridgeDeck, BridgeOutline, Rail, Road } from "./osm.ts";
-import { lowerUnderBridges } from "./underbridges.ts";
+import { leastDecks, lowerUnderBridges } from "./underbridges.ts";
+import { DECK_THICKNESS_M } from "./ways.ts";
 
 function road(osm: string, line: Point[], extra: Partial<Road> = {}): Road {
   return { osm, kind: "residential", width: 6, layer: 0, bridge: false, tunnel: false, line, ...extra };
@@ -189,3 +190,57 @@ test("a way under a bridge with room enough stays on its ground", () => {
   assert.equal(path.floor, undefined);
 });
 
+
+test("a way under a deck leaving the room OSM tells (its maxheight, the bridge's min_height) stays on the ground, with no cut", () => {
+  // the deck's underside 4 m over the ground at 98, less than a road's 4.2 m
+  const deck = road("w1", [[-30, 0], [30, 0]], { layer: 1, bridge: true, deck: [103, 103] });
+  const tagged = road("w2", [[0, -60], [0, 60]], { kind: "primary", clearance: 4 });
+  assert.equal(lowerUnderBridges([deck, tagged], [deck], [], () => 98), 0);
+  assert.equal(tagged.floor, undefined);
+  const told = road("w1", [[-30, 0], [30, 0]], { layer: 1, bridge: true, deck: [103, 103], roomUnder: 4 });
+  const under = road("w3", [[0, -60], [0, 60]], { kind: "primary" });
+  assert.equal(lowerUnderBridges([told, under], [told], [], () => 98), 0);
+  assert.equal(under.floor, undefined);
+  // a deck lower than that: the cut as without the tag
+  const low = bridge();
+  const short = road("w4", [[0, -60], [0, 60]], { kind: "primary", clearance: 4 });
+  assert.equal(lowerUnderBridges([low, short], [low], [], () => 98), 1);
+});
+
+test("leastDecks: the deck's least top over a way under it, its room over the way's ground and its thickness, as wide as both reach", () => {
+  // a 6 m wide bridge along e at n = 0 over a 9 m wide road along n at e = 0 on ground at 98
+  const deck = bridge();
+  const tagged = road("w2", [[0, -60], [0, 60]], { kind: "primary", width: 9, clearance: 5 });
+  const untagged = road("w3", [[20, -60], [20, 60]], { kind: "primary", width: 9 });
+  const least = leastDecks([deck, tagged, untagged], () => 98).get(deck) ?? [];
+  // over e = -8 .. 8: the road's half width, the deck's and its edge
+  const es = least.map(({ p }) => p[0]);
+  assert.ok(Math.min(...es) >= -8 - 1e-9 && Math.min(...es) < -7 && Math.max(...es) <= 8 + 1e-9 && Math.max(...es) > 7);
+  assert.ok(least.every(({ h }) => Math.abs(h - (98 + 5 + DECK_THICKNESS_M)) < 1e-9));
+  // a way leading on from the bridge's end, meeting it or running beside it is not under it
+  const leading = road("w4", [[30, 0], [90, 0]], { kind: "primary", clearance: 4 });
+  const ending = road("w5", [[40, -1], [31, 0]], { kind: "primary", clearance: 4 });
+  const beside = road("w6", [[-20, 5], [20, 5]], { kind: "primary", clearance: 4 });
+  assert.equal(leastDecks([deck, leading, ending, beside], () => 98).get(deck), undefined);
+  // a railway's deck stays as it is
+  const railway: Rail = { osm: "w7", kind: "rail", layer: 1, bridge: true, tunnel: false, line: [[-30, 0], [30, 0]], deck: [100, 100] };
+  assert.equal(leastDecks([railway, tagged], () => 98).get(railway), undefined);
+  // the bridge's min_height gives every way under it that room
+  const high = road("w1", [[-30, 0], [30, 0]], { layer: 1, bridge: true, roomUnder: 4.5 });
+  const room = leastDecks([high, untagged], () => 98).get(high) ?? [];
+  assert.ok(room.length > 0 && room.every(({ p, h }) => Math.abs(p[0] - 20) <= 8 + 1e-9 && Math.abs(h - (98 + 4.5 + DECK_THICKNESS_M)) < 1e-9));
+});
+
+test("a way of a group whose cut is left out does not cost another way of the group, under another bridge, its cut", () => {
+  // a road under the bridge along e at n = 0; another road joining it at n = 55, ending under a bridge along n at
+  // e = 50, whose cut reaches back into the first road's
+  const deck = bridge();
+  const other = road("w4", [[50, 20], [50, 120]], { layer: 1, bridge: true, deck: [100, 100] });
+  const through = road("w2", [[0, -150], [0, 55], [0, 200]], { kind: "primary" });
+  const ending = road("w3", [[0, 55], [50, 55]], { kind: "primary" });
+  const ways = [deck, other, through, ending];
+  assert.equal(lowerUnderBridges(ways, [deck, other], [], () => 98), 1);
+  assert.ok(ways.some((w) => w.osm === "w2" && w.floor));
+  // the second road goes down only as far as the first one's ramp reaches into it, not under its own bridge
+  assert.ok(ways.filter((w) => w.osm === "w3" && w.floor).every((w) => w.line.every(([e]) => e < 40)));
+});

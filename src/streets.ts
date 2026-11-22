@@ -4,6 +4,7 @@ import { deckAt } from "./bridges.ts";
 import { nearestOnLine, type Point } from "./geometry.ts";
 import { bounds, type Crossing, type Gate, type MapFeatures, type Road, type StreetNode, type TrafficSignal, type WayPoint } from "./osm.ts";
 import { WALKWAYS } from "./ways.ts";
+import { inTunnel } from "./profile.ts";
 
 /** A node this close (m) to a way's line is on it */
 const ON_WAY_M = 1;
@@ -25,7 +26,7 @@ interface Candidate<T> {
 export function placeStreetNodes(nodes: StreetNode[], features: MapFeatures): { dropped: number } {
   const candidates = <T extends { line: Point[] }>(items: T[]): Candidate<T>[] =>
     items.filter((i) => i.line.length >= 2).map((item) => ({ item, line: item.line, box: bounds(item.line) }));
-  const roads = candidates(features.roads.filter((r) => !r.tunnel));
+  const roads = candidates(features.roads.filter((r) => !inTunnel(r)));
   const streets = roads.filter((c) => !WALKWAYS.has(c.item.kind));
   const barriers = candidates(features.barriers);
   let dropped = 0;

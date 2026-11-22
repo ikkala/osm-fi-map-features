@@ -39,6 +39,7 @@ import { openBuildings, openDoorways, openRailHalls, type ThroughBuildings } fro
 import { pitchBoxes, setLevelTops } from "./pitches.ts";
 import { setPlatformTops } from "./platforms.ts";
 import { parsePlayEquipment, placePlayEquipment, playgroundQuery } from "./playgrounds.ts";
+import { inTunnel, isBridge } from "./profile.ts";
 import type { GeoPoint } from "./projection.ts";
 import { passagesUpSlopes, raisePassages } from "./raisedPassages.ts";
 import { groundSteps, stepAtWalls, type GroundStep } from "./retainingWalls.ts";
@@ -49,7 +50,7 @@ import { placeStreetNodes } from "./streets.ts";
 import { setTrackBeds } from "./trackbeds.ts";
 import { fetchTreeRegister, type RegisterTree, type TreeRegisterSource } from "./treeRegister.ts";
 import { fitRoomsUnderDecks, openPortals, portalWallsAt, raiseToWalls, setTunnelFloors, setTunnelRooms, uncoverAtGrade } from "./tunnels.ts";
-import { lowerUnderBridges, tramBedCeiling } from "./underbridges.ts";
+import { leastDecks, lowerUnderBridges, tramBedCeiling } from "./underbridges.ts";
 import { parseWaterways, setWaterLevels, waterwayQuery, type WaterLevels } from "./waterways.ts";
 import { GRADE, isRoad, userOf, type Way } from "./ways.ts";
 import { assignWindows } from "./windows.ts";
@@ -110,7 +111,7 @@ export function osmWorld(elements: OsmElement[], origin: GeoPoint, logger: Logge
 export function bareStage(world: OsmWorld, ground: Ground, logger: Logger): void {
   const ways = [...world.features.roads, ...world.features.rails];
   ground.lay("bare", (below) => bareUnderBridges(ways, world.bridgeOutlines, below));
-  logger.log(`${ways.filter((w) => w.bridge).length} bridge ways with the ground spanned across under them`);
+  logger.log(`${ways.filter(isBridge).length} bridge ways with the ground spanned across under them`);
 }
 
 /** The ground stepped at the retaining walls and at the edges flights of steps climb (its walls and flights layers) */
@@ -179,9 +180,20 @@ export function spanStage(world: OsmWorld, covered: Covered, logger: Logger): Sp
   const { features, indoors, throughBuildings } = world;
   const { ground } = covered;
   const heightAt = ground.at("flights");
-  const ramps = (lines: { bridge: boolean; deck?: number[] }[]) => lines.filter((l) => l.deck && !l.bridge).length;
-  const stepped = setBridgeDecks(features.roads, heightAt, indoors, throughBuildings) + setBridgeDecks(features.rails, heightAt, indoors);
-  logger.log(`${ramps(features.roads) + ramps(features.rails)} bridge approaches raised out of the hollows under bridges, ${stepped} decks' heights told by steps`);
+  const ramps = (lines: Way[]) => lines.filter((l) => l.deck && !isBridge(l)).length;
+  // the room OSM tells under the decks: they rise for it at their ways' grade
+  const least = leastDecks([...features.roads, ...features.rails], heightAt);
+  const raised = new Set<Way>();
+  const users = new Map<string, Set<string>>();
+  for (const way of [...features.roads, ...features.rails]) {
+    for (const p of way.line) {
+      users.set(pointKey(p), (users.get(pointKey(p)) ?? new Set<string>()).add(userOf(way)));
+    }
+  }
+  const crosses = (l: Way, p: Point) => [...(users.get(pointKey(p)) ?? [])].some((user) => user !== userOf(l));
+  const room = { least: (l: Way) => least.get(l) ?? [], grade: (l: Way) => GRADE[userOf(l)], crosses, raised: (l: Way) => raised.add(l) };
+  const stepped = setBridgeDecks(features.roads, heightAt, indoors, throughBuildings, room) + setBridgeDecks(features.rails, heightAt, indoors, undefined, room);
+  logger.log(`${ramps(features.roads) + ramps(features.rails)} bridge approaches raised out of the hollows under bridges, ${stepped} decks' heights told by steps, ${raised.size} bridge ways raised for the room OSM tells under them: ${[...new Set([...raised].map((w) => w.osm))].join(", ")}`);
   return { ground };
 }
 
@@ -229,13 +241,13 @@ export function deckStage(world: OsmWorld, tunnelled: Tunnelled, logger: Logger)
   logger.log(`${bridgeOutlines.length} bridge outlines, ${new Set(outlined.decks.map((d) => d.osm)).size} with decks for the ${outlined.ways} ways on them`);
   logger.log(`${fitLidsToDecks([...features.roads, ...features.rails], heightAt)} lids fitted to the decks over them`);
   // ways carried through buildings on a span open their walls from the deck up
-  const carried = features.roads.filter((r) => r.deck && !r.bridge && throughBuildings(r));
+  const carried = features.roads.filter((r) => r.deck && !isBridge(r) && throughBuildings(r));
   raisePassages(features.buildings, carried);
   logger.log(`${carried.length} ways through buildings carried on bridges' spans`);
   // a staircase may end on a deck
   logger.log(`${setStaircaseDecks(features.roads, heightAt)} staircases with landings out of line with the ground get decks, one riser all the way`);
   // the decks stay straight: a way under one with too little room goes down into a cut
-  const bridges = [...features.roads, ...features.rails].filter((w) => w.bridge && w.deck);
+  const bridges = [...features.roads, ...features.rails].filter((w) => isBridge(w) && w.deck);
   const over = new Set<string>();
   const cuts =
     lowerUnderBridges(features.roads, bridges, bridgeOutlines, heightAt, over, features.rails, features.bridgeDecks) +
@@ -457,7 +469,7 @@ export async function buildingHeightStage(
   const lids = [...features.roads, ...features.rails].flatMap((w) => (w.lid ? [{ line: w.line, lid: w.lid }] : []));
   const raised: Building[] = [];
   const platforms = features.areas.filter((a) => a.kind === "platform");
-  const ways = [...features.roads, ...features.rails].filter((w) => !w.tunnel && !w.bridge);
+  const ways = [...features.roads, ...features.rails].filter((w) => !inTunnel(w) && !isBridge(w));
   const based = setBuildingBases(features.buildings, heightAt, lids, raised, platforms, ways, buildingGround.ground.at("buildings"));
   logger.log(`${based} buildings stand at their OSM entrance or highest ground (at most ${MAX_PLINTH_M} m above their lowest)`);
   // buildings raised to a door up a slope are stair halls: open them where covered ways come in

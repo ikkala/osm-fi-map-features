@@ -1,10 +1,11 @@
 // Tunnels in cuts. The bare-ground elevation model shows a shallow decked tunnel as an open cut, so it gets
-// a lid at the cut's rim and a floor at its bottom, the ways over it become bridges, and buildings over it
-// open. Deep tunnels are left to tunnels.ts.
+// a lid at the cut's rim and a floor at its bottom, the ways over it are built as bridges on it (overLid), and
+// buildings over it open. Deep tunnels are left to tunnels.ts.
 import type { MapFeatures } from "./osm.ts";
 import { openPassages } from "./passages.ts";
 import { deckAt } from "./bridges.ts";
 import { crossing, type Point } from "./geometry.ts";
+import { inTunnel, isBridge, profileOf } from "./profile.ts";
 import { LEAST_CLEARANCE_M, LID_EDGE_M, LID_THICKNESS_M, MIN_CLEARANCE_M, userOf, widthOf, type Way } from "./ways.ts";
 
 /** The ground beside a tunnel is looked for this far out on both sides, this often (m) */
@@ -24,7 +25,7 @@ const FLOOR_REACH_M = 4;
 /** A way meeting a tunnel this close to the tunnel's end (m) leads on from it */
 const AT_PORTAL_M = 1;
 
-/** Gives tunnels in cuts lids, makes the ways over them bridges and opens the buildings over them */
+/** Gives tunnels in cuts lids, builds the ways over them as bridges and opens the buildings over them */
 export function coverCutTunnels(features: MapFeatures, heightAt: (e: number, n: number) => number | undefined): { tunnels: number; crossings: number } {
   const tunnels: { way: Way; width: number }[] = [];
   const ways: { way: Way; width: number }[] = [
@@ -32,7 +33,7 @@ export function coverCutTunnels(features: MapFeatures, heightAt: (e: number, n: 
     ...features.rails.map((way) => ({ way, width: widthOf(way) })),
   ];
   for (const { way, width } of ways) {
-    if (way.tunnel && way.layer >= -1 && way.line.length >= 2) {
+    if (inTunnel(way) && way.layer >= -1 && way.line.length >= 2) {
       const lid = cutLid(way.line, heightAt, MIN_CLEARANCE_M[userOf(way)]);
       if (lid) {
         way.lid = lid;
@@ -45,7 +46,7 @@ export function coverCutTunnels(features: MapFeatures, heightAt: (e: number, n: 
   // on the cut's wall, so its floor is taken from the cut tunnel
   const cuts = [...tunnels];
   for (const { way, width } of ways) {
-    if (way.tunnel && !way.lid && way.layer >= -1 && way.line.length >= 2) {
+    if (profileOf(way).kind === "bored" && way.layer >= -1 && way.line.length >= 2) {
       const beside = besideCut(way.line, width, cuts, heightAt);
       if (beside) {
         way.lid = beside.lid;
@@ -196,7 +197,7 @@ function besideCut(
  * and at least its users' LEAST_CLEARANCE_M over its surface. Returns how many lids were moved.
  */
 export function fitLidsToDecks(ways: Way[], heightAt: (e: number, n: number) => number | undefined): number {
-  const decks = ways.filter((w) => w.bridge && w.deck && w.line.length >= 2);
+  const decks = ways.filter((w) => isBridge(w) && w.deck && w.line.length >= 2);
   let count = 0;
   for (const way of ways) {
     const { lid, floor } = way;
@@ -251,13 +252,13 @@ function nearestOnLine(p: Point, line: Point[]): { distance: number; at: Point }
   return best;
 }
 
-/** Splits the ways crossing the lids and makes the stretches over them bridges on the lids. Returns how many. */
+/** Splits the ways crossing the lids and builds the stretches over them as bridges on the lids (overLid). Returns how many. */
 function bridgeOverLids<T extends Way>(ways: T[], tunnels: { way: Way; width: number }[]): number {
   const portals = tunnels.flatMap(({ way }) => [way.line[0], way.line[way.line.length - 1]]);
   const added: T[] = [];
   let count = 0;
   for (const way of ways) {
-    if (way.tunnel || way.bridge || way.lid) {
+    if (inTunnel(way) || isBridge(way) || way.lid) {
       continue;
     }
     const along = [0];
@@ -306,12 +307,15 @@ function bridgeOverLids<T extends Way>(ways: T[], tunnels: { way: Way; width: nu
       continue;
     }
     way.line = first.line;
-    way.bridge = first.bridge;
     if (first.bridge) {
       way.onLid = true;
     }
     for (const piece of rest) {
-      added.push({ ...way, line: piece.line, bridge: piece.bridge, ...(piece.bridge && { onLid: true }) });
+      added.push({ ...way, line: piece.line, ...(piece.bridge && { onLid: true, overLid: true }) });
+    }
+    // the first piece is over a lid after the others are copied from it, each over one by its own stretch
+    if (first.bridge) {
+      way.overLid = true;
     }
     count += merged.length;
   }
