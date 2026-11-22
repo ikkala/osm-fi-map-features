@@ -38,8 +38,8 @@ export const CLEARANCE_M: Readonly<Record<WayUser, number>> = { people: 3, vehic
  */
 export const MIN_CLEARANCE_M: Readonly<Record<WayUser, number>> = { people: 2.7, vehicles: 4.2, trams: 4, trains: 5.5 };
 /**
- * The room (m) a way keeps under a deck where its cut cannot go deep enough for MIN_CLEARANCE_M: a person's, a bus's,
- * a tram's, a train's
+ * The room (m) a way keeps under a cut's lid fitted down to the decks over it: a person's, a bus's, a tram's, a
+ * train's
  */
 export const LEAST_CLEARANCE_M: Readonly<Record<WayUser, number>> = { people: 2.2, vehicles: 3.5, trams: MIN_CLEARANCE_M.trams, trains: 4.8 };
 /**

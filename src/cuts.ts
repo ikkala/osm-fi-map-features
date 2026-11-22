@@ -193,8 +193,7 @@ function besideCut(
  * Fits the lids of tunnels in cuts to the decks of the bridges over them, which run from the ground at their ends:
  * a lid at the lower rim or at the clearance over the floor stood over them or under them. A lid point goes to the
  * lowest deck crossing the line beside it, a deck over the lid no higher than the cut's higher rim where it crosses,
- * and at least its users' LEAST_CLEARANCE_M over the floor, as a way under a deck keeps where its cut cannot go deep
- * enough (underbridges.ts). Returns how many lids were moved.
+ * and at least its users' LEAST_CLEARANCE_M over its surface. Returns how many lids were moved.
  */
 export function fitLidsToDecks(ways: Way[], heightAt: (e: number, n: number) => number | undefined): number {
   const decks = ways.filter((w) => w.bridge && w.deck && w.line.length >= 2);
@@ -224,7 +223,9 @@ export function fitLidsToDecks(ways: Way[], heightAt: (e: number, n: number) => 
         }
       }
     }
-    const fitted = lid.map((h, j) => (lowest[j] === Infinity ? h : Math.max(lowest[j], floor[j] + room + LID_THICKNESS_M)));
+    // the room is over the way's surface: a deck in the cut (a boardwalk) where it has one, else the floor
+    const surface = (j: number) => Math.max(floor[j], way.deck?.[j] ?? -Infinity);
+    const fitted = lid.map((h, j) => (lowest[j] === Infinity ? h : Math.max(lowest[j], surface(j) + room + LID_THICKNESS_M)));
     if (fitted.some((h, i) => h !== lid[i])) {
       way.lid = fitted;
       count++;

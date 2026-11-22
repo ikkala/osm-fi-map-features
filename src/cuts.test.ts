@@ -99,6 +99,13 @@ test("fitLidsToDecks lowers a lid to the decks of the bridges over it, leaving r
   assert.deepEqual(low.lid, [100.8 + LEAST_CLEARANCE_M.people + LID_THICKNESS_M, 100.8 + LEAST_CLEARANCE_M.people + LID_THICKNESS_M]);
 });
 
+test("fitLidsToDecks leaves the room over a boardwalk's deck in the cut, not over the floor under it", () => {
+  const boardwalk = road("w1", [[0, 0], [20, 0]], { kind: "path", width: 1.5, layer: -1, bridge: true, tunnel: true, deck: [101.1, 101.1], lid: [105.3, 105.3], floor: [100.8, 100.8] });
+  const lowStreet = road("w2", [[10, -5], [10, 5]], { bridge: true, deck: [102, 102] });
+  assert.equal(fitLidsToDecks([boardwalk, lowStreet], () => 105.3), 1);
+  assert.deepEqual(boardwalk.lid, [101.1 + LEAST_CLEARANCE_M.people + LID_THICKNESS_M, 101.1 + LEAST_CLEARANCE_M.people + LID_THICKNESS_M]);
+});
+
 test("fitLidsToDecks raises a lid at the lower rim to the decks over it, no higher than the higher rim", () => {
   // the cut's bottom at 95 within 4 m of n = 0 and n = 20, its rims at 101 south of n = 0 and 102 elsewhere; west of
   // the portals at e = 12 all at 95, so the rims are where the decks cross, not at the line's ends

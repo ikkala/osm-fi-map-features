@@ -5,15 +5,15 @@ import { deckAt } from "./bridges.ts";
 import { DeckIndex } from "./deckIndex.ts";
 import { distanceToSegment, indexBoxes, MinHeap, pointInPolygon, pointKey, type Point, type Rect } from "./geometry.ts";
 import { bounds, type BridgeDeck, type BridgeOutline } from "./osm.ts";
-import { DECK_EDGE_M, DECK_THICKNESS_M, GRADE, STAIRS_GRADE, isRoad, LEAST_CLEARANCE_M, MIN_CLEARANCE_M, TRAM_CUT_CLEARANCE_M, TRAMWAYS, userOf, widthOf, type Way } from "./ways.ts";
+import { DECK_EDGE_M, DECK_THICKNESS_M, GRADE, STAIRS_GRADE, isRoad, MIN_CLEARANCE_M, TRAM_CUT_CLEARANCE_M, TRAMWAYS, userOf, widthOf, type Way } from "./ways.ts";
 
 /** A ramp out of a cut's bottom rises EASE_M · d² (m) d meters from it until it has its grade, so that the floor
  * bends gently there: by EASE_M · 100 m² from the line between its heights 10 m either side */
 const EASE_M = 0.0012;
 /** A cut's floor keeps the points it needs to stay within this (m) of its heights */
 const FLOOR_TOLERANCE_M = 0.02;
-/** A cut goes no deeper than this (m). Where the room needs more, the way goes down this far if that leaves it
- * LEAST_CLEARANCE_M, else it is left as it is */
+/** A cut goes no deeper than this (m). Where the room needs more, the way goes down this far, which leaves it less
+ * room than its users need but more than the ground would */
 const MAX_DEPTH_M = 3;
 /** A way is looked at this often (m), and lowered by less than this (m) not at all */
 const SAMPLE_M = 1;
@@ -47,8 +47,8 @@ export function tramBedCeiling(
  * its users' MIN_CLEARANCE_M (a tramway TRAM_CUT_CLEARANCE_M) and its thickness over the ground: the stretch is split off the way with a `floor`, at that depth under
  * the deck and ramping up to the ground, easing out of the bottom (EASE_M) into no steeper than GRADE, steps as stairs (STAIRS_GRADE). Ways of a kind
  * on a layer go down together where they meet, at one height there, the ramps rising from the deepest places along
- * them all, so that paths meeting under a bridge stay joined. A cut is left out where MAX_DEPTH_M would leave less
- * than LEAST_CLEARANCE_M, where a way ends in it, and where another way meets it (of another kind or layer, a bridge or a
+ * them all, so that paths meeting under a bridge stay joined. A cut is left out where a way ends in it, and where another
+ * way meets it (of another kind or layer, a bridge or a
  * way on one, or one of `others`: a junction or a level crossing, which would be left over it); so are the bridges
  * themselves and the ways on them. An outline's deck is the one built (decks), where given (DeckIndex). Returns how
  * many cuts; the OSM ids of the bridges over them go into `over` (a cut may tell of a bridge's ends too low in the
@@ -96,7 +96,7 @@ export function lowerUnderBridges<T extends Way>(
       }
     }
     const kind = userOf(way);
-    return { way, along, length, ds, pointOf, sampleOf, room: kind === "trams" ? TRAM_CUT_CLEARANCE_M : MIN_CLEARANCE_M[kind], least: LEAST_CLEARANCE_M[kind], grade: way.kind === "steps" ? STAIRS_GRADE : GRADE[kind], group: `${kind}|${way.layer}` };
+    return { way, along, length, ds, pointOf, sampleOf, room: kind === "trams" ? TRAM_CUT_CLEARANCE_M : MIN_CLEARANCE_M[kind], grade: way.kind === "steps" ? STAIRS_GRADE : GRADE[kind], group: `${kind}|${way.layer}` };
   });
   // a sample's node: a point shared by the ways of a group is one node
   const nodeId = (w: number, i: number) => {
@@ -125,10 +125,8 @@ export function lowerUnderBridges<T extends Way>(
     }
     return grounds.get(id);
   };
-  // where the deck is too low over a way: the floor it needs there, and the bridge; where the deck would need it
-  // deeper than MAX_DEPTH_M
+  // where the deck is too low over a way: the floor it needs there, and the bridge
   const needs = new Map<string, { floor: number; osm: string; room: number }>();
-  const tooDeep = new Set<string>();
   lines.forEach((line, w) => {
     for (let i = 0; i < line.ds.length; i++) {
       const deck = deckOver(pointAt(w, i), line.way.layer);
@@ -137,12 +135,10 @@ export function lowerUnderBridges<T extends Way>(
         continue;
       }
       const underside = deck.deck - DECK_THICKNESS_M;
-      // the floor the room needs, or no deeper than MAX_DEPTH_M where that leaves the least room
+      // the floor the room needs, no deeper than MAX_DEPTH_M
       const floor = Math.max(underside - line.room, ground - MAX_DEPTH_M);
       const id = nodeId(w, i);
-      if (underside - floor < line.least) {
-        tooDeep.add(id);
-      } else if (ground - floor > MIN_DEPTH_M && floor < (needs.get(id)?.floor ?? Infinity)) {
+      if (ground - floor > MIN_DEPTH_M && floor < (needs.get(id)?.floor ?? Infinity)) {
         needs.set(id, { floor, osm: deck.osm, room: underside - floor });
       }
     }
@@ -236,9 +232,6 @@ export function lowerUnderBridges<T extends Way>(
         }
       }
       const wrong = cut.some((id) => {
-        if (tooDeep.has(id)) {
-          return true;
-        }
         const [w0, i0] = at.get(id) ?? [0, 0];
         const list = membersOf(id, w0, i0);
         // a way ending here and no other going on

@@ -88,14 +88,17 @@ test("under an outline the deck is the one built there: lower than its bridge wa
   assert.equal(lowerUnderBridges(left, [left[0]], [outline], () => 98, undefined, undefined, [built]), 0);
 });
 
-test("a way that would go deeper than 3 m, or ends under the bridge, is left as it is", () => {
+test("a way whose room would need a cut deeper than 3 m goes down 3 m even where that leaves it less than a bus's; one ending under the bridge is left as it is", () => {
   const deck = bridge();
   const deep = road("w2", [[0, -60], [0, 60]], { kind: "primary" });
   const ending = road("w3", [[10, -60], [10, 1]], { kind: "footway", width: 2.5 });
   const ways = [deck, deep, ending];
-  // a road needs 4.2 m and the deck's 1 m: 94.8, 4.2 m under the ground at 99
-  assert.equal(lowerUnderBridges(ways, [deck], [], () => 99), 0);
-  assert.equal(ways.length, 3);
+  // a road needs 4.2 m and the deck's 1 m: 94.8, 4.2 m under the ground at 99; 3 m deep, at 96, it has 3 m
+  assert.equal(lowerUnderBridges(ways, [deck], [], () => 99), 1);
+  const cut = ways.find((w) => w.osm === "w2" && w.floor);
+  assert.ok(cut?.floor && cut.room !== undefined);
+  assert.ok(Math.abs(Math.min(...cut.floor) - 96) < 1e-9);
+  assert.ok(Math.abs(cut.room - 3) < 1e-9);
   assert.equal(ending.floor, undefined);
 });
 
