@@ -294,12 +294,17 @@ function setRoomWalls(rooms: PassageRoom[]): void {
     quads.flatMap((others, o) =>
       o !== r && others.some((quad) => pointInRing(p, quad) || nearestOnLine([...quad, quad[0]], p).distance <= NEAR_ROOMS_M) ? [o] : [],
     );
-  // a piece of wall all within NEAR_ROOMS_M of other rooms, its ends of different ones: a gap between them
+  // a piece of wall all within NEAR_ROOMS_M of other rooms, its ends of different ones: a gap between them; not of a
+  // room over this one at the piece, on its side of it (the room is on the wall's right), which is no gap
   const between = ([a, b]: [Point, Point], r: number) => {
-    const steps = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (NEAR_ROOMS_M / 2));
+    const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const steps = Math.ceil(length / (NEAR_ROOMS_M / 2));
     const at = (k: number): Point => [a[0] + ((b[0] - a[0]) * k) / steps, a[1] + ((b[1] - a[1]) * k) / steps];
-    const [first, last] = [near(a, r), near(b, r)];
-    return first.some((p) => last.some((q) => q !== p)) && Array.from({ length: steps - 1 }, (_, k) => at(k + 1)).every((p) => near(p, r).length > 0);
+    const inside: Point = [(a[0] + b[0]) / 2 + ((b[1] - a[1]) / length) * BEHIND_WALL_M, (a[1] + b[1]) / 2 - ((b[0] - a[0]) / length) * BEHIND_WALL_M];
+    const over = new Set(quads.flatMap((others, o) => (o !== r && others.some((quad) => pointInRing(inside, quad)) ? [o] : [])));
+    const around = (p: Point) => near(p, r).filter((o) => !over.has(o));
+    const [first, last] = [around(a), around(b)];
+    return first.some((p) => last.some((q) => q !== p)) && Array.from({ length: steps - 1 }, (_, k) => at(k + 1)).every((p) => around(p).length > 0);
   };
   rooms.forEach((room, r) => {
     const { sections, closed } = room;

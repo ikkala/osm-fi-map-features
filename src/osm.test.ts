@@ -897,6 +897,22 @@ test("a way through a building gets a room walled off from the building's inside
     ],
   );
 
+  // a short way from the wall to where a passage starts inside, and another over it the other way: rooms over each
+  // other at the mouth, whose sides no other room is behind, keep them
+  const stub = building([[0, 0], [20, 0], [20, 10], [0, 10]]);
+  openPassages(
+    [stub],
+    [
+      { line: [[0, 5], [1, 5]], width: 2.8, height: 3 },
+      { line: [[1, 5], [25, 5]], width: 3.2, height: 3 },
+      { line: [[1, 5], [-1, 5]], width: 2.8, height: 3 },
+    ],
+  );
+  const mouthSides = (walls: Point[][]) => walls.filter(([a, b]) => a[1] === b[1] && Math.max(a[0], b[0]) <= 1 && Math.abs(Math.abs(a[1] - 5) - 1.4) < 0.01);
+  for (const room of [rooms(stub)[0], rooms(stub)[2]]) {
+    assert.equal(mouthSides(room.walls.map((w) => [[w[0], w[1]], [w[2], w[3]]])).length, 2, `walls ${JSON.stringify(room.walls)}`);
+  }
+
   // ways along each other a little apart (a walk beside steps, a rail between them) are one space: their rooms meet
   // halfway, no walls between them, the same ceiling
   const beside = building([[0, 0], [20, 0], [20, 10], [0, 10]]);
