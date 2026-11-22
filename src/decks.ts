@@ -3,8 +3,10 @@
 // outline is triangulated in short pieces with the deck's heights so the area between the ways, and trees and
 // lamps on it, have a deck.
 import { crests, deckAt, pointAlong, rounded, upperHull } from "./bridges.ts";
-import { dedupe, distanceToSegment, nearestOnLine, nearestOnSegment, nearestPlace, orientedBox, pointInPolygon, pointInRing, ringArea, triangulate, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
-import { bounds, crossing, NOT_FOR_VEHICLES, type BridgeDeck, type BridgeOutline } from "./osm.ts";
+import { crossing, dedupe, distanceToSegment, nearestOnLine, nearestOnSegment, nearestPlace, orientedBox, pointInPolygon, pointInRing, ringArea, triangulate, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
+import { DeckIndex } from "./deckIndex.ts";
+import { bounds, type BridgeDeck, type BridgeOutline } from "./osm.ts";
+import { GRADE, RAIL_WIDTH_M, WALKWAYS } from "./ways.ts";
 
 /** A road or railway: a bridge's (bridge, deck) or not */
 export interface DeckLine {
@@ -28,8 +30,7 @@ const SHARED_M = 0.01;
 const END_REACH_M = 5;
 /** A way leading on meets a deck less than this (m) off as it is */
 const MEET_M = 0.05;
-/** A way on the ground leading on ramps to a deck no steeper than this unless given its own, with a point this often (m) */
-const RAMP_GRADE = 0.06;
+/** A way on the ground leading on ramps to a deck with a point this often (m) */
 const RAMP_STEP_M = 2;
 /** The highest deck within this (m) of an end is the deck's height there, and past the ends it goes on at its slope
  * over this much more (m) */
@@ -52,14 +53,13 @@ const LANDMARK_MOVE_M = 2;
 const LANDMARK_ROOM_M = 1;
 /** The places looked at for it are this far (m) apart */
 const LANDMARK_STEP_M = 0.1;
-/** A deck's way this near (m) a landmark's level is at it, and a track's width (m) */
+/** A deck's way this near (m) a landmark's level is at it */
 const LANDMARK_LEVEL_M = 1.5;
-const RAIL_WIDTH_M = 3;
 
 /**
  * Unifies the decks of the bridge ways on each outline into one straight deck, and has the ways leading on from
  * them meet it: a way with a deck (an approach) is tilted to it, and a way on the ground gets a ramp split off it
- * (a deck up to it, or a floor in a cut down to it) no steeper than gradeOf, pushed onto lines. heightAt takes
+ * (a deck up to it, or a floor in a cut down to it) no steeper than gradeOf (a road's GRADE unless given), pushed onto lines. heightAt takes
  * meters east / north; without it the ways on the ground are left as they are. Past the ends of the ways on an
  * outline its deck follows the ways leading on, and leaves out where they are on the ground. Returns the outlines'
  * deck pieces and how many ways were on them.
@@ -68,7 +68,7 @@ export function setOutlineDecks<T extends DeckLine>(
   outlines: BridgeOutline[],
   lines: T[],
   heightAt?: (e: number, n: number) => number | undefined,
-  gradeOf: (line: T) => number = () => RAMP_GRADE,
+  gradeOf: (line: T) => number = () => GRADE.vehicles,
 ): { decks: BridgeDeck[]; ways: number } {
   const decks: BridgeDeck[] = [];
   const on = new Set<T>();
@@ -692,24 +692,6 @@ interface IndexedDeck {
   box: ReturnType<typeof bounds>;
 }
 
-/** The deck's height at a point on a piece of a deck (between its triangles' corners), or undefined off the pieces */
-function heightOnDecks(decks: IndexedDeck[], p: Point): number | undefined {
-  for (const { deck, box } of decks) {
-    if (p[0] < box.minX || p[0] > box.maxX || p[1] < box.minY || p[1] > box.maxY) {
-      continue;
-    }
-    const { triangles, vertices } = deck;
-    for (let i = 0; i + 2 < triangles.length; i += 3) {
-      const [a, b, c] = [triangles[i], triangles[i + 1], triangles[i + 2]];
-      const weights = barycentric(p, vertices[a], vertices[b], vertices[c]);
-      if (weights && weights.every((w) => w >= -1e-6)) {
-        return weights[0] * deck.heights[a] + weights[1] * deck.heights[b] + weights[2] * deck.heights[c];
-      }
-    }
-  }
-  return undefined;
-}
-
 function indexDecks(decks: BridgeDeck[]): IndexedDeck[] {
   return decks.map((deck) => ({ deck, box: bounds(deck.vertices) }));
 }
@@ -765,25 +747,25 @@ interface ClearWay {
  * LANDMARK_ROOM_M of the deck all round it, clear of the ways (the middle of those as near, straight in from an edge),
  * else `near`, a point of a deck, when it is clear of them; undefined when neither is
  */
-function landmarkPlace(decks: IndexedDeck[], ways: ClearWay[], p: Point, near: Point): { point: Point; height: number } | undefined {
+function landmarkPlace(decks: DeckIndex, ways: ClearWay[], p: Point, near: Point): { point: Point; height: number } | undefined {
   const clear = (q: Point, height: number) =>
     ways.every((w) => {
       const { point, distance } = nearestOnLine(w.line, q);
       return distance >= w.half + LANDMARK_ROOM_M || Math.abs(deckAt(w.line, w.deck, point) - height) > LANDMARK_LEVEL_M;
     });
   const roomy = (q: Point) => {
-    const height = heightOnDecks(decks, q);
+    const height = decks.built(q)?.deck;
     const ok =
       height !== undefined &&
       clear(q, height) &&
-      ROUND.every(([x, y]) => heightOnDecks(decks, [q[0] + x * LANDMARK_ROOM_M, q[1] + y * LANDMARK_ROOM_M]) !== undefined);
+      ROUND.every(([x, y]) => decks.built([q[0] + x * LANDMARK_ROOM_M, q[1] + y * LANDMARK_ROOM_M]) !== undefined);
     return ok ? { point: q, height } : undefined;
   };
   const place = nearestPlace(p, LANDMARK_MOVE_M, LANDMARK_STEP_M, roomy);
   if (place) {
     return place;
   }
-  const height = heightOnDecks(decks, near);
+  const height = decks.built(near)?.deck;
   return height !== undefined && clear(near, height) ? { point: near, height } : undefined;
 }
 
@@ -806,10 +788,11 @@ export function standOnDecks(
   rails: { line: Point[]; deck?: number[] }[] = [],
 ): { trees: number; lamps: number; play: number; landmarks: number; aside: number } {
   const index = indexDecks(decks);
+  const pieces = new DeckIndex([], [], decks);
   const stand = (list: Standing) => {
     let count = 0;
     for (const item of list) {
-      const height = item.base === undefined ? heightOnDecks(index, item.point) : undefined;
+      const height = item.base === undefined ? pieces.built(item.point)?.deck : undefined;
       if (height !== undefined) {
         item.base = height;
         count++;
@@ -819,7 +802,7 @@ export function standOnDecks(
   };
   const ways: ClearWay[] = [];
   for (const { kind, width, line, deck } of roads) {
-    if (deck && !NOT_FOR_VEHICLES.has(kind)) {
+    if (deck && !WALKWAYS.has(kind)) {
       ways.push({ line, deck, half: width / 2, box: bounds(line) });
     }
   }
@@ -836,9 +819,8 @@ export function standOnDecks(
     }
     const p = landmark.point;
     const reach = LANDMARK_MOVE_M + LANDMARK_ROOM_M;
-    const around = index.filter(({ box }) => p[0] >= box.minX - reach && p[0] <= box.maxX + reach && p[1] >= box.minY - reach && p[1] <= box.maxY + reach);
     if (landmark.outline) {
-      const height = heightOnDecks(around, p);
+      const height = pieces.built(p)?.deck;
       if (height !== undefined) {
         landmark.base = height;
         onDecks++;
@@ -846,7 +828,7 @@ export function standOnDecks(
       return true;
     }
     const nearWays = ways.filter(({ box, half }) => p[0] >= box.minX - reach - half && p[0] <= box.maxX + reach + half && p[1] >= box.minY - reach - half && p[1] <= box.maxY + reach + half);
-    const place = landmarkPlace(around, nearWays, p, near.point);
+    const place = landmarkPlace(pieces, nearWays, p, near.point);
     if (!place) {
       aside++;
       return false;

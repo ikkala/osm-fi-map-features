@@ -97,3 +97,11 @@ test("a retaining wall the model has no step at, and other barriers, leave the g
   assert.ok(groundSteps([wall("w1", [[0, 0], [40, 0]])], flat).every((s) => s.footOut === 0 && s.topIn === 0));
   assert.deepEqual(groundSteps([{ ...wall("w2", [[0, 0], [40, 0]]), kind: "wall" }], blurred), []);
 });
+
+test("a wall drawn round its body, one face there and the other back, has each face's own low side", () => {
+  // the wall's faces along n = -1 going east and along n = 1 going west, the ground low south of it, high north
+  const steps = groundSteps([wall("w1", [[0, -1], [40, -1], [40, 1], [0, 1]])], blurred);
+  const lows = (n: number) => new Set(steps.filter((s) => s.a[1] === n && s.b[1] === n).map((s) => s.low));
+  assert.deepEqual([...lows(-1)], [-1]);
+  assert.deepEqual([...lows(1)], [1]);
+});

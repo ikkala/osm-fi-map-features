@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { openPassages, type Building } from "./osm.ts";
+import type { Building } from "./osm.ts";
+import { openPassages } from "./passages.ts";
 import { matchOpeningsToRooms, passagesUpSlopes, raisePassages } from "./raisedPassages.ts";
 
 function block(): Building {
@@ -20,7 +21,7 @@ test("a way on a deck through a building opens its walls and its room from the d
   const building = block();
   const line: [number, number][] = [[-3, 0], [15, 0]];
   openPassages([building], [{ line, width: 2.5, height: 2.7 }]);
-  raisePassages([building], [{ line, width: 2.5, deck: [89.5, 89.8] }]);
+  raisePassages([building], [{ osm: "w2", kind: "footway", layer: 1, bridge: false, tunnel: false, line, width: 2.5, deck: [89.5, 89.8] }]);
   const grounds = (building.passages ?? []).map((o) => Math.round((o.ground ?? 0) * 100) / 100).sort();
   assert.deepEqual(grounds, [89.55, 89.75]);
   assert.ok((building.passageRooms ?? []).length > 0);
@@ -33,7 +34,7 @@ test("a way on the ground through a building leaves its openings at the base", (
   const building = block();
   const line: [number, number][] = [[-3, 0], [15, 0]];
   openPassages([building], [{ line, width: 2.5, height: 2.7 }]);
-  raisePassages([building], [{ line: [[-3, 20], [15, 20]], width: 2.5, deck: [89.5, 89.8] }]);
+  raisePassages([building], [{ osm: "w2", kind: "footway", layer: 1, bridge: false, tunnel: false, line: [[-3, 20], [15, 20]], width: 2.5, deck: [89.5, 89.8] }]);
   assert.ok((building.passages ?? []).every((o) => o.ground === undefined));
 });
 

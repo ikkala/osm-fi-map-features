@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Point, Polygon } from "./geometry.ts";
-import { parseOsm, type OverpassResponse, type PlayEquipment } from "./osm.ts";
+import { type OverpassResponse, type PlayEquipment } from "./osm.ts";
 import { parsePlayEquipment, placePlayEquipment } from "./playgrounds.ts";
 import { LocalProjection } from "./projection.ts";
-import { defined } from "./testing.ts";
+import { defined, parseWorld } from "./testing.ts";
 
 const ORIGIN = { latitude: 61.5, longitude: 23.76 };
 const projection = new LocalProjection(ORIGIN);
@@ -78,7 +78,7 @@ test("nodes of a kind mapped twice become one in their middle, keeping the tags 
 
 test("a playground's outline is kept for its equipment to line up with, and its ground is sand", () => {
   const ring = [latLon([0, 0]), latLon([10, 0]), latLon([10, 8]), latLon([0, 8]), latLon([0, 0])];
-  const { features, playgrounds } = parseOsm([{ type: "way", id: 5, tags: { leisure: "playground" }, geometry: ring }], ORIGIN);
+  const { features, playgrounds } = parseWorld([{ type: "way", id: 5, tags: { leisure: "playground" }, geometry: ring }], ORIGIN);
   assert.deepEqual(playgrounds.map((p) => p.outer.length), [4]);
   assert.deepEqual(features.areas.map((a) => [a.osm, a.kind]), [["w5", "sand"]]);
 });

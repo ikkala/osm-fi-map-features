@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildingSteps, cutBuildingSteps } from "./buildingSteps.ts";
+import { buildingSteps } from "./buildingSteps.ts";
 import type { Point } from "./geometry.ts";
 import type { Building } from "./osm.ts";
-import { REACH_M, stepAtWalls } from "./retainingWalls.ts";
-import { cutIntoTiles, tileName } from "./tiles.ts";
+import { stepAtWalls } from "./retainingWalls.ts";
 
 function building(osm: string, outer: Point[], extra: Partial<Building> = {}): Building {
   return { osm, kind: "yes", part: false, hasParts: false, height: 9, minHeight: 0, polygon: { outer, holes: [] }, ...extra };
@@ -91,15 +90,4 @@ test("a wall is not stepped where a way goes through it, nor where another build
   assert.ok(middles.some((e) => e > 29 && e < 31));
   // the stretches go from a to b with the building on the left
   assert.ok(steps.every((s) => s.a[0] < s.b[0] && s.low === -1));
-});
-
-test("a tile gets the stretches within reach of it, the tiles' around too", () => {
-  const steps = buildingSteps([building("w1", box)], [], hill);
-  const empty = { roads: [], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], playEquipment: [], bridgeDecks: [] };
-  const tiles = new Map(cutIntoTiles(empty, [{ x: 0, y: 0 }, { x: 0, y: -1 }, { x: 0, y: -2 }], 100).map((tile) => [tileName(tile), tile]));
-  cutBuildingSteps(tiles, steps, 100);
-  assert.equal(tiles.get("0_0")?.buildingSteps?.length, steps.length);
-  // the south wall's, and the side walls' up to REACH_M north of the edge
-  assert.equal(tiles.get("0_-1")?.buildingSteps?.length, steps.filter((s) => Math.min(s.a[1], s.b[1]) < REACH_M).length);
-  assert.equal(tiles.get("0_-2")?.buildingSteps, undefined);
 });

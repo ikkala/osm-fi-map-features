@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseOsm, type Area, type Building, type MapFeatures, type OverpassResponse } from "./osm.ts";
+import { type Area, type Building, type MapFeatures, type OverpassResponse } from "./osm.ts";
 import { pitchBoxes, setLevelTops, type Pitch } from "./pitches.ts";
 import { cutIntoTiles } from "./tiles.ts";
 import { LocalProjection } from "./projection.ts";
-import { defined } from "./testing.ts";
+import { defined, parseWorld } from "./testing.ts";
 
 const origin = { latitude: 61.5, longitude: 23.75 };
 const projection = new LocalProjection(origin);
@@ -41,7 +41,7 @@ test("pitches outdoors mapped as rectangles get their sports and the box they fi
       { type: "way", id: 8, tags: { leisure: "pitch", sport: "boules" }, geometry: rectangle(500, 0, 3, 2) },
     ],
   };
-  const { features, pitches } = parseOsm(response.elements, origin);
+  const { features, pitches } = parseWorld(response.elements, origin);
   assert.deepEqual(pitches.map((p) => [p.osm, p.sports, p.indoor]), [
     ["w1", ["soccer", "ice_hockey"], false],
     ["w2", ["tennis"], false],

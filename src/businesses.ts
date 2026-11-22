@@ -4,7 +4,6 @@
 import { nearestOnSegment, pointInPolygon, ringArea, type Point, type Ring } from "./geometry.ts";
 import {
   bounds,
-  NOT_FOR_VEHICLES,
   type Building,
   type Business,
   type BusinessCategory,
@@ -14,6 +13,7 @@ import {
   type Road,
 } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
+import { WALKWAYS } from "./ways.ts";
 
 /** The amenity=*, tourism=* and leisure=* values that are businesses; the rest (benches, parking, parks, ...) are not */
 const AMENITIES = [
@@ -105,7 +105,7 @@ export function placeBusinesses(buildings: Building[], businesses: Business[], r
   }
   const streetCells = new Cells<Road>();
   for (const road of roads) {
-    if (!road.tunnel && road.line.length >= 2 && (road.kind === "pedestrian" || !NOT_FOR_VEHICLES.has(road.kind))) {
+    if (!road.tunnel && road.line.length >= 2 && (road.kind === "pedestrian" || !WALKWAYS.has(road.kind))) {
       streetCells.add(road, bounds(road.line));
     }
   }

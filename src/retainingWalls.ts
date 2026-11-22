@@ -16,6 +16,8 @@ const WALL_REACH_M = 12;
 export const FLAT_M = 0.2;
 /** A stretch steps the ground only where its sides differ at least this much (m) */
 export const MIN_STEP_M = 0.5;
+/** A wall turning more than this (rad) between two of its segments starts another leg, which has its own low side */
+const LEG_TURN_RAD = Math.PI / 3;
 /** At a wall's free end the step eases in over this length (m) */
 const EASE_M = 4;
 /**
@@ -86,7 +88,7 @@ export function groundSteps(barriers: readonly Barrier[], heightAt: (e: number, 
     const total = lengths[lengths.length - 1];
     const [freeStart, freeEnd] = [free(line[0]), free(line[line.length - 1])];
     const share = (d: number) => Math.min(1, freeStart ? d / EASE_M : 1, freeEnd ? (total - d) / EASE_M : 1);
-    const stretches: { a: Point; b: Point; left: number[]; right: number[]; shareA: number; shareB: number }[] = [];
+    const stretches: { a: Point; b: Point; left: number[]; right: number[]; shareA: number; shareB: number; segment: number }[] = [];
     for (let i = 1; i < line.length; i++) {
       const [a, b] = [line[i - 1], line[i]];
       const length = lengths[i] - lengths[i - 1];
@@ -111,14 +113,28 @@ export function groundSteps(barriers: readonly Barrier[], heightAt: (e: number, 
           }
           return heights;
         };
-        stretches.push({ a: p0, b: p1, left: out(1), right: out(-1), shareA: share(lengths[i - 1] + length * t0), shareB: share(lengths[i - 1] + length * t1) });
+        stretches.push({ a: p0, b: p1, left: out(1), right: out(-1), shareA: share(lengths[i - 1] + length * t0), shareB: share(lengths[i - 1] + length * t1), segment: i });
       }
     }
-    // the low side is the wall's, from the ground a few meters out along all of it
+    // the low side is each of the wall's legs', from the ground a few meters out along it: a wall drawn round its
+    // body, its faces one way and back, holds up the ground on a side of each face of its own. A leg ends where the
+    // wall turns more than LEG_TURN_RAD.
     const near = (heights: number[]) => heights[Math.min(heights.length - 1, 3)];
-    const lean = stretches.reduce((sum, s) => (s.left.length > 0 && s.right.length > 0 ? sum + near(s.left) - near(s.right) : sum), 0);
-    const low = lean < 0 ? 1 : -1;
+    const legOf = [0, 0];
+    for (let i = 2; i < line.length; i++) {
+      const [a, b, c] = [line[i - 2], line[i - 1], line[i]];
+      const [u, v] = [Math.atan2(b[1] - a[1], b[0] - a[0]), Math.atan2(c[1] - b[1], c[0] - b[0])];
+      const turn = Math.abs(Math.atan2(Math.sin(v - u), Math.cos(v - u)));
+      legOf.push(legOf[i - 1] + (turn > LEG_TURN_RAD ? 1 : 0));
+    }
+    const leans = new Map<number, number>();
     for (const s of stretches) {
+      if (s.left.length > 0 && s.right.length > 0) {
+        leans.set(legOf[s.segment], (leans.get(legOf[s.segment]) ?? 0) + near(s.left) - near(s.right));
+      }
+    }
+    for (const s of stretches) {
+      const low = (leans.get(legOf[s.segment]) ?? 0) < 0 ? 1 : -1;
       const [down, up] = low === 1 ? [s.left, s.right] : [s.right, s.left];
       const footOut = slopeEnd(down, -1, LEAD_M);
       const topIn = slopeEnd(up, 1);

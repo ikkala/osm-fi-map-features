@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseOsm, type OverpassResponse, type Road } from "./osm.ts";
+import { parseWorld } from "./testing.ts";
+import { type OverpassResponse, type Road } from "./osm.ts";
 import { LocalProjection } from "./projection.ts";
 import { dropStepsInParts, setStaircaseDecks } from "./stairs.ts";
 
@@ -33,7 +34,7 @@ const way = (id: number, highway: string, points: [number, number][]): OverpassR
 });
 
 test("ways of steps inside steps mapped as a building part are left out: the part shows the steps", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       stepsPart(1, 0),
       // up the middle between points of the outline, and one ending 0.2 m out of it

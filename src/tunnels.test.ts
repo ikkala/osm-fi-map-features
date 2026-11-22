@@ -3,7 +3,8 @@ import { test } from "node:test";
 import type { Point, Polygon } from "./geometry.ts";
 import type { Building, MapFeatures, Rail, Road } from "./osm.ts";
 import { defined } from "./testing.ts";
-import { BED_M, CAR_PARK_CLEARANCE_M, COVER_M, WALL_FOOTING_M, densify, fitRoomsUnderDecks, openPortals, portalWallsAt, RAIL_CLEARANCE_M, raiseToWalls, ROAD_CLEARANCE_M, roomHeight, ROOF_M, setTunnelFloors, setTunnelRooms, uncoverAtGrade, WATER_DEPTH_M } from "./tunnels.ts";
+import { BED_M, CAR_PARK_CLEARANCE_M, COVER_M, WALL_FOOTING_M, densify, fitRoomsUnderDecks, openPortals, portalWallsAt, raiseToWalls, roomHeight, setTunnelFloors, setTunnelRooms, uncoverAtGrade, WATER_DEPTH_M } from "./tunnels.ts";
+import { CLEARANCE_M, ROOF_M } from "./ways.ts";
 
 function road(osm: string, line: Point[], extra: Partial<Road> = {}): Road {
   return { osm, kind: "primary", width: 8, layer: 0, bridge: false, tunnel: false, line, ...extra };
@@ -46,9 +47,9 @@ test("vehicles' tunnels meeting at their points get a room as tall as their tall
   assert.equal(setTunnelRooms([entrance, aisle, other, walkway, beside, apart, tall, low, street]), 6);
   assert.deepEqual(
     [entrance, aisle, other, walkway, beside, apart, tall, low, street].map(roomHeight),
-    [2.5, 2.5, 2.5, 2.5, 2.5, 3, ROAD_CLEARANCE_M, 2.2, ROAD_CLEARANCE_M],
+    [2.5, 2.5, 2.5, 2.5, 2.5, 3, CLEARANCE_M.vehicles, 2.2, CLEARANCE_M.vehicles],
   );
-  assert.equal(roomHeight({ osm: "w8", kind: "rail", layer: -1, bridge: false, tunnel: true, line: [] }), RAIL_CLEARANCE_M);
+  assert.equal(roomHeight({ osm: "w8", kind: "rail", layer: -1, bridge: false, tunnel: true, line: [] }), CLEARANCE_M.trains);
 });
 
 test("a low tunnel under a low hill stays at its portals' level, where a road's full room would sink it", () => {
@@ -61,7 +62,7 @@ test("a low tunnel under a low hill stays at its portals' level, where a road's 
     return defined(tunnel.floor);
   };
   assert.equal(Math.round(Math.min(...floors({ maxHeight: 2.3 })) * 10) / 10, 100);
-  assert.ok(Math.min(...floors({})) < 104 - ROAD_CLEARANCE_M - ROOF_M + 0.1);
+  assert.ok(Math.min(...floors({})) < 104 - CLEARANCE_M.vehicles - ROOF_M + 0.1);
 });
 
 test("a corridor on from a tunnel's end rises out of it as stairs do, and does not lift its floor to the ground", () => {
@@ -138,7 +139,7 @@ test("the floor sinks under a dip in the ground, no steeper than a road tunnel, 
   const tunnel = road("w1", [[0, 0], [300, 0]], { tunnel: true, layer: -2 });
   setTunnelFloors(features([road("w2", [[-50, 0], [0, 0]]), tunnel, road("w3", [[300, 0], [350, 0]])]), ground);
   const floor = defined(tunnel.floor);
-  const deepest = 102 - ROAD_CLEARANCE_M - ROOF_M - COVER_M;
+  const deepest = 102 - CLEARANCE_M.vehicles - ROOF_M - COVER_M;
   assert.equal(Math.round(Math.min(...floor) * 10) / 10, deepest);
   assert.deepEqual([floor[0], floor[floor.length - 1]], [100, 100]);
   for (let i = 1; i < floor.length; i++) {
@@ -153,7 +154,7 @@ test("past a dip the floor keeps a steady grade to the portal rather than rising
   const tunnel = road("w1", [[0, 0], [400, 0]], { tunnel: true, layer: -2 });
   setTunnelFloors(features([road("w2", [[-50, 0], [0, 0]]), tunnel, road("w3", [[400, 0], [450, 0]])]), ground);
   const floor = defined(tunnel.floor);
-  const deepest = 96 - ROAD_CLEARANCE_M - ROOF_M - COVER_M;
+  const deepest = 96 - CLEARANCE_M.vehicles - ROOF_M - COVER_M;
   assert.equal(Math.round(Math.min(...floor) * 10) / 10, deepest);
   // down to the dip and up from it, never down again: no point is over the line between its neighbours
   const low = floor.indexOf(Math.min(...floor));
@@ -176,7 +177,7 @@ test("a tunnel under another one crossing over it runs with its roof under the o
   setTunnelFloors(features(ways), ground);
   const at = (way: Road, e: number, n: number) => defined(way.floor)[way.line.findIndex((p) => p[0] === e && p[1] === n)];
   for (const e of [100, 110]) {
-    assert.ok(at(lower, e, 0) + ROAD_CLEARANCE_M + ROOF_M <= at(upper, 105, 0) + 1e-6, `${at(lower, e, 0)} under ${at(upper, 105, 0)}`);
+    assert.ok(at(lower, e, 0) + CLEARANCE_M.vehicles + ROOF_M <= at(upper, 105, 0) + 1e-6, `${at(lower, e, 0)} under ${at(upper, 105, 0)}`);
   }
 });
 
@@ -283,7 +284,7 @@ test("under water the floor is deeper by the water's depth and a bed over the ro
   const map = features([road("w2", [[-50, 0], [0, 0]]), tunnel, road("w3", [[300, 0], [350, 0]])]);
   map.areas.push({ osm: "w4", kind: "water", polygon: lake });
   setTunnelFloors(map, () => 100);
-  assert.equal(Math.round(Math.min(...defined(tunnel.floor)) * 10) / 10, 100 - ROAD_CLEARANCE_M - ROOF_M - COVER_M - WATER_DEPTH_M - BED_M);
+  assert.equal(Math.round(Math.min(...defined(tunnel.floor)) * 10) / 10, 100 - CLEARANCE_M.vehicles - ROOF_M - COVER_M - WATER_DEPTH_M - BED_M);
 });
 
 test("water over only the side of a tunnel's room takes it under the water's surface there", () => {
@@ -293,7 +294,7 @@ test("water over only the side of a tunnel's room takes it under the water's sur
   const map = features([road("w2", [[-50, 0], [0, 0]]), tunnel, road("w3", [[300, 0], [350, 0]])]);
   map.areas.push({ osm: "w4", kind: "water", polygon: river });
   setTunnelFloors(map, (_, n) => (n < -3 ? 96 : 100));
-  assert.equal(Math.round(Math.min(...defined(tunnel.floor)) * 10) / 10, 96 - ROAD_CLEARANCE_M - ROOF_M - COVER_M - WATER_DEPTH_M - BED_M);
+  assert.equal(Math.round(Math.min(...defined(tunnel.floor)) * 10) / 10, 96 - CLEARANCE_M.vehicles - ROOF_M - COVER_M - WATER_DEPTH_M - BED_M);
 });
 
 test("tunnels on level ground run at the ground: railways anywhere, roads and paths under buildings", () => {
@@ -314,12 +315,12 @@ test("tunnels on level ground run at the ground: railways anywhere, roads and pa
   assert.equal(uncoverAtGrade(map, level), 2);
   assert.deepEqual([railway.tunnel, underArena.tunnel, underStreet.tunnel, deep.tunnel], [false, false, true, true]);
   // the arena's walls open for the railway, as tall as a railway tunnel's room
-  assert.ok(arena.passages?.some((o) => o.height === RAIL_CLEARANCE_M));
+  assert.ok(arena.passages?.some((o) => o.height === CLEARANCE_M.trains));
   // the roof over the railway becomes a deck over its room, without the posts of a roof
-  assert.deepEqual([deck.shelter, deck.minHeight, deck.height], [undefined, RAIL_CLEARANCE_M, RAIL_CLEARANCE_M + ROOF_M]);
+  assert.deepEqual([deck.shelter, deck.minHeight, deck.height], [undefined, CLEARANCE_M.trains, CLEARANCE_M.trains + ROOF_M]);
   // the arena, raised 3 m off the ground in OSM, starts over the railway's room, its top where it was
-  assert.deepEqual([arena.minHeight, arena.height], [RAIL_CLEARANCE_M, 20]);
-  assert.deepEqual([house.minHeight, house.height], [RAIL_CLEARANCE_M, 24]);
+  assert.deepEqual([arena.minHeight, arena.height], [CLEARANCE_M.trains, 20]);
+  assert.deepEqual([house.minHeight, house.height], [CLEARANCE_M.trains, 24]);
   // under a hill a railway stays in its tunnel
   const underHill: Rail = { ...railway, tunnel: true };
   assert.equal(uncoverAtGrade(features([], [underHill]), hill), 0);
@@ -387,13 +388,13 @@ test("a way beside a tunnel under an open roof over its portal is not over it: t
     return round(tunnel.floor)?.[0];
   };
   const roof = (outer: Point[]): Building => ({ osm: "w4", kind: "roof", part: false, hasParts: false, height: 5, minHeight: 0, shelter: "roof", polygon: { outer, holes: [] } });
-  assert.equal(floorWith([]), 100 - ROAD_CLEARANCE_M - ROOF_M - COVER_M);
+  assert.equal(floorWith([]), 100 - CLEARANCE_M.vehicles - ROOF_M - COVER_M);
   assert.equal(floorWith([roof([[0, -3], [20, -3], [20, 3], [0, 3]])]), 100);
   // a roof over the tunnel's middle only, over its end where no way leads on, or over its portal but not most of
   // it (the inside of a building going on), covers no ramp
-  assert.equal(floorWith([roof([[-2, -3], [8, -3], [8, 3], [-2, 3]])], 6), 100 - ROAD_CLEARANCE_M - ROOF_M - COVER_M);
-  assert.equal(floorWith([roof([[5, -3], [15, -3], [15, 3], [5, 3]])]), 100 - ROAD_CLEARANCE_M - ROOF_M - COVER_M);
-  assert.equal(floorWith([roof([[15, -3], [20, -3], [20, 3], [15, 3]])]), 100 - ROAD_CLEARANCE_M - ROOF_M - COVER_M);
+  assert.equal(floorWith([roof([[-2, -3], [8, -3], [8, 3], [-2, 3]])], 6), 100 - CLEARANCE_M.vehicles - ROOF_M - COVER_M);
+  assert.equal(floorWith([roof([[5, -3], [15, -3], [15, 3], [5, 3]])]), 100 - CLEARANCE_M.vehicles - ROOF_M - COVER_M);
+  assert.equal(floorWith([roof([[15, -3], [20, -3], [20, 3], [15, 3]])]), 100 - CLEARANCE_M.vehicles - ROOF_M - COVER_M);
 });
 
 test("a roof over stairs up out of a tunnel (a platform's) covers no cut", () => {
@@ -425,7 +426,7 @@ test("a tunnel's floor under a wavy hill does not rise with its waves, and is de
   // deep enough everywhere: the room and roof under the ground around each point
   for (const [i, [e]] of tunnel.line.entries()) {
     if (e > 30 && e < 170) {
-      assert.ok(floor[i] <= Math.min(ground(e - 5), ground(e), ground(e + 5)) - ROAD_CLEARANCE_M - ROOF_M + 1e-9);
+      assert.ok(floor[i] <= Math.min(ground(e - 5), ground(e), ground(e + 5)) - CLEARANCE_M.vehicles - ROOF_M + 1e-9);
     }
   }
 });
@@ -725,8 +726,8 @@ test("the tunnels going down into a car park under a building get a car park's r
     return [ramp, corridor].map(roomHeight);
   };
   assert.deepEqual(map("service", true), [CAR_PARK_CLEARANCE_M, CAR_PARK_CLEARANCE_M]);
-  assert.deepEqual(map("residential", true), [ROAD_CLEARANCE_M, 3]);
-  assert.deepEqual(map("service", false), [ROAD_CLEARANCE_M, 3]);
+  assert.deepEqual(map("residential", true), [CLEARANCE_M.vehicles, 3]);
+  assert.deepEqual(map("service", false), [CLEARANCE_M.vehicles, 3]);
   // a ramp with a lane each way is two lanes wide in a car park; elsewhere its kind's width; a width OSM tags holds
   const ramp = (inHouse: boolean, tagged = false) => {
     const way = road("w1", [[0, 0], [25, 0]], { kind: "service", width: 4, tunnel: true, layer: -1, lanes: 2, ...(tagged && { widthTagged: true as const }) });

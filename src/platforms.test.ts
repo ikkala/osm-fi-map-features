@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { areaKind, parseOsm, type Area, type OverpassResponse, type Rail } from "./osm.ts";
+import { parseWorld } from "./testing.ts";
+import { areaKind, type Area, type OverpassResponse, type Rail } from "./osm.ts";
 import { setPlatformTops } from "./platforms.ts";
 import { LocalProjection } from "./projection.ts";
 
@@ -33,7 +34,7 @@ test("railway platforms are areas of their own, a multipolygon's holes kept", ()
       },
     ],
   };
-  const { features } = parseOsm(response.elements, origin);
+  const { features } = parseWorld(response.elements, origin);
   const platforms = features.areas.filter((a) => a.kind === "platform");
   assert.deepEqual(platforms.map((a) => a.osm), ["w1", "r2"]);
   assert.equal(platforms[1].polygon.holes.length, 1);

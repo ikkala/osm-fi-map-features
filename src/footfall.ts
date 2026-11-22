@@ -3,7 +3,8 @@
 // Counts, where a user has them, can pull the estimate towards them (flows.ts).
 import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
 import { distanceToSegment, nearestOnSegment, type Point } from "./geometry.ts";
-import { NOT_FOR_VEHICLES, type Building, type Road } from "./osm.ts";
+import { type Building, type Road } from "./osm.ts";
+import { WALKWAYS } from "./ways.ts";
 
 export type Mode = "walking" | "cycling";
 
@@ -123,7 +124,7 @@ function kindFactors(roads: Road[], mode: Mode): { factors: Map<Road, number>; s
   const factors = new Map<Road, number>();
   let separate = 0;
   for (const road of roads) {
-    const walkway = NOT_FOR_VEHICLES.has(road.kind);
+    const walkway = WALKWAYS.has(road.kind);
     const access = mode === "walking" ? road.foot : road.bicycle;
     let factor = mode === "walking" ? (WALKING_FACTORS[road.kind] ?? 0) : (CYCLING_FACTORS[road.kind] ?? 0);
     const sidepath = mode === "cycling" && access === "use_sidepath" && !walkway;

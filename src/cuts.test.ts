@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { coverCutTunnels, cutLid, fitLidsToDecks, LID_THICKNESS_M } from "./cuts.ts";
+import { coverCutTunnels, cutLid, fitLidsToDecks } from "./cuts.ts";
+import { LID_THICKNESS_M, LEAST_CLEARANCE_M, MIN_CLEARANCE_M } from "./ways.ts";
 import type { Point } from "./geometry.ts";
 import type { Building, MapFeatures, Rail, Road } from "./osm.ts";
 
@@ -18,13 +19,23 @@ function road(osm: string, line: Point[], extra: Partial<Road> = {}): Road {
 }
 
 test("cutLid covers a tunnel in a cut at the ground beside it, and not one under a hill", () => {
-  assert.deepEqual(cutLid([[10, 0], [50, 0]], cut), [102, 102]);
-  assert.equal(cutLid([[10, 0], [50, 0]], hill), undefined);
+  assert.deepEqual(cutLid([[10, 0], [50, 0]], cut, MIN_CLEARANCE_M.vehicles), [102, 102]);
+  assert.equal(cutLid([[10, 0], [50, 0]], hill, MIN_CLEARANCE_M.vehicles), undefined);
 });
 
 test("cutLid leaves room for vehicles under a lid over a shallow cut", () => {
   const shallow = (e: number, n: number) => (Math.abs(n) <= 4 ? 95 : 99);
-  assert.deepEqual(cutLid([[10, 0], [50, 0]], shallow), [95 + 3.5 + LID_THICKNESS_M, 95 + 3.5 + LID_THICKNESS_M]);
+  assert.deepEqual(cutLid([[10, 0], [50, 0]], shallow, MIN_CLEARANCE_M.vehicles), [95 + MIN_CLEARANCE_M.vehicles + LID_THICKNESS_M, 95 + MIN_CLEARANCE_M.vehicles + LID_THICKNESS_M]);
+});
+
+test("coverCutTunnels leaves each tunnel in a shallow cut its users' least room under the lid", () => {
+  const shallow = (e: number, n: number) => (Math.abs(n) <= 4 ? 95 : 99);
+  const path = road("w1", [[10, 0], [50, 0]], { kind: "footway", width: 2, layer: -1, tunnel: true });
+  const tram = rail("w2", [[10, 1], [50, 1]], { kind: "tram", layer: -1, tunnel: true });
+  const features: MapFeatures = { roads: [path], rails: [tram], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], playEquipment: [], bridgeDecks: [] };
+  coverCutTunnels(features, shallow);
+  assert.deepEqual(path.lid, [99, 99]);
+  assert.deepEqual(tram.lid, [95 + MIN_CLEARANCE_M.trams + LID_THICKNESS_M, 95 + MIN_CLEARANCE_M.trams + LID_THICKNESS_M]);
 });
 
 test("coverCutTunnels gives the tunnel a lid, makes the ways over it bridges and opens walls over it", () => {
@@ -59,7 +70,7 @@ test("a tunnel beside one in a cut is in the same cut, under the same lid", () =
   const apart = road("w3", [[10, -40], [60, -40]], { kind: "footway", width: 2.5, layer: -1, tunnel: true });
   const features: MapFeatures = { roads: [pavement, apart], rails: [tram], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], playEquipment: [], bridgeDecks: [] };
   const wide = (e: number, n: number) => (e >= 0 && Math.abs(n) <= 4 ? 95 : e >= 0 && n < -4 && n > -7 ? 101 : 102);
-  assert.equal(cutLid(pavement.line, wide), undefined);
+  assert.equal(cutLid(pavement.line, wide, MIN_CLEARANCE_M.people), undefined);
   assert.equal(coverCutTunnels(features, wide).tunnels, 2);
   assert.deepEqual(pavement.lid, tram.lid);
   // on the cut's floor beside it, not on the platform's edge it is mapped on
@@ -84,8 +95,8 @@ test("fitLidsToDecks lowers a lid to the decks of the bridges over it, leaving r
   const lowStreet = road("w4", [[10, 5], [10, 15]], { bridge: true, deck: [102, 102] });
   assert.equal(fitLidsToDecks([underpass, street, low, lowStreet], () => 105.3), 2);
   assert.deepEqual(underpass.lid, [104.5, 104.5]);
-  // no lower than 2.5 m of room and the lid over the floor
-  assert.deepEqual(low.lid, [100.8 + 2.5 + LID_THICKNESS_M, 100.8 + 2.5 + LID_THICKNESS_M]);
+  // no lower than people's least room and the lid over the floor
+  assert.deepEqual(low.lid, [100.8 + LEAST_CLEARANCE_M.people + LID_THICKNESS_M, 100.8 + LEAST_CLEARANCE_M.people + LID_THICKNESS_M]);
 });
 
 test("fitLidsToDecks raises a lid at the lower rim to the decks over it, no higher than the higher rim", () => {

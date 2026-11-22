@@ -5,7 +5,6 @@
 import { distanceToSegment, pointInPolygon, polygonTest, type Point, type Polygon, type Rect } from "./geometry.ts";
 import { bounds, type Building } from "./osm.ts";
 import { FLAT_M, MIN_STEP_M, REACH_M, slopeEnd, STRETCH_M, type GroundStep } from "./retainingWalls.ts";
-import { tileName, type Tile } from "./tiles.ts";
 
 /** A wall is not stepped this far (m) beyond the half width of a way going through it */
 const THROUGH_MARGIN_M = 1;
@@ -233,22 +232,4 @@ function index<T>(entries: { item: T; box: Rect }[], cell = CELL_M): { near: (bo
       return [...found].map((entry) => entry.item);
     },
   };
-}
-
-/**
- * Gives each tile the stretches (buildingSteps' a and b) within REACH_M of it, also those of the buildings of the
- * tiles around: the ground beside the tile's edge steps where they do
- */
-export function cutBuildingSteps(tiles: Map<string, Tile>, steps: readonly GroundStep[], size: number): void {
-  for (const step of steps) {
-    const box = bounds([step.a, step.b]);
-    for (let y = Math.floor((box.minY - REACH_M) / size); y <= Math.floor((box.maxY + REACH_M) / size); y++) {
-      for (let x = Math.floor((box.minX - REACH_M) / size); x <= Math.floor((box.maxX + REACH_M) / size); x++) {
-        const tile = tiles.get(tileName({ x, y }));
-        if (tile) {
-          (tile.buildingSteps ??= []).push({ a: step.a, b: step.b });
-        }
-      }
-    }
-  }
 }

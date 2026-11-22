@@ -6,10 +6,11 @@
 import { densify } from "./tunnels.ts";
 import type { Point } from "./geometry.ts";
 import type { Rail } from "./osm.ts";
+import { profileOf } from "./profile.ts";
+import { TRAMWAYS } from "./ways.ts";
 
 /** railway=* kinds that get beds, trams too */
 const BED_KINDS = new Set(["rail", "narrow_gauge", "preserved", "subway", "tram", "light_rail"]);
-const TRAM_KINDS = new Set(["tram", "light_rail"]);
 /** The ground is averaged over this long a stretch, centred on each point (m) */
 const BED_WINDOW_M = 30;
 /** The ground along a line is sampled this often (m) */
@@ -70,12 +71,12 @@ export function setTrackBeds(
     return ends.get(key(p));
   };
 
-  const eligible = rails.filter((rail) => BED_KINDS.has(rail.kind) && !rail.bridge && !rail.tunnel && !rail.deck && !rail.floor && rail.line.length >= 2);
+  const eligible = rails.filter((rail) => BED_KINDS.has(rail.kind) && profileOf(rail).kind === "ground" && rail.line.length >= 2);
   const lines = new Map(eligible.map((rail) => [rail, rail.line]));
   // the tramways' points between their ends, where another may branch off
   const middles = new Map<string, Rail>();
   for (const rail of eligible) {
-    if (TRAM_KINDS.has(rail.kind)) {
+    if (TRAMWAYS.has(rail.kind)) {
       for (const p of rail.line.slice(1, -1)) {
         middles.set(key(p), rail);
       }
@@ -132,7 +133,7 @@ function bedAt(rail: Rail, p: Point): number | undefined {
 /** The lines in chains: tramways joined end to end where exactly two meet and no deck or floor ends, others alone */
 function chains(rails: Rail[], deckEnds: Set<string>): Member[][] {
   const key = (p: Point) => `${p[0]},${p[1]}`;
-  const trams = rails.filter((r) => TRAM_KINDS.has(r.kind));
+  const trams = rails.filter((r) => TRAMWAYS.has(r.kind));
   const byEnd = new Map<string, Rail[]>();
   for (const rail of trams) {
     for (const p of [rail.line[0], rail.line[rail.line.length - 1]]) {
@@ -145,7 +146,7 @@ function chains(rails: Rail[], deckEnds: Set<string>): Member[][] {
     const other = there.find((r) => r !== rail);
     return there.length === 2 && other && !deckEnds.has(key(p)) ? other : undefined;
   };
-  const out: Member[][] = rails.filter((r) => !TRAM_KINDS.has(r.kind)).map((rail) => [{ rail, reversed: false }]);
+  const out: Member[][] = rails.filter((r) => !TRAMWAYS.has(r.kind)).map((rail) => [{ rail, reversed: false }]);
   const done = new Set<Rail>();
   for (const start of trams) {
     if (done.has(start)) {
@@ -233,7 +234,7 @@ function setChainBed(
     const h = i === 0 ? first : i === line.length - 1 ? last : smooth + toStart + toEnd;
     return ground === undefined || i === 0 || i === line.length - 1 ? h : Math.max(h, ground - BURY_M);
   });
-  const tram = TRAM_KINDS.has(chain[0].rail.kind);
+  const tram = TRAMWAYS.has(chain[0].rail.kind);
   if (tram) {
     // under a deck, the lowest ceiling within a point's segments on either side, so the line between stays under it
     const layer = chain[0].rail.layer;

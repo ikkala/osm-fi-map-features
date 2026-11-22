@@ -5,11 +5,10 @@
 // it, level across.
 import { distanceToRing, orientedBox, pointInPolygon, ringCentroid, type Point, type Polygon } from "./geometry.ts";
 import { bounds, type Area, type Rail } from "./osm.ts";
+import { TRAMWAYS } from "./ways.ts";
 
 /** The ground inside a platform, and a tramway beside one, is sampled this often (m) */
 const SAMPLE_M = 2;
-/** railway=* kinds trams run on */
-const TRAMS = new Set(["tram", "light_rail"]);
 /** A tramway passes a platform within this of its outline (m) */
 const TRAM_NEAR_M = 3;
 /** A tram stop's platform is this high over the bed: the rails' tops about 0.15 m over it, the platform 0.25 m over
@@ -23,7 +22,7 @@ const RISE_MIN_M = 0.1;
 
 /** Sets `top` (and `slope`) on the platform areas, after the tramways' beds (trackbeds.ts). Returns how many got one. */
 export function setPlatformTops(areas: Area[], heightAt: (e: number, n: number) => number | undefined, rails: Rail[] = []): number {
-  const trams = rails.filter((r) => TRAMS.has(r.kind) && r.bed);
+  const trams = rails.filter((r) => TRAMWAYS.has(r.kind) && r.bed);
   let count = 0;
   for (const area of areas) {
     if (area.kind !== "platform") {

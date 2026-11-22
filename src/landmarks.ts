@@ -2,10 +2,12 @@
 // and buoys (seamarks.ts), masts, flagpoles, boulders, fountains, artworks and memorials, power lines with their
 // towers and poles, piers, dams and weirs, amusement rides (rides.ts) and ski and skating tracks.
 import { dedupe, distanceToSegment, nearestPlace, RectGrid, ringArea, ringCentroid, type Point, type Ring } from "./geometry.ts";
-import { bounds, meters, NOT_FOR_VEHICLES, type GeoBox, type OverpassResponse, type Rail, type Road } from "./osm.ts";
+import { bounds, meters, type GeoBox, type OverpassResponse, type Rail, type Road } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { COURSE_KINDS, RIDE_KINDS, setCourseHeights, type Ride } from "./rides.ts";
+import { outOfTunnelsAndSpans } from "./profile.ts";
 import { parseSeamark, type Seamark } from "./seamarks.ts";
+import { RAIL_WIDTH_M, WALKWAYS } from "./ways.ts";
 
 export type LandmarkKind = "flagpole" | "mast" | "tower" | "stone" | "fountain" | "artwork" | "memorial" | "power_tower" | "power_pole";
 
@@ -106,9 +108,8 @@ export const PIER_WIDTH_M = 2;
 export const DAM_WIDTH_M = 3;
 /** Pistes that are no longer or not yet there */
 const NOT_PISTES = new Set(["construction", "proposed", "abandoned", "disused", "no"]);
-/** A landmark keeps this much room (m) round its point clear of the roads for vehicles and the railways (this wide, m) */
+/** A landmark keeps this much room (m) round its point clear of the roads for vehicles and the railways */
 const ROOM_M = 0.5;
-const RAIL_WIDTH_M = 3;
 /** A landmark on one moves at most this far (m) off it, to places looked at this far (m) apart */
 const OFF_WAY_M = 6;
 const OFF_WAY_STEP_M = 0.05;
@@ -166,8 +167,8 @@ export function parseLandmarks(elements: OverpassResponse["elements"], origin: G
 export function moveLandmarksOffWays(landmarks: Landmark[], roads: Road[], rails: Rail[]): { moved: number; aside: number } {
   const free = new Set(landmarks.filter((l) => l.base === undefined && !l.outline && !ON_LINES.has(l.kind)));
   const ways = [
-    ...roads.filter((r) => !r.tunnel && !r.bridge && !NOT_FOR_VEHICLES.has(r.kind)).map((r) => ({ line: r.line, half: r.width / 2 })),
-    ...rails.filter((r) => !r.tunnel && !r.bridge).map((r) => ({ line: r.line, half: RAIL_WIDTH_M / 2 })),
+    ...roads.filter((r) => outOfTunnelsAndSpans(r) && !WALKWAYS.has(r.kind)).map((r) => ({ line: r.line, half: r.width / 2 })),
+    ...rails.filter(outOfTunnelsAndSpans).map((r) => ({ line: r.line, half: RAIL_WIDTH_M / 2 })),
   ];
   if (free.size === 0 || ways.length === 0) {
     return { moved: 0, aside: 0 };

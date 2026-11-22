@@ -5,12 +5,14 @@ import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
 import type { Dam, Landmark, Pier, Piste, PowerLine } from "./landmarks.ts";
 import type { Pitch, PitchOutline } from "./pitches.ts";
+import type { ProfileKind } from "./profile.ts";
 import type { Ride } from "./rides.ts";
 import type { Seamark } from "./seamarks.ts";
 import { field, isObject, items, optionalNumber, optionalString } from "./json.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { exactYear } from "./startDates.ts";
-import { ridgeRoofs, type RoofFaces } from "./roofRidges.ts";
+import type { RoofFaces } from "./roofRidges.ts";
+import { WALKWAYS } from "./ways.ts";
 import {
   dedupe,
   distanceToRing,
@@ -73,6 +75,8 @@ export interface Road {
   onLid?: boolean;
   /** Other tunnels and ramps to their portals: the floor (m above sea level) at every point of line, when known */
   floor?: number[];
+  /** In a map's tiles: what the way's surface lies on (profile.ts), its heights the field the kind names */
+  profile?: ProfileKind;
   /** People walking along the way per average day, both directions, at every point of line (see footfall.ts) */
   footfall?: number[];
   /** People cycling along the way on an average day of the year, as footfall (see footfall.ts) */
@@ -125,6 +129,8 @@ export interface Rail {
   floor?: number[];
   /** Other railways: the track bed (m above sea level) at every point of line, the ground smoothed along it */
   bed?: number[];
+  /** In a map's tiles: what the way's surface lies on (profile.ts), its heights the field the kind names */
+  profile?: ProfileKind;
 }
 
 export interface Building {
@@ -611,30 +617,14 @@ const HEIGHTS_BY_TYPE = new Map<string, { perWidth: number; max: number }>([
   ["cathedral", { perWidth: 0.45, max: 30 }],
   ["chapel", { perWidth: 0.45, max: 30 }],
 ]);
-/** Least height of an untagged roof over a road (vehicles in Finland may be 4.4 m tall) */
-const ROOF_OVER_ROAD_M = 5;
-/** A building passage ending inside its building goes on straight to the wall when the wall is this near (m) */
-const PASSAGE_ON_M = 10;
-/** A passage's end this near (m) a wall of its building is on the wall */
-const AT_WALL_M = 0.3;
-/** A passage gone on to a wall goes this far (m) past it, so that it crosses the wall */
-const PAST_WALL_M = 1;
 
 /** How tall a passage through a building is when its way has no maxheight: for vehicles, and for people */
-const PASSAGE_HEIGHT_M = 4;
-const WALKWAY_PASSAGE_HEIGHT_M = 3;
-/** A covered way comes in at a door in OSM when one of its points is this close to it (m) */
-const DOOR_ON_WAY_M = 0.5;
-/** A covered way coming in at a door opens the wall at most this wide (m): a double door */
-const DOORWAY_WIDTH_M = 1.8;
+export const PASSAGE_HEIGHT_M = 4;
+export const WALKWAY_PASSAGE_HEIGHT_M = 3;
 /** Ways indoors are kept this far on from a tunnel's end (m) */
 const INDOOR_REACH_M = 30;
 /** The passage of a way indoors out of a tunnel starts this far on from the tunnel's end (m) */
 const OUT_OF_TUNNEL_M = 1;
-/** A way crossing a wall at a slant opens it at most this much wider than the way */
-const MAX_PASSAGE_SLANT = 3;
-/** highway=* values that only people walk or cycle on */
-export const NOT_FOR_VEHICLES = new Set(["footway", "pedestrian", "cycleway", "path", "track", "bridleway", "steps", "corridor"]);
 /** Houses that are seldom over two storeys */
 const HOUSES = new Set(["house", "detached", "semidetached_house", "terrace", "bungalow"]);
 
@@ -897,12 +887,22 @@ export interface ParseResult {
   warnings: string[];
   /** The storeys (level=*) of the roads and rails that OSM tells them for, to tell where tunnels come out */
   levels: Map<Road | Rail, number[]>;
-  /** Covered ways (covered=yes) that are no passages through buildings: they may come in at a door (see openDoorways) */
-  covered: Road[];
   /** Whether a point is an end of a way indoors left out: a bridge ending there goes into a building (see setBridgeDecks) */
   indoors: (p: Point) => boolean;
-  /** Whether a road runs through buildings: a building passage, or a tunnel or covered way found to (see setBridgeDecks) */
-  throughBuildings: (road: Road) => boolean;
+  /** The roof lines along roofs' ridges (roof:ridge=yes), still to shape their roofs (roofRidges.ts) */
+  ridges: Point[][];
+  /** The passages still to open in the buildings (passages.ts): the building passages tagged so, and the ways indoors kept out of tunnels */
+  passages: Passage[];
+  /** The building passages tagged so, for those that stop short of their building's wall */
+  tagged: { road: Road; passage: Passage }[];
+  /** Tunnels and covered ways (arcades too) that may be passages through buildings tagged otherwise */
+  maybePassages: { road: Road; passage: Passage; arcade: boolean }[];
+  /** The ends of ways indoors under the ground that go on in a tunnel down into a basement (pointKey) */
+  basements: ReadonlySet<string>;
+  /** Covered ways (covered=yes) on the ground, of which those that are no passages may come in at a door */
+  covered: Road[];
+  /** The building passages tagged so */
+  through: Set<Road>;
 }
 
 /** A way's surface=*; steps tagged only with what they are made of (material=*) are of that */
@@ -973,7 +973,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
         addArea(features, osm, "paved", polygon(), { surface: road.surface, carriageway: forVehicles(road.highway) });
       } else if (road.highway && ROAD_WIDTHS[road.highway] !== undefined) {
         const width = roadWidth(road);
-        const walkway = NOT_FOR_VEHICLES.has(road.highway);
+        const walkway = WALKWAYS.has(road.highway);
         const osmWidth = (meters(road.width) ?? meters(road["est_width"]) ?? 0) > 0;
         const way: Road = {
           osm,
@@ -1099,7 +1099,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
         }
         continue;
       }
-      const height = NOT_FOR_VEHICLES.has(r.kind) ? WALKWAY_PASSAGE_HEIGHT_M : PASSAGE_HEIGHT_M;
+      const height = WALKWAYS.has(r.kind) ? WALKWAY_PASSAGE_HEIGHT_M : PASSAGE_HEIGHT_M;
       const outward = reached.get(ends[1]) === 0 && reached.get(ends[0]) !== 0 ? [...r.line].reverse() : r.line;
       const line = from === 0 ? withoutStart(outward, OUT_OF_TUNNEL_M) : outward;
       if (line.length >= 2) {
@@ -1110,37 +1110,6 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
 
   const indoorEnds = new Set(indoors.filter((r) => !kept.has(r)).flatMap((r) => [pointKey(r.line[0]), pointKey(r.line[r.line.length - 1])]));
 
-  markBuildingsWithParts(features.buildings);
-  ridgeRoofs(features.buildings, ridges);
-  const found = new Set<Road>();
-  // how many ways have each point: the end of a covered way on the ground floor where another goes on is no dead end
-  // (a ramp down into a garage goes on into its tunnel, a way on an upper storey into the building)
-  const ways = new Map<string, number>();
-  for (const r of features.roads) {
-    for (const key of new Set(r.line.map(pointKey))) {
-      ways.set(key, (ways.get(key) ?? 0) + 1);
-    }
-  }
-  for (const { road, passage, arcade } of maybePassages) {
-    if (road.tunnel && [road.line[0], road.line[road.line.length - 1]].some((p) => basements.has(pointKey(p)))) {
-      continue;
-    }
-    const groundFloor = !road.tunnel && road.layer >= 0 && (levels.get(road) ?? [0]).every((storey) => storey === 0);
-    const goesOn = (p: Point) => groundFloor && (ways.get(pointKey(p)) ?? 0) > 1;
-    if (runsThroughBuildings(passage.line, features.buildings, arcade, goesOn)) {
-      road.tunnel = false;
-      passages.push(passage);
-      found.add(road);
-      through.add(road);
-      // carried on through the wall it ends at, as a tagged one
-      tagged.push({ road, passage });
-    }
-  }
-  features.buildings.push(...fillUnderFloatingParts(features));
-  groundFloatingBuildings(features);
-  passages.push(...passagesOnToWalls(tagged, features.roads, features.buildings));
-  openPassages(features.buildings, passages);
-  raiseRoofsOverRoads(features);
   return {
     features,
     streetNodes,
@@ -1149,9 +1118,14 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
     pitches,
     warnings,
     levels,
-    covered: covered.filter((r) => !found.has(r)),
     indoors: (p) => indoorEnds.has(pointKey(p)),
-    throughBuildings: (road) => through.has(road),
+    ridges,
+    passages,
+    tagged,
+    maybePassages,
+    basements,
+    covered,
+    through,
   };
 }
 
@@ -1225,7 +1199,7 @@ function addArea(features: MapFeatures, osm: string, kind: AreaKind, polygon: Po
 
 /** Whether highway=* is a road for vehicles, not a way for people alone, a traffic island or a platform */
 function forVehicles(highway: string | undefined): boolean {
-  return highway !== undefined && ROAD_WIDTHS[highway] !== undefined && !NOT_FOR_VEHICLES.has(highway);
+  return highway !== undefined && ROAD_WIDTHS[highway] !== undefined && !WALKWAYS.has(highway);
 }
 
 const PARKING_OFF_THE_GROUND = new Set(["underground", "multi-storey", "rooftop"]);
@@ -1613,742 +1587,6 @@ export interface Passage {
   height: number;
 }
 
-/**
- * Opens the walls of the buildings (and parts reaching the ground) where passages cross them: as wide
- * as the way along the wall, wider where it crosses at a slant. A passage taller than 0 also gets a
- * room through the building (see PassageRoom), unless rooms is false.
- */
-export function openPassages(buildings: Building[], passages: Passage[], rooms = true): void {
-  const roomed = new Set<Building>();
-  const boxes = buildings.map((b) => bounds(b.polygon.outer));
-  const near = indexBoxes(boxes, bounds(passages.flatMap((passage) => passage.line)));
-  const apart = (a: Rect, b: Rect) => a.maxX < b.minX || a.minX > b.maxX || a.maxY < b.minY || a.minY > b.maxY;
-  for (const passage of passages) {
-    const reach = bounds(passage.line);
-    const segments = passage.line.slice(1).map((q, k) => bounds([passage.line[k], q]));
-    for (const index of near(reach)) {
-      const b = buildings[index];
-      if (b.hasParts || b.shelter !== undefined || b.minHeight > passage.height) {
-        continue;
-      }
-      const box = boxes[index];
-      if (apart(box, reach)) {
-        continue;
-      }
-      // a segment crosses the walls only where its box meets the building's
-      const crossable = segments.flatMap((segment, k) => (apart(segment, box) ? [] : [k]));
-      for (const ring of [b.polygon.outer, ...b.polygon.holes]) {
-        for (let i = 0; i < ring.length; i++) {
-          for (const k of crossable) {
-            const hit = crossing(ring[i], ring[(i + 1) % ring.length], passage.line[k], passage.line[k + 1], passage.width);
-            if (hit) {
-              for (const opening of openAlong(ring, i, hit.at, hit.half)) {
-                if (!b.passages?.some((o) => samePoint(o.from, opening.from) && samePoint(o.to, opening.to))) {
-                  (b.passages ??= []).push({ ...opening, height: passage.height });
-                }
-              }
-            }
-          }
-        }
-      }
-      if (passage.height > 0 && rooms) {
-        const through = roomsThrough(b.polygon, passage);
-        if (through.length > 0) {
-          (b.passageRooms ??= []).push(...through);
-          roomed.add(b);
-        }
-      }
-    }
-  }
-  for (const b of roomed) {
-    joinNearRooms(b.passageRooms ?? []);
-    setRoomWalls(b.passageRooms ?? []);
-  }
-}
-
-/** A railway into a hall (a depot) opens its walls this wide (m), and the hall is at least this tall */
-const RAIL_DOOR_WIDTH_M = 4.5;
-const RAIL_HALL_HEIGHT_M = 6;
-
-/**
- * Opens the walls of the buildings a railway runs into (depots, halls) where the track crosses them, and makes a
- * lower one RAIL_HALL_HEIGHT_M tall: OSM seldom maps their doors, and a hall of one storey is taken as 3 m. Returns
- * how many buildings were opened.
- */
-export function openRailHalls(buildings: Building[], rails: Rail[]): number {
-  const before = new Map(buildings.map((b) => [b, b.passages?.length ?? 0]));
-  const passages = rails
-    .filter((r) => !r.tunnel && !r.bridge && r.line.length >= 2)
-    .map((r) => ({ line: r.line, width: RAIL_DOOR_WIDTH_M, height: RAIL_HALL_HEIGHT_M - 1 }));
-  openPassages(buildings, passages, false);
-  let count = 0;
-  for (const [b, passages] of before) {
-    if ((b.passages?.length ?? 0) > passages) {
-      b.height = Math.max(b.height, RAIL_HALL_HEIGHT_M);
-      count++;
-    }
-  }
-  return count;
-}
-
-/**
- * Opens the walls of stair halls (see bases.ts) where a covered way comes in at one of their doors, from the
- * ground there, at most a door's width (DOORWAY_WIDTH_M) and without a room. heightAt gives the ground at map
- * meters. Returns the number of openings.
- */
-export function openDoorways(buildings: Building[], ways: Road[], heightAt: (e: number, n: number) => number | undefined): number {
-  let count = 0;
-  for (const way of ways) {
-    const reach = bounds(way.line);
-    for (const b of buildings) {
-      const box = bounds(b.polygon.outer);
-      if (box.maxX < reach.minX - DOOR_ON_WAY_M || box.minX > reach.maxX + DOOR_ON_WAY_M || box.maxY < reach.minY - DOOR_ON_WAY_M || box.minY > reach.maxY + DOOR_ON_WAY_M) {
-        continue;
-      }
-      const atDoor = (b.entrances ?? []).some((e) => !e.guessed && way.line.some((p) => Math.hypot(p[0] - e.at[0], p[1] - e.at[1]) < DOOR_ON_WAY_M));
-      if (!atDoor) {
-        continue;
-      }
-      const before = b.passages?.length ?? 0;
-      openPassages([b], [{ line: way.line, width: Math.min(way.width, DOORWAY_WIDTH_M), height: NOT_FOR_VEHICLES.has(way.kind) ? WALKWAY_PASSAGE_HEIGHT_M : PASSAGE_HEIGHT_M }], false);
-      for (const opening of (b.passages ?? []).slice(before)) {
-        const ground = heightAt((opening.from[0] + opening.to[0]) / 2, (opening.from[1] + opening.to[1]) / 2);
-        if (ground !== undefined) {
-          opening.ground = ground;
-        }
-        count++;
-      }
-    }
-  }
-  return count;
-}
-
-/** A room's side turning at a corner of its way reaches at most this many half-widths from the way */
-const MAX_MITRE = 3;
-/** Places this close along a way (meters) are one (a way's node on a building's outline) */
-const SAME_PLACE_M = 0.01;
-
-/**
- * The rooms of a passage through a building's polygon: one for each stretch of it inside, from where it
- * comes in (as wide as its opening in the wall) or starts inside, through its corners, to where it goes
- * out or ends. Their walls are set by setRoomWalls.
- */
-function roomsThrough(polygon: Polygon, passage: Passage): PassageRoom[] {
-  const line = dedupe(passage.line);
-  const half = passage.width / 2;
-  // meters along the line to each point, and each segment's unit normal to its left
-  const run = [0];
-  const normals: Point[] = [];
-  for (let k = 0; k + 1 < line.length; k++) {
-    const length = Math.hypot(line[k + 1][0] - line[k][0], line[k + 1][1] - line[k][1]);
-    run.push(run[k] + length);
-    normals.push([-(line[k + 1][1] - line[k][1]) / length, (line[k + 1][0] - line[k][0]) / length]);
-  }
-  if (normals.length === 0) {
-    return [];
-  }
-  const pointAt = (along: number): Point => {
-    let k = 0;
-    while (k + 2 < line.length && run[k + 1] < along) {
-      k++;
-    }
-    const s = (along - run[k]) / (run[k + 1] - run[k]);
-    return [line[k][0] + (line[k + 1][0] - line[k][0]) * s, line[k][1] + (line[k + 1][1] - line[k][1]) * s];
-  };
-
-  // where sections go across the way: its points (mitred at a corner) and where it crosses the outline
-  const sections: { along: number; section: [Point, Point]; crossing: boolean }[] = [];
-  for (let i = 0; i < line.length; i++) {
-    const [before, after] = [normals[Math.max(0, i - 1)], normals[Math.min(normals.length - 1, i)]];
-    const sum = Math.hypot(before[0] + after[0], before[1] + after[1]);
-    const mitre: Point = sum < 1e-9 ? after : [(before[0] + after[0]) / sum, (before[1] + after[1]) / sum];
-    const reach = Math.min(half / Math.max(1e-9, mitre[0] * after[0] + mitre[1] * after[1]), half * MAX_MITRE);
-    const p = line[i];
-    sections.push({
-      along: run[i],
-      section: [
-        [p[0] + mitre[0] * reach, p[1] + mitre[1] * reach],
-        [p[0] - mitre[0] * reach, p[1] - mitre[1] * reach],
-      ],
-      crossing: false,
-    });
-  }
-  for (const ring of [polygon.outer, ...polygon.holes]) {
-    for (let i = 0; i < ring.length; i++) {
-      const [a, c] = [ring[i], ring[(i + 1) % ring.length]];
-      const wall = Math.hypot(c[0] - a[0], c[1] - a[1]);
-      for (let k = 0; k + 1 < line.length; k++) {
-        const hit = crossing(a, c, line[k], line[k + 1], passage.width);
-        if (hit && wall > 1e-9) {
-          // across the opening along the wall, its ends on the way's left and right
-          const x: Point = [a[0] + (c[0] - a[0]) * hit.at, a[1] + (c[1] - a[1]) * hit.at];
-          const [ue, un] = [((c[0] - a[0]) / wall) * hit.half, ((c[1] - a[1]) / wall) * hit.half];
-          const leftward = ue * normals[k][0] + un * normals[k][1] > 0;
-          const [ahead, back]: Point[] = [
-            [x[0] + ue, x[1] + un],
-            [x[0] - ue, x[1] - un],
-          ];
-          const along = run[k] + Math.hypot(x[0] - line[k][0], x[1] - line[k][1]);
-          sections.push({ along, section: leftward ? [ahead, back] : [back, ahead], crossing: true });
-        }
-      }
-    }
-  }
-  // one section at a place, a crossing rather than a point of the way on the outline
-  sections.sort((s, t) => s.along - t.along || Number(t.crossing) - Number(s.crossing));
-  const places = sections.filter((s, i) => i === 0 || s.along - sections[i - 1].along > SAME_PLACE_M);
-
-  const rooms: PassageRoom[] = [];
-  let room: PassageRoom | undefined;
-  // an end inside the building is walled across; one on its wall (within AT_WALL_M) is the wall's to close or open
-  const closedAt = (place: { along: number; crossing: boolean }) =>
-    !place.crossing && [polygon.outer, ...polygon.holes].every((ring) => distanceToRing(pointAt(place.along), ring) > AT_WALL_M);
-  for (let j = 0; j + 1 < places.length; j++) {
-    if (pointInPolygon(pointAt((places[j].along + places[j + 1].along) / 2), polygon)) {
-      room ??= { sections: [places[j].section], height: passage.height, closed: [closedAt(places[j]), false], walls: [] };
-      room.sections.push(places[j + 1].section);
-      room.closed[1] = closedAt(places[j + 1]);
-    } else if (room) {
-      rooms.push(room);
-      room = undefined;
-    }
-  }
-  if (room) {
-    rooms.push(room);
-  }
-  return rooms;
-}
-
-/** Rooms of a building nearer than this (m) side by side are one space, as ways along each other with a rail between */
-export const NEAR_ROOMS_M = 0.6;
-
-/**
- * Rooms of a building nearer than NEAR_ROOMS_M side by side meet halfway: each corner of their sections that near
- * another room (not in it) moves halfway to it, an open end's only along it, on the building's wall; so that no strip
- * of ceiling is missing between them and their walls there go (setRoomWalls: another room behind them)
- */
-function joinNearRooms(rooms: PassageRoom[]): void {
-  const quads = rooms.map((room) => room.sections.slice(1).map(([left, right], i): Point[] => [room.sections[i][0], room.sections[i][1], right, left]));
-  // an open end's corners move only along it, on the building's wall
-  const open = (room: PassageRoom, i: number) => (i === 0 && !room.closed[0]) || (i === room.sections.length - 1 && !room.closed[1]);
-  const moved = rooms.map((room, r) =>
-    room.sections.map((section, i): [Point, Point] => {
-      const [left, right] = [toward(section[0], r), toward(section[1], r)];
-      return open(room, i) ? [along(section, left), along(section, right)] : [left, right];
-    }),
-  );
-  rooms.forEach((room, r) => {
-    room.sections = moved[r];
-  });
-
-  // a point onto a section's line
-  function along([a, b]: [Point, Point], p: Point): Point {
-    const [de, dn] = [b[0] - a[0], b[1] - a[1]];
-    const length2 = de * de + dn * dn;
-    const k = length2 > 0 ? ((p[0] - a[0]) * de + (p[1] - a[1]) * dn) / length2 : 0;
-    return [a[0] + de * k, a[1] + dn * k];
-  }
-
-  // a corner halfway to the nearest other room within NEAR_ROOMS_M, unless it is in one
-  function toward(p: Point, r: number): Point {
-    let nearest: Point | undefined;
-    let distance = NEAR_ROOMS_M;
-    for (const [o, others] of quads.entries()) {
-      for (const quad of o === r ? [] : others) {
-        if (pointInRing(p, quad)) {
-          return p;
-        }
-        const near = nearestOnLine([...quad, quad[0]], p);
-        if (near.distance < distance) {
-          distance = near.distance;
-          nearest = near.point;
-        }
-      }
-    }
-    return nearest ? [(p[0] + nearest[0]) / 2, (p[1] + nearest[1]) / 2] : p;
-  }
-}
-
-/** A room's wall goes where another room is this far (m) behind it */
-const BEHIND_WALL_M = 0.1;
-
-/**
- * Sets the walls of a building's passage rooms: along both sides of each, and across its closed ends,
- * less where another room goes on: behind a side (a way beside it or across it: one space), and where an end
- * lies in it. Rooms overlapping on the same side of a side wall, as a passage carried on through its building's
- * wall (passagesOnToWalls) over the passage's own, both keep it; the passage's end just inside the wall is open
- * where the carried-on room goes on out through the wall. Nor is a gap walled that is all within NEAR_ROOMS_M of
- * two other rooms, one at each end (a walk and steps beside it going on from a wider way's end).
- */
-function setRoomWalls(rooms: PassageRoom[]): void {
-  const quads = rooms.map((room) =>
-    room.sections.slice(1).map(([left, right], i): Point[] => [room.sections[i][0], room.sections[i][1], right, left]),
-  );
-  // the other rooms within NEAR_ROOMS_M of a point
-  const near = (p: Point, r: number) =>
-    quads.flatMap((others, o) =>
-      o !== r && others.some((quad) => pointInRing(p, quad) || nearestOnLine([...quad, quad[0]], p).distance <= NEAR_ROOMS_M) ? [o] : [],
-    );
-  // a piece of wall all within NEAR_ROOMS_M of other rooms, its ends of different ones: a gap between them
-  const between = ([a, b]: [Point, Point], r: number) => {
-    const steps = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (NEAR_ROOMS_M / 2));
-    const at = (k: number): Point => [a[0] + ((b[0] - a[0]) * k) / steps, a[1] + ((b[1] - a[1]) * k) / steps];
-    const [first, last] = [near(a, r), near(b, r)];
-    return first.some((p) => last.some((q) => q !== p)) && Array.from({ length: steps - 1 }, (_, k) => at(k + 1)).every((p) => near(p, r).length > 0);
-  };
-  rooms.forEach((room, r) => {
-    const { sections, closed } = room;
-    const last = sections.length - 1;
-    // each with whether it is across an end
-    const walls: [Point, Point, boolean][] = [];
-    if (closed[0]) {
-      walls.push([sections[0][1], sections[0][0], true]);
-    }
-    for (let i = 0; i < last; i++) {
-      walls.push([sections[i][0], sections[i + 1][0], false]);
-    }
-    if (closed[1]) {
-      walls.push([sections[last][0], sections[last][1], true]);
-    }
-    for (let i = last; i > 0; i--) {
-      walls.push([sections[i][1], sections[i - 1][1], false]);
-    }
-    const others = quads.filter((_, o) => o !== r).flat();
-    room.walls = walls.flatMap(([a, b, end]) => {
-      const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      if (length < 1e-9) {
-        return [];
-      }
-      // a side looked at a little behind it, on its left (the room is on its right); an end where it is
-      const [be, bn] = end ? [0, 0] : [(-(b[1] - a[1]) / length) * BEHIND_WALL_M, ((b[0] - a[0]) / length) * BEHIND_WALL_M];
-      const [ba, bb]: [Point, Point] = [
-        [a[0] + be, a[1] + bn],
-        [b[0] + be, b[1] + bn],
-      ];
-      const spans = others.map((quad) => spanInside(ba, bb, quad)).filter((span) => span !== undefined);
-      return spansLeft(spans)
-        .filter(([t0, t1]) => (t1 - t0) * length > SAME_PLACE_M)
-        .map(([t0, t1]): [Point, Point] => [
-          [a[0] + (b[0] - a[0]) * t0, a[1] + (b[1] - a[1]) * t0],
-          [a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1],
-        ])
-        .filter((piece) => !between(piece, r));
-    });
-  });
-}
-
-/**
- * The span (0 .. 1) of the segment a -> b in a convex polygon or on its edges (within SAME_PLACE_M), or
- * undefined.
- */
-function spanInside(a: Point, b: Point, polygon: Point[]): [number, number] | undefined {
-  let area = 0;
-  for (let i = 0; i < polygon.length; i++) {
-    const [p, q] = [polygon[i], polygon[(i + 1) % polygon.length]];
-    area += p[0] * q[1] - q[0] * p[1];
-  }
-  if (Math.abs(area) < 1e-9) {
-    return undefined;
-  }
-  let [t0, t1] = [0, 1];
-  for (let i = 0; i < polygon.length; i++) {
-    const [p, q] = [polygon[i], polygon[(i + 1) % polygon.length]];
-    const length = Math.hypot(q[0] - p[0], q[1] - p[1]);
-    if (length < 1e-9) {
-      continue;
-    }
-    // how far inside the edge's line a point is (meters), and a little more
-    const inside = (x: Point) => (Math.sign(area) * ((q[0] - p[0]) * (x[1] - p[1]) - (q[1] - p[1]) * (x[0] - p[0]))) / length + SAME_PLACE_M;
-    const [fa, fb] = [inside(a), inside(b)];
-    if (fa < 0 && fb < 0) {
-      return undefined;
-    }
-    if (fa < 0) {
-      t0 = Math.max(t0, fa / (fa - fb));
-    } else if (fb < 0) {
-      t1 = Math.min(t1, fa / (fa - fb));
-    }
-  }
-  return t0 < t1 ? [t0, t1] : undefined;
-}
-
-/** What is left of 0 .. 1 without the spans */
-function spansLeft(spans: [number, number][]): [number, number][] {
-  const left: [number, number][] = [];
-  let at = 0;
-  for (const [t0, t1] of spans.sort((s, t) => s[0] - t[0])) {
-    if (t0 > at) {
-      left.push([at, t0]);
-    }
-    at = Math.max(at, t1);
-  }
-  if (at < 1) {
-    left.push([at, 1]);
-  }
-  return left;
-}
-
-/**
- * Whether a tunnel or covered way is really a passage through buildings (often tagged tunnel=yes): short (an
- * arcade, along a building's front, may be long), at least half inside one, and neither end well inside (a ramp
- * into a garage ends inside) unless another way goes on from it (goesOn). The caller leaves out layers under -1.
- */
-function runsThroughBuildings(line: Point[], buildings: Building[], arcade = false, goesOn: (p: Point) => boolean = () => false): boolean {
-  let length = 0;
-  for (let i = 0; i + 1 < line.length; i++) {
-    length += Math.hypot(line[i + 1][0] - line[i][0], line[i + 1][1] - line[i][1]);
-  }
-  if (length > MAX_GUESSED_PASSAGE_M && !arcade) {
-    return false;
-  }
-  const reach = bounds(line);
-  const grounded = buildings.filter((b) => {
-    if (b.hasParts || b.shelter !== undefined || b.minHeight >= 1) {
-      return false;
-    }
-    const box = bounds(b.polygon.outer);
-    return box.maxX >= reach.minX && box.minX <= reach.maxX && box.maxY >= reach.minY && box.minY <= reach.maxY;
-  });
-  const deepInside = (p: Point) =>
-    !goesOn(p) && grounded.some((b) => pointInPolygon(p, b.polygon) && distanceToRing(p, b.polygon.outer) > THROUGH_END_SLACK_M);
-  if (grounded.length === 0 || deepInside(line[0]) || deepInside(line[line.length - 1])) {
-    return false;
-  }
-  let inside = 0;
-  let total = 0;
-  for (let i = 0; i + 1 < line.length; i++) {
-    const [p, q] = [line[i], line[i + 1]];
-    const steps = Math.max(1, Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1])));
-    for (let k = 0; k < steps; k++) {
-      const point: Point = [p[0] + ((q[0] - p[0]) * (k + 0.5)) / steps, p[1] + ((q[1] - p[1]) * (k + 0.5)) / steps];
-      total++;
-      if (grounded.some((b) => pointInPolygon(point, b.polygon))) {
-        inside++;
-      }
-    }
-  }
-  return inside >= total / 2;
-}
-
-/** A way's end this close to a building's edge is not inside it (meters) */
-const THROUGH_END_SLACK_M = 1;
-/** A tunnel or covered way longer than this is not taken for a passage through buildings (meters) */
-const MAX_GUESSED_PASSAGE_M = 60;
-
-/** Walls meeting at a corner that turns less than this (radians) are one wall for a passage */
-const STRAIGHT_ON = (30 * Math.PI) / 180;
-
-/**
- * The stretches, one per edge, `half` meters either way along the ring from `at` (0 .. 1) on edge i: on
- * into the next edges where the wall goes on nearly straight.
- */
-function openAlong(ring: Ring, i: number, at: number, half: number): { from: Point; to: Point }[] {
-  const count = ring.length;
-  const edge = (j: number) => {
-    const a = ring[((j % count) + count) % count];
-    const c = ring[(((j + 1) % count) + count) % count];
-    return { a, c, length: Math.hypot(c[0] - a[0], c[1] - a[1]) };
-  };
-  const along = (j: number, k: number): Point => {
-    const { a, c } = edge(j);
-    return [a[0] + (c[0] - a[0]) * k, a[1] + (c[1] - a[1]) * k];
-  };
-  const turn = (j: number) => {
-    // the turn at the start of edge j
-    const before = edge(j - 1);
-    const after = edge(j);
-    const angle = Math.atan2(after.c[1] - after.a[1], after.c[0] - after.a[0]) - Math.atan2(before.c[1] - before.a[1], before.c[0] - before.a[0]);
-    return Math.abs(((angle + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
-  };
-  const first = edge(i);
-  const back = Math.min(at, half / first.length);
-  const ahead = Math.min(1 - at, half / first.length);
-  const stretches = [{ from: along(i, at - back), to: along(i, at + ahead) }];
-  // backwards through the edges before
-  let left = half - back * first.length;
-  for (let j = i; left > 1e-6 && j > i - count + 1 && turn(j) < STRAIGHT_ON; j--) {
-    const previous = edge(j - 1);
-    const k = Math.min(1, left / previous.length);
-    stretches.push({ from: along(j - 1, 1 - k), to: along(j - 1, 1) });
-    left -= k * previous.length;
-  }
-  // and forwards through the edges after
-  left = half - ahead * first.length;
-  for (let j = i + 1; left > 1e-6 && j < i + count && turn(j) < STRAIGHT_ON; j++) {
-    const next = edge(j);
-    const k = Math.min(1, left / next.length);
-    stretches.push({ from: along(j, 0), to: along(j, k) });
-    left -= k * next.length;
-  }
-  return stretches.filter((s) => !samePoint(s.from, s.to));
-}
-
-/**
- * Where the way p -> q crosses the wall a -> c: at (0 .. 1 along the wall) and the half-width in meters
- * of the stretch of wall it needs, or undefined.
- */
-export function crossing(a: Point, c: Point, p: Point, q: Point, width: number): { at: number; half: number } | undefined {
-  const [ux, uy] = [c[0] - a[0], c[1] - a[1]];
-  const [dx, dy] = [q[0] - p[0], q[1] - p[1]];
-  const cross = ux * dy - uy * dx;
-  const wall = Math.hypot(ux, uy);
-  const way = Math.hypot(dx, dy);
-  if (Math.abs(cross) < 1e-9 * wall * way) {
-    return undefined;
-  }
-  // a + ux * t = p + dx * s
-  const t = ((p[0] - a[0]) * dy - (p[1] - a[1]) * dx) / cross;
-  const s = ((p[0] - a[0]) * uy - (p[1] - a[1]) * ux) / cross;
-  if (t < 0 || t > 1 || s < 0 || s > 1) {
-    return undefined;
-  }
-  const sine = Math.abs(cross) / (wall * way);
-  return { at: t, half: Math.min(width / 2 / sine, (width / 2) * MAX_PASSAGE_SLANT) };
-}
-
-function samePoint(a: Point, b: Point | undefined): boolean {
-  return b !== undefined && Math.abs(a[0] - b[0]) < 0.01 && Math.abs(a[1] - b[1]) < 0.01;
-}
-
-/** Lifts open roofs without a tagged height that a road runs under to ROOF_OVER_ROAD_M; a carport is for cars. */
-function raiseRoofsOverRoads(features: MapFeatures): void {
-  const roofs = features.buildings.filter((b) => b.shelter !== undefined && b.shelter !== "carport" && b.heightEstimated && b.height < ROOF_OVER_ROAD_M);
-  const roads = features.roads.filter((r) => !NOT_FOR_VEHICLES.has(r.kind) && !r.tunnel);
-  const near = indexBoxes(roads.map((road) => bounds(road.line)), bounds(roofs.flatMap((roof) => roof.polygon.outer)));
-  for (const roof of roofs) {
-    const box = bounds(roof.polygon.outer);
-    const under = near(box).some((index) =>
-      roads[index].line.some((p, i, line) => {
-        // the road's points, and points every meter between them
-        const next = line[i + 1] ?? p;
-        const steps = Math.max(1, Math.ceil(Math.hypot(next[0] - p[0], next[1] - p[1])));
-        for (let k = 0; k < steps; k++) {
-          const q: Point = [p[0] + ((next[0] - p[0]) * k) / steps, p[1] + ((next[1] - p[1]) * k) / steps];
-          const inBox = q[0] >= box.minX && q[0] <= box.maxX && q[1] >= box.minY && q[1] <= box.maxY;
-          if (inBox && pointInPolygon(q, roof.polygon)) {
-            return true;
-          }
-        }
-        return false;
-      }),
-    );
-    if (under) {
-      roof.height = ROOF_OVER_ROAD_M;
-      delete roof.heightEstimated;
-    }
-  }
-}
-
-/**
- * A part is not in an outline its centroid is in when another one holds more of it by this share of the part: a
- * chimney mapped inside its pedestal's parts holds only some of them, the building around both all.
- */
-const PART_HOLDER_SLACK = 0.1;
-
-/** Each part with the building outlines it is in (see PART_HOLDER_SLACK), smallest first */
-function partHolders(buildings: Building[]): Map<Building, Building[]> {
-  const outlines = buildings.filter((b) => !b.part).map((b) => ({ b, box: bounds(b.polygon.outer), area: Math.abs(ringArea(b.polygon.outer)) }));
-  const result = new Map<Building, Building[]>();
-  for (const part of buildings.filter((b) => b.part)) {
-    const [x, y] = ringCentroid(part.polygon.outer);
-    const around = outlines.filter(({ b, box }) => x >= box.minX && x <= box.maxX && y >= box.minY && y <= box.maxY && pointInPolygon([x, y], b.polygon));
-    if (around.length === 0) {
-      continue;
-    }
-    const shares = around.length === 1 ? [1] : around.map((o) => shareCovered(part.polygon, [o]));
-    const most = Math.max(...shares);
-    const holders = around.filter((_, i) => shares[i] >= most - PART_HOLDER_SLACK).sort((a, b) => a.area - b.area);
-    result.set(part, holders.map(({ b }) => b));
-  }
-  return result;
-}
-
-/** Each part with the building outline it is in, the smallest of nested ones */
-export function partOutlines(buildings: Building[]): Map<Building, Building> {
-  const result = new Map<Building, Building>();
-  for (const [part, [outline]] of partHolders(buildings)) {
-    result.set(part, outline);
-  }
-  return result;
-}
-
-/**
- * Gives parts what their building outline has and they do not: the wall material and colour, the register's
- * frame material, the roof material and the year or start_date (mappers tag these on the outline). Returns how many parts got any.
- */
-export function inheritFromOutlines(buildings: Building[]): number {
-  let count = 0;
-  for (const [part, outline] of partOutlines(buildings)) {
-    let got = false;
-    if (part.material === undefined && outline.material !== undefined) {
-      part.material = outline.material;
-      if (outline.materialEstimated) {
-        part.materialEstimated = true;
-      }
-      got = true;
-    }
-    if (part.colour === undefined && outline.colour !== undefined) {
-      part.colour = outline.colour;
-      got = true;
-    }
-    if (part.frameMaterial === undefined && outline.frameMaterial !== undefined) {
-      part.frameMaterial = outline.frameMaterial;
-      got = true;
-    }
-    if (part.roofMaterial === undefined && outline.roofMaterial !== undefined) {
-      part.roofMaterial = outline.roofMaterial;
-      got = true;
-    }
-    if (part.year === undefined && part.startDate === undefined && (outline.year !== undefined || outline.startDate !== undefined)) {
-      if (outline.year !== undefined) {
-        part.year = outline.year;
-      }
-      if (outline.startDate !== undefined) {
-        part.startDate = outline.startDate;
-      }
-      got = true;
-    }
-    if (got) {
-      count++;
-    }
-  }
-  return count;
-}
-
-/**
- * Parts replace the outline they are in, unless they cover less than this share of it: mappers often give
- * parts to only some of a building.
- */
-const MIN_PARTS_COVER = 0.5;
-
-function markBuildingsWithParts(buildings: Building[]): void {
-  const inside = new Map<Building, { b: Building; box: ReturnType<typeof bounds> }[]>();
-  for (const [part, outlines] of partHolders(buildings)) {
-    for (const outline of outlines) {
-      inside.set(outline, [...(inside.get(outline) ?? []), { b: part, box: bounds(part.polygon.outer) }]);
-    }
-  }
-  for (const [outline, parts] of inside) {
-    outline.hasParts = shareCovered(outline.polygon, parts) >= MIN_PARTS_COVER;
-  }
-}
-
-/** The share of a polygon under the buildings, sampled on a grid. */
-function shareCovered(polygon: Polygon, buildings: { b: Building; box: ReturnType<typeof bounds> }[]): number {
-  const box = bounds(polygon.outer);
-  const step = Math.max(0.5, Math.sqrt(((box.maxX - box.minX) * (box.maxY - box.minY)) / 400));
-  let points = 0;
-  let covered = 0;
-  for (let x = box.minX + step / 2; x < box.maxX; x += step) {
-    for (let y = box.minY + step / 2; y < box.maxY; y += step) {
-      const p: Point = [x, y];
-      if (!pointInPolygon(p, polygon)) {
-        continue;
-      }
-      points++;
-      if (buildings.some(({ b, box: pb }) => x >= pb.minX && x <= pb.maxX && y >= pb.minY && y <= pb.maxY && pointInPolygon(p, b.polygon))) {
-        covered++;
-      }
-    }
-  }
-  return points === 0 ? 1 : covered / points;
-}
-
-/**
- * Fillers from the outline's bottom up to parts that start higher with nothing under them, as mappers often
- * give parts only to what stands out. Overhanging parts and parts over a way are left floating.
- */
-function fillUnderFloatingParts(features: MapFeatures): Building[] {
-  const buildings = features.buildings;
-  const outlines = buildings.filter((b) => b.hasParts).map((b) => ({ b, box: bounds(b.polygon.outer) }));
-  const parts = buildings.filter((b) => b.part);
-  const ways = [...features.roads, ...features.rails].filter((w) => !w.tunnel).map((w) => ({ line: w.line, box: bounds(w.line) }));
-  const fillers: Building[] = [];
-  for (const part of parts) {
-    if (part.minHeight <= 0 || OVERHANGING_PARTS.has(part.kind)) {
-      continue;
-    }
-    const partBox = bounds(part.polygon.outer);
-    const nearby = ways.filter(({ box }) => box.maxX >= partBox.minX && box.minX <= partBox.maxX && box.maxY >= partBox.minY && box.minY <= partBox.maxY);
-    if (nearby.some(({ line }) => lineEntersPolygon(line, part.polygon))) {
-      continue;
-    }
-    const p = ringCentroid(part.polygon.outer);
-    const outline = outlines.find(
-      ({ b, box }) =>
-        b.minHeight < part.minHeight && p[0] >= box.minX && p[0] <= box.maxX && p[1] >= box.minY && p[1] <= box.maxY && pointInPolygon(p, b.polygon),
-    )?.b;
-    const below = parts.some((other) => other !== part && other.minHeight < part.minHeight && pointInPolygon(p, other.polygon));
-    if (outline && !below) {
-      fillers.push({
-        osm: outline.osm,
-        kind: outline.kind,
-        part: true,
-        hasParts: false,
-        height: part.minHeight,
-        minHeight: outline.minHeight,
-        ...(outline.colour && { colour: outline.colour }),
-        ...(outline.roofColour && { roofColour: outline.roofColour }),
-        ...(outline.material && { material: outline.material }),
-        ...(outline.frameMaterial && { frameMaterial: outline.frameMaterial }),
-        ...(outline.special && { special: true }),
-        ...(outline.worship && { worship: true }),
-        ...(outline.lattice && { lattice: true }),
-        polygon: part.polygon,
-      });
-    }
-  }
-  return fillers;
-}
-
-/** A raised building stays raised when at least this share of it is over lower buildings */
-const MIN_OVER_BUILDINGS = 0.5;
-
-/**
- * Brings buildings without parts that start higher with nothing under them down to the ground, their storeys with
- * them, as mappers sometimes leave out a ground floor (building:min_level=1 over shops on the street). Overhanging
- * kinds, buildings over a way (an arcade, a skyway) and buildings over lower ones are left raised.
- */
-function groundFloatingBuildings(features: MapFeatures): void {
-  const all = features.buildings.map((b) => ({ b, box: bounds(b.polygon.outer) }));
-  const ways = [...features.roads, ...features.rails].filter((w) => !w.tunnel).map((w) => ({ line: w.line, box: bounds(w.line) }));
-  type Box = ReturnType<typeof bounds>;
-  const meet = (a: Box, b: Box) => a.maxX >= b.minX && a.minX <= b.maxX && a.maxY >= b.minY && a.minY <= b.maxY;
-  for (const { b, box } of all) {
-    if (b.part || b.hasParts || b.shelter !== undefined || b.minHeight <= 0 || OVERHANGING_PARTS.has(b.kind)) {
-      continue;
-    }
-    if (ways.some((w) => meet(box, w.box) && lineEntersPolygon(w.line, b.polygon))) {
-      continue;
-    }
-    const lower = all.filter((o) => o.b !== b && o.b.minHeight < b.minHeight && meet(box, o.box));
-    if (lower.length > 0 && shareCovered(b.polygon, lower) >= MIN_OVER_BUILDINGS) {
-      continue;
-    }
-    if (b.levels !== undefined) {
-      b.levels += Math.round(b.minHeight / LEVEL_HEIGHT_M);
-    }
-    b.minHeight = 0;
-  }
-}
-
-/** building:part=* values that stick out of a building with nothing under them */
-const OVERHANGING_PARTS = new Set(["balcony", "roof", "canopy", "antenna", "bridge", "corridor", "porch"]);
-
-/** Whether a line has a point, or a point every meter along it, inside a polygon */
-function lineEntersPolygon(line: Point[], polygon: Polygon): boolean {
-  for (let i = 0; i < line.length; i++) {
-    const [p, next] = [line[i], line[i + 1] ?? line[i]];
-    const steps = Math.max(1, Math.ceil(Math.hypot(next[0] - p[0], next[1] - p[1])));
-    for (let k = 0; k < steps; k++) {
-      if (pointInPolygon([p[0] + ((next[0] - p[0]) * k) / steps, p[1] + ((next[1] - p[1]) * k) / steps], polygon)) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
 export function bounds(points: Point[]): { minX: number; minY: number; maxX: number; maxY: number } {
   let minX = Infinity;
   let minY = Infinity;
@@ -2554,68 +1792,4 @@ function sameLatLon(a: LatLon, b: LatLon): boolean {
 function normalize(polygon: Polygon): Polygon {
   const orient = (ring: Ring, ccw: boolean) => (ringArea(ring) > 0 === ccw ? ring : [...ring].reverse());
   return { outer: orient(polygon.outer, true), holes: polygon.holes.map((hole) => orient(hole, false)) };
-}
-
-/**
- * Building passages, tagged or found to run through buildings (an arcade, a tunnel), that end at their building's wall
- * or short of it, where another way goes on (on the ground as the passage is, neither a tunnel nor a bridge, whatever
- * its layer): an end on the wall, within AT_WALL_M of it (at a corner), does not
- * cross it, and OSM's tag is at times split off a little inside. The passage goes on straight from its last stretch
- * to the wall and PAST_WALL_M through it, when the wall is within PASSAGE_ON_M; returns those passages, which open
- * the wall there (openPassages, which opens a wall once however many passages cross it there).
- */
-export function passagesOnToWalls(tagged: { road: Road; passage: Passage }[], roads: Road[], buildings: Building[]): Passage[] {
-  const passageRoads = new Set(tagged.map(({ road }) => road));
-  const at = new Map<string, Road[]>();
-  for (const road of roads) {
-    for (const p of road.line) {
-      const list = at.get(pointKey(p)) ?? [];
-      list.push(road);
-      at.set(pointKey(p), list);
-    }
-  }
-  const boxes = buildings.map((b) => bounds(b.polygon.outer));
-  const found: Passage[] = [];
-  for (const { road, passage } of tagged) {
-    const line = road.line;
-    for (const [end, before] of [
-      [line[0], line[1]],
-      [line[line.length - 1], line[line.length - 2]],
-    ]) {
-      const goesOn = (at.get(pointKey(end)) ?? []).filter((r) => r !== road && !passageRoads.has(r));
-      // ways on the ground go on from it, whatever their layers (an arcade under its building's floors is often
-      // tagged a layer over the street's)
-      if (goesOn.length === 0 || goesOn.some((r) => r.tunnel || r.bridge || r.layer < 0 !== road.layer < 0)) {
-        continue;
-      }
-      const inside = buildings.find(
-        (b, i) =>
-          !b.hasParts &&
-          b.minHeight <= passage.height &&
-          end[0] >= boxes[i].minX && end[0] <= boxes[i].maxX && end[1] >= boxes[i].minY && end[1] <= boxes[i].maxY &&
-          (pointInPolygon(end, b.polygon) || distanceToRing(end, b.polygon.outer) <= AT_WALL_M),
-      );
-      const length = Math.hypot(end[0] - before[0], end[1] - before[1]);
-      if (!inside || length < 1e-9) {
-        continue;
-      }
-      const along = (d: number): Point => [end[0] + ((end[0] - before[0]) * d) / length, end[1] + ((end[1] - before[1]) * d) / length];
-      // the first half meter on out of the building, then the wall in it, by halving
-      let step = 0.5;
-      while (step <= PASSAGE_ON_M && pointInPolygon(along(step), inside.polygon)) {
-        step += 0.5;
-      }
-      if (step > PASSAGE_ON_M) {
-        continue;
-      }
-      let [lo, hi] = [step - 0.5, step];
-      for (let i = 0; i < 20; i++) {
-        const mid = (lo + hi) / 2;
-        [lo, hi] = pointInPolygon(along(mid), inside.polygon) ? [mid, hi] : [lo, mid];
-      }
-      // from inside, so that it crosses the wall clear of its end (one just outside, past a corner, crossed nowhere)
-      found.push({ ...passage, line: [along(-PAST_WALL_M), along(hi + PAST_WALL_M)] });
-    }
-  }
-  return found;
 }
