@@ -2,7 +2,8 @@
 // then, so a node is on the way passing nearest to it, if close enough.
 import { deckAt } from "./bridges.ts";
 import { nearestOnLine, type Point } from "./geometry.ts";
-import { bounds, NOT_FOR_VEHICLES, type Crossing, type Gate, type MapFeatures, type Road, type StreetNode, type TrafficSignal, type WayPoint } from "./osm.ts";
+import { bounds, type Crossing, type Gate, type MapFeatures, type Road, type StreetNode, type TrafficSignal, type WayPoint } from "./osm.ts";
+import { WALKWAYS } from "./ways.ts";
 
 /** A node this close (m) to a way's line is on it */
 const ON_WAY_M = 1;
@@ -25,7 +26,7 @@ export function placeStreetNodes(nodes: StreetNode[], features: MapFeatures): { 
   const candidates = <T extends { line: Point[] }>(items: T[]): Candidate<T>[] =>
     items.filter((i) => i.line.length >= 2).map((item) => ({ item, line: item.line, box: bounds(item.line) }));
   const roads = candidates(features.roads.filter((r) => !r.tunnel));
-  const streets = roads.filter((c) => !NOT_FOR_VEHICLES.has(c.item.kind));
+  const streets = roads.filter((c) => !WALKWAYS.has(c.item.kind));
   const barriers = candidates(features.barriers);
   let dropped = 0;
   for (const node of nodes) {

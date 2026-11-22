@@ -1,11 +1,13 @@
 // OSM parsing and tiling together, on a small hand-made Overpass response.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { areaKind, compassDegrees, elementsWithin, inheritFromOutlines, meters, mergeOverpass, openDoorways, openPassages, openRailHalls, overpassQuery, parseOsm, passagesOnToWalls, type Building, type OverpassResponse, type Rail, type Road, type Tree } from "./osm.ts";
+import { inheritFromOutlines } from "./buildingParts.ts";
+import { openDoorways, openPassages, openRailHalls, passagesOnToWalls } from "./passages.ts";
+import { areaKind, compassDegrees, elementsWithin, meters, mergeOverpass, overpassQuery, type Building, type OverpassResponse, type Rail, type Road, type Tree } from "./osm.ts";
 import type { Point } from "./geometry.ts";
 import { LocalProjection } from "./projection.ts";
 import { cutIntoTiles, tilePieces, tilesCovering, tilesCoveringAny } from "./tiles.ts";
-import { defined } from "./testing.ts";
+import { defined, parseWorld } from "./testing.ts";
 
 const origin = { latitude: 61.5, longitude: 23.75 };
 const projection = new LocalProjection(origin);
@@ -43,7 +45,7 @@ const response: OverpassResponse = {
 };
 
 test("parseOsm reads roads, buildings and multipolygon areas in meters", () => {
-  const { features, warnings } = parseOsm(response.elements, origin);
+  const { features, warnings } = parseWorld(response.elements, origin);
   assert.deepEqual(warnings, []);
   assert.deepEqual(features.roads.map((r) => r.osm), ["w1", "w2"]);
   const [street, footbridge] = features.roads;
@@ -70,7 +72,7 @@ test("parseOsm reads roads, buildings and multipolygon areas in meters", () => {
 });
 
 test("parseOsm leaves out buildings and parts wholly under the ground", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 1, tags: { "building:part": "retail", layer: "-1", level: "-1" }, geometry: square(0, 0, 20) },
       { type: "way", id: 2, tags: { building: "yes", location: "underground" }, geometry: square(30, 0, 20) },
@@ -91,7 +93,7 @@ test("parseOsm leaves out buildings and parts wholly under the ground", () => {
 });
 
 test("parseOsm reads a road's maxheight in meters, not a walkway's", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 1, tags: { highway: "service", tunnel: "yes", maxheight: "2.3" }, geometry: [at(0, 0), at(20, 0)] },
       { type: "way", id: 2, tags: { highway: "service", maxheight: "default" }, geometry: [at(0, 10), at(20, 10)] },
@@ -103,7 +105,7 @@ test("parseOsm reads a road's maxheight in meters, not a walkway's", () => {
 });
 
 test("parseOsm reads the way trains usually go on a track", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 1, tags: { railway: "rail", "railway:preferred_direction": "forward" }, geometry: [at(0, 0), at(20, 0)] },
       { type: "way", id: 2, tags: { railway: "rail", "railway:preferred_direction": "backward" }, geometry: [at(0, 5), at(20, 5)] },
@@ -115,7 +117,7 @@ test("parseOsm reads the way trains usually go on a track", () => {
 });
 
 test("parseOsm tells who may drive on a road: everyone, buses and taxis only, and buses alone", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 1, tags: { highway: "service", service: "parking_aisle" }, geometry: [at(0, 0), at(20, 0)] },
       { type: "way", id: 2, tags: { highway: "service", motor_vehicle: "no", taxi: "yes" }, geometry: [at(0, 10), at(20, 10)] },
@@ -136,7 +138,7 @@ test("parseOsm tells who may drive on a road: everyone, buses and taxis only, an
 });
 
 test("parseOsm tells a road's bus bays: on which side of its line, or both", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 1, tags: { highway: "residential", bus_bay: "right" }, geometry: [at(0, 0), at(20, 0)] },
       { type: "way", id: 2, tags: { highway: "residential", bus_bay: "both" }, geometry: [at(0, 10), at(20, 10)] },
@@ -148,7 +150,7 @@ test("parseOsm tells a road's bus bays: on which side of its line, or both", () 
 });
 
 test("cutIntoTiles cuts roads and areas at tile edges and keeps buildings whole", () => {
-  const { features } = parseOsm(response.elements, origin);
+  const { features } = parseWorld(response.elements, origin);
   const keys = tilesCovering({ minX: -100, minY: -100, maxX: 100, maxY: 100 }, 100);
   assert.equal(keys.length, 4);
   const tiles = new Map(cutIntoTiles(features, keys, 100).map((tile) => [`${tile.x}_${tile.y}`, tile]));
@@ -164,7 +166,7 @@ test("cutIntoTiles cuts roads and areas at tile edges and keeps buildings whole"
 });
 
 test("parseOsm reads trees, shrubs and tree rows, and what grows in woods and scrub", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "node", id: 40, tags: { natural: "tree", leaf_type: "needleleaved", height: "15", genus: "Picea" }, ...at(1, 2) },
       { type: "node", id: 41, tags: { natural: "tree", species: "Betula pendula", circumference: "1.2", diameter_crown: "6 m" }, ...at(5, 2) },
@@ -203,7 +205,7 @@ test("parseOsm reads trees, shrubs and tree rows, and what grows in woods and sc
 test("parseOsm leaves out ways indoors, but not the ones on from a tunnel's end, and tells the ways' storeys", () => {
   // stairs up out of an underpass into a stair house (e -2 .. 8, n 10.5 .. 24), and a corridor on to its
   // door at e 8 and outside; a way on from 40 m on is too far from the tunnel
-  const { features, levels } = parseOsm(
+  const { features, levels } = parseWorld(
     [
       { type: "way", id: 60, tags: { highway: "footway", tunnel: "yes", layer: "-1", level: "0.5" }, geometry: [at(0, 0), at(0, 10)] },
       { type: "way", id: 61, tags: { highway: "steps", indoor: "yes", level: "0.5;1" }, geometry: [at(0, 10), at(0, 20)] },
@@ -233,20 +235,20 @@ test("parseOsm keeps a ramp into a garage under a house in its tunnel, and the c
     { type: "way", id: 93, tags: { highway: "corridor", indoor: "yes", level: "0" }, geometry: [at(45, 0), at(52, 0)] },
     { type: "way", id: 94, tags: { building: "yes" }, geometry: [at(44, -3), at(50, -3), at(50, 3), at(44, 3), at(44, -3)] },
   ];
-  const { features } = parseOsm([...ramp, ...corridors], origin);
+  const { features } = parseWorld([...ramp, ...corridors], origin);
   // the corridor at level 0 goes on from the lift, which OSM does not have: it is left out, and the lift's house shut
   assert.deepEqual(features.roads.map((r) => [r.osm, r.tunnel]), [["w90", true], ["w92", true]]);
   assert.deepEqual(features.buildings.map((b) => b.passages), [undefined, undefined]);
   // without them the ramp is taken for a passage through the house
-  assert.deepEqual(parseOsm(ramp, origin).features.roads.map((r) => [r.osm, r.tunnel]), [["w90", false]]);
+  assert.deepEqual(parseWorld(ramp, origin).features.roads.map((r) => [r.osm, r.tunnel]), [["w90", false]]);
   // out of a tunnel on a storey a corridor goes on at its level into a building, and up in it
   const onStorey = ramp.map((e) => (e.id === 90 ? { ...e, tags: { ...e.tags, level: "-1" } } : e));
-  const corridor = parseOsm([...onStorey, ...corridors], origin).features.roads.find((r) => r.osm === "w92");
+  const corridor = parseWorld([...onStorey, ...corridors], origin).features.roads.find((r) => r.osm === "w92");
   assert.equal(corridor?.tunnel, false);
 });
 
 test("parseOsm tells the ends of the ways indoors it leaves out, where a bridge may go into a building", () => {
-  const { features, indoors } = parseOsm(
+  const { features, indoors } = parseWorld(
     [
       { type: "way", id: 80, tags: { highway: "footway", bridge: "yes", layer: "1" }, geometry: [at(0, 0), at(70, 0)] },
       { type: "way", id: 81, tags: { highway: "footway", indoor: "yes" }, geometry: [at(70, 0), at(75, 5)] },
@@ -260,7 +262,7 @@ test("parseOsm tells the ends of the ways indoors it leaves out, where a bridge 
 });
 
 test("parseOsm tells the ways through buildings: covered ways and tunnels found to be passages, and building passages", () => {
-  const { features, throughBuildings } = parseOsm(
+  const { features, throughBuildings } = parseWorld(
     [
       { type: "way", id: 100, tags: { highway: "cycleway", bridge: "yes", layer: "1" }, geometry: [at(-40, 0), at(0, 0)] },
       { type: "way", id: 101, tags: { highway: "cycleway", tunnel: "yes", covered: "yes" }, geometry: [at(0, 0), at(12, 0)] },
@@ -282,7 +284,7 @@ test("parseOsm tells the ways through buildings: covered ways and tunnels found 
 });
 
 test("parseOsm reads steps' count and which way they climb", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 90, tags: { highway: "steps", step_count: "41", incline: "down" }, geometry: [at(0, 0), at(20, 0)] },
       { type: "way", id: 91, tags: { highway: "steps", step_count: "12", incline: "15%" }, geometry: [at(0, 10), at(5, 10)] },
@@ -303,7 +305,7 @@ test("parseOsm reads steps' count and which way they climb", () => {
 });
 
 test("parseOsm takes corridors for ways indoors, tagged so or not", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 70, tags: { highway: "footway", tunnel: "yes", layer: "-1" }, geometry: [at(0, 0), at(0, 10)] },
       { type: "way", id: 71, tags: { highway: "corridor", indoor: "yes" }, geometry: [at(0, 10), at(0, 20)] },
@@ -338,7 +340,7 @@ test("openDoorways opens a building's walls where a covered way comes in at its 
 });
 
 test("parseOsm reads street lamps: their mount, height, direction, lamp type, shape and mast", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "node", id: 50, tags: { highway: "street_lamp", lamp_mount: "angled_mast", lamp_type: "LED" }, ...at(1, 2) },
       { type: "node", id: 51, tags: { highway: "street_lamp", power: "catenary_mast", support: "pole", structure: "Lattice", colour: "black" }, ...at(3, 2) },
@@ -361,7 +363,7 @@ test("parseOsm reads street lamps: their mount, height, direction, lamp type, sh
 });
 
 test("parseOsm reads the painted crossings, traffic signals and gates, and fences, walls and hedges", () => {
-  const { features, streetNodes } = parseOsm(
+  const { features, streetNodes } = parseWorld(
     [
       { type: "node", id: 60, tags: { highway: "crossing", crossing: "uncontrolled", "crossing:markings": "zebra" }, ...at(1, 0) },
       { type: "node", id: 61, tags: { highway: "crossing", crossing: "traffic_signals" }, ...at(2, 0) },
@@ -404,7 +406,7 @@ test("parseOsm reads the painted crossings, traffic signals and gates, and fence
 
 test("parseOsm runs a closed way's line back to its start", () => {
   const square = [at(0, 0), at(20, 0), at(20, 20), at(0, 20), at(0, 0)];
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 80, tags: { barrier: "fence" }, geometry: square },
       { type: "way", id: 81, tags: { highway: "primary", junction: "roundabout" }, geometry: square },
@@ -522,7 +524,7 @@ test("overpassQuery asks for every area rule key", () => {
 });
 
 test("a part with roof:shape=many gets its roof from the ridge line in it", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 1, tags: { "building:part": "yes", height: "10", "roof:height": "4", "roof:shape": "many" }, geometry: [at(0, 0), at(10, 0), at(10, 20), at(0, 20), at(0, 0)] },
       { type: "way", id: 2, tags: { "roof:ridge": "yes" }, geometry: [at(5, 0), at(6, 10), at(5, 20)] },
@@ -543,7 +545,7 @@ function rectangle(east: number, north: number, width: number, depth: number) {
 
 test("pitched roofs: shape, ridge direction and height from OSM or guessed", () => {
   const tan = Math.tan((27 * Math.PI) / 180);
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       // a house 10 m long east-west and 6 m deep: a guessed gabled roof on two storeys
       { type: "way", id: 30, tags: { building: "house" }, geometry: rectangle(0, 0, 10, 6) },
@@ -601,7 +603,7 @@ test("pitched roofs: shape, ridge direction and height from OSM or guessed", () 
 });
 
 test("steps (building:part=steps) tell their count and keep a skillion roof however narrow", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       // three steps 0.6 m deep, sloping down to the south; five 5 m deep, sloping down to the west, with no count
       {
@@ -626,7 +628,7 @@ test("steps (building:part=steps) tell their count and keep a skillion roof howe
 });
 
 test("a way through a building opens its walls and is drawn on the ground", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 40, tags: { building: "apartments", "building:levels": "4" }, geometry: rectangle(0, 0, 20, 10) },
       // a footway straight through west to east, a service road at 45 degrees with a maxheight
@@ -652,7 +654,7 @@ test("a way through a building opens its walls and is drawn on the ground", () =
     ],
   );
   // a passage over a straight corner in the middle of a wall opens both edges
-  const { features: gate } = parseOsm(
+  const { features: gate } = parseWorld(
     [
       { type: "way", id: 44, tags: { building: "yes" }, geometry: [at(40, 20), at(45, 20), at(50, 20), at(50, 26), at(40, 26), at(40, 20)] },
       { type: "way", id: 45, tags: { highway: "pedestrian", tunnel: "building_passage" }, geometry: [at(45.25, 15), at(45.25, 30)] },
@@ -674,7 +676,7 @@ test("a way through a building opens its walls and is drawn on the ground", () =
 });
 
 test("a building passage tagged short of its building's wall, where a way goes on, goes on straight through the wall", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 60, tags: { building: "office", layer: "2" }, geometry: rectangle(0, 0, 20, 10) },
       // tagged from the east wall to 3 m inside the west one, where a footway along the front meets it, the outline
@@ -688,7 +690,7 @@ test("a building passage tagged short of its building's wall, where a way goes o
   const walls = (osm: string, f = features) => defined(f.buildings.find((b) => b.osm === osm)).passages?.map((o) => Math.round(o.from[0])).sort((a, b) => a - b);
   assert.deepEqual(walls("w60"), [0, 20]);
   // one ending a hair inside the wall, which it then does not cross
-  const { features: hair } = parseOsm(
+  const { features: hair } = parseWorld(
     [
       { type: "way", id: 64, tags: { building: "office" }, geometry: rectangle(0, 0, 20, 10) },
       { type: "way", id: 65, tags: { highway: "footway", tunnel: "building_passage" }, geometry: [at(25, 5), at(0.1, 5)] },
@@ -698,7 +700,7 @@ test("a building passage tagged short of its building's wall, where a way goes o
   );
   assert.deepEqual(walls("w64", hair), [0, 20]);
   // with no way on from its end, a way on in a tunnel, or the wall too far, the end stays shut
-  const { features: shut } = parseOsm(
+  const { features: shut } = parseWorld(
     [
       { type: "way", id: 70, tags: { building: "office" }, geometry: rectangle(0, 0, 20, 10) },
       { type: "way", id: 71, tags: { highway: "footway", tunnel: "building_passage" }, geometry: [at(25, 5), at(3, 5)] },
@@ -714,7 +716,7 @@ test("a building passage tagged short of its building's wall, where a way goes o
   assert.deepEqual([walls("w70", shut), walls("w72", shut), walls("w75", shut)], [[20], [20], [40]]);
   // an arcade along the front inside the outline, a layer over the sidewalks going on from its ends on the walls,
   // is carried on through both
-  const { features: arcade } = parseOsm(
+  const { features: arcade } = parseWorld(
     [
       // the arcade's ends are corners of the outline, as where it is drawn to the wall's nodes
       { type: "way", id: 80, tags: { building: "office", layer: "2" }, geometry: [at(0, 0), at(40, 0), at(40, 8), at(40, 10), at(0, 10), at(0, 8), at(0, 0)] },
@@ -741,7 +743,7 @@ test("a passage is carried on through its wall where a way on the ground goes on
 });
 
 test("a tunnel through a building is taken for a passage, a ramp into it or a deep tunnel is not", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 50, tags: { building: "yes", "building:levels": "3" }, geometry: rectangle(0, 0, 20, 10) },
       { type: "way", id: 51, tags: { highway: "service", tunnel: "yes", layer: "-1" }, geometry: [at(-1, 5), at(21, 5)] },
@@ -757,7 +759,7 @@ test("a tunnel through a building is taken for a passage, a ramp into it or a de
 });
 
 test("an arcade along a building's front is a passage however long, as are covered steps up to it ending inside", () => {
-  const { features, throughBuildings } = parseOsm(
+  const { features, throughBuildings } = parseWorld(
     [
       { type: "way", id: 55, tags: { building: "office", "building:levels": "5", layer: "2" }, geometry: rectangle(0, 0, 80, 20) },
       { type: "way", id: 56, tags: { highway: "footway", covered: "arcade", layer: "1" }, geometry: [at(-2, 18), at(70, 18), at(82, 18)] },
@@ -934,7 +936,7 @@ test("compassDegrees reads degrees and compass points", () => {
 });
 
 test("an open roof over a road is lifted above vehicles, but not a carport; stop shelters get their own height", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 20, tags: { highway: "primary" }, geometry: [at(0, 5), at(30, 5)] },
       { type: "way", id: 21, tags: { highway: "footway" }, geometry: [at(0, 25), at(30, 25)] },
@@ -954,7 +956,7 @@ test("an open roof over a road is lifted above vehicles, but not a carport; stop
 });
 
 test("a stop shelter mapped as amenity=shelter alone is an open roof with a stop shelter's height; other shelters not", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 27, tags: { amenity: "shelter", shelter_type: "public_transport", bench: "yes" }, geometry: square(0, 0, 3) },
       { type: "way", id: 28, tags: { amenity: "shelter", shelter_type: "public_transport", building: "no" }, geometry: square(10, 0, 3) },
@@ -970,7 +972,7 @@ test("a stop shelter mapped as amenity=shelter alone is an open roof with a stop
 });
 
 test("wall material comes from building:material or material, and an untagged chimney is taken for brick", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 30, tags: { building: "yes", "building:material": "concrete", material: "brick" }, geometry: square(0, 0, 10) },
       { type: "way", id: 31, tags: { building: "yes", man_made: "chimney", material: "steel" }, geometry: square(20, 0, 3) },
@@ -991,7 +993,7 @@ test("wall material comes from building:material or material, and an untagged ch
 });
 
 test("ways and areas carry their surface, buildings their roof material, and a carport is an open roof", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 70, tags: { highway: "footway", surface: "fine_gravel" }, geometry: [at(0, 0), at(30, 0)] },
       { type: "way", id: 71, tags: { highway: "residential" }, geometry: [at(0, 10), at(30, 10)] },
@@ -1018,7 +1020,7 @@ test("ways and areas carry their surface, buildings their roof material, and a c
 });
 
 test("a car park on the ground is parking, one under it, in a garage or on a roof is not", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 1, tags: { amenity: "parking" }, geometry: square(0, 0, 20) },
       { type: "way", id: 2, tags: { amenity: "parking", parking: "surface", surface: "paving_stones" }, geometry: square(30, 0, 20) },
@@ -1040,7 +1042,7 @@ test("a car park on the ground is parking, one under it, in a garage or on a roo
 });
 
 test("a road for vehicles drawn as an area is a carriageway, a way for people, an island or a platform is not", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 1, tags: { highway: "service", area: "yes" }, geometry: square(0, 0, 20) },
       { type: "way", id: 2, tags: { "area:highway": "residential" }, geometry: square(30, 0, 20) },
@@ -1081,7 +1083,7 @@ test("parts take their outline's year or start_date unless they have either", ()
 });
 
 test("wall colour comes from building:colour or colour", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 35, tags: { building: "yes", "building:colour": "white", colour: "red" }, geometry: square(0, 0, 10) },
       { type: "way", id: 36, tags: { building: "yes", man_made: "tower", colour: "red" }, geometry: square(20, 0, 5) },
@@ -1094,7 +1096,7 @@ test("wall colour comes from building:colour or colour", () => {
 });
 
 test("walls tagged window=no or windows=no are windowless, and storeys in a roof are kept", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 35, tags: { "building:part": "yes", window: "no", "building:levels": "2", "roof:levels": "1", "roof:shape": "hipped" }, geometry: square(0, 0, 10) },
       { type: "way", id: 36, tags: { building: "yes", windows: "no", "roof:levels": "0" }, geometry: square(20, 0, 10) },
@@ -1111,7 +1113,7 @@ test("walls tagged window=no or windows=no are windowless, and storeys in a roof
 });
 
 test("a place of worship is special and marked as one", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 38, tags: { building: "yes", amenity: "place_of_worship" }, geometry: square(0, 0, 10) },
       { type: "way", id: 39, tags: { building: "yes", historic: "castle" }, geometry: square(20, 0, 10) },
@@ -1126,7 +1128,7 @@ test("a place of worship is special and marked as one", () => {
 });
 
 test("a building's street address is its street, or its place, and its house number as tagged", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 50, tags: { building: "yes", "addr:street": "Metsäkulmantie", "addr:housenumber": "4" }, geometry: square(0, 0, 10) },
       { type: "way", id: 51, tags: { building: "yes", "addr:place": "Pikkula", "addr:housenumber": " 2-4 B " }, geometry: square(20, 0, 10) },
@@ -1145,7 +1147,7 @@ test("a building's street address is its street, or its place, and its house num
 });
 
 test("a lattice tower is a framework of bars, also as the filler under a raised part", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 38, tags: { building: "yes", man_made: "tower", "tower:construction": "lattice", height: "55" }, geometry: square(0, 0, 5) },
       { type: "way", id: 39, tags: { man_made: "tower", "tower:construction": "guyed_lattice", height: "40" }, geometry: square(20, 0, 3) },
@@ -1166,7 +1168,7 @@ test("a lattice tower is a framework of bars, also as the filler under a raised 
 });
 
 test("a chimney mapped as man_made=chimney alone is a building, as tall as tagged or 12 times its width", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 40, tags: { man_made: "chimney", height: "84", name: "Piippu" }, geometry: square(0, 0, 5) },
       { type: "way", id: 41, tags: { man_made: "chimney" }, geometry: square(20, 0, 4) },
@@ -1187,7 +1189,7 @@ test("a chimney mapped as man_made=chimney alone is a building, as tall as tagge
 });
 
 test("towers, tanks and churches without a height are guessed by type and width, not by storeys", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 50, tags: { man_made: "ventilation_shaft", height: "40" }, geometry: square(0, 0, 6) },
       { type: "way", id: 51, tags: { building: "yes", man_made: "water_tower" }, geometry: square(20, 0, 20) },
@@ -1229,7 +1231,7 @@ test("towers, tanks and churches without a height are guessed by type and width,
 });
 
 test("a part that starts above the ground with nothing under it gets its building filled in under it", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 30, tags: { building: "commercial", height: "10", "building:colour": "white" }, geometry: square(0, 0, 40) },
       // a dome on the second floor, and a tower from the ground with a deck on it
@@ -1254,7 +1256,7 @@ test("a part that starts above the ground with nothing under it gets its buildin
 });
 
 test("a building without parts that starts above the ground with nothing under it comes down with its storeys", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       // its ground floor left out
       { type: "way", id: 60, tags: { building: "yes", "building:levels": "3", "building:min_level": "1", height: "12" }, geometry: square(0, 0, 20) },
@@ -1280,7 +1282,7 @@ test("a building without parts that starts above the ground with nothing under i
 });
 
 test("an outline whose parts cover under half of it is drawn as well", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       // a 40 x 40 m block with parts only for two low wings (2 x 200 m² of 1600)
       { type: "way", id: 40, tags: { building: "apartments", "building:levels": "8" }, geometry: square(0, 0, 40) },
@@ -1299,7 +1301,7 @@ test("an outline whose parts cover under half of it is drawn as well", () => {
 });
 
 test("parts are in the outline holding them, not in a structure mapped inside them", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       // a chimney on its pedestal: the pedestal's parts centred on the chimney, the building's outline around all
       { type: "way", id: 50, tags: { building: "yes", "building:material": "concrete" }, geometry: square(0, 0, 10) },
@@ -1321,7 +1323,7 @@ test("parts are in the outline holding them, not in a structure mapped inside th
 });
 
 test("a road under construction is drawn as the road it will be", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 40, tags: { highway: "construction", construction: "secondary", tunnel: "yes", layer: "-1" }, geometry: [at(0, 0), at(50, 0)] },
       { type: "way", id: 41, tags: { highway: "construction" }, geometry: [at(0, 10), at(50, 10)] },
@@ -1336,7 +1338,7 @@ test("a road under construction is drawn as the road it will be", () => {
 
 test("a building under construction is drawn as the building it will be", () => {
   const square = (e: number) => [at(e, 0), at(e + 20, 0), at(e + 20, 20), at(e, 20), at(e, 0)];
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 42, tags: { building: "construction", construction: "roof", layer: "1" }, geometry: square(0) },
       { type: "way", id: 43, tags: { building: "construction" }, geometry: square(40) },
@@ -1353,7 +1355,7 @@ test("a building under construction is drawn as the building it will be", () => 
 });
 
 test("a bridge's outline (man_made=bridge) is kept apart for its deck, not drawn as an area", () => {
-  const { features, bridgeOutlines } = parseOsm(
+  const { features, bridgeOutlines } = parseWorld(
     [
       { type: "way", id: 1, tags: { man_made: "bridge", name: "Silta", layer: "1", "bridge:structure": "truss", colour: "#8a3a3a" }, geometry: square(0, 0, 10) },
       {
@@ -1383,7 +1385,7 @@ test("openRailHalls opens the walls of a hall where a railway runs in, and makes
 });
 
 test("a bridge way keeps its bridge:structure and colour, a way on the ground neither", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 1, tags: { highway: "footway", bridge: "yes", layer: "1", "bridge:structure": "truss", colour: "maroon" }, geometry: [at(0, 0), at(30, 0)] },
       { type: "way", id: 2, tags: { highway: "footway", "bridge:structure": "truss", colour: "maroon" }, geometry: [at(0, 10), at(30, 10)] },
@@ -1394,7 +1396,7 @@ test("a bridge way keeps its bridge:structure and colour, a way on the ground ne
 });
 
 test("a boardwalk (bridge=boardwalk) is a bridge that says so, another bridge or one in a tunnel not", () => {
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [
       { type: "way", id: 1, tags: { highway: "path", bridge: "boardwalk", surface: "wood" }, geometry: [at(0, 0), at(30, 0)] },
       { type: "way", id: 2, tags: { highway: "path", bridge: "yes", layer: "1" }, geometry: [at(0, 10), at(30, 10)] },

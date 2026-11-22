@@ -1,16 +1,12 @@
 // Tunnels in cuts. The bare-ground elevation model shows a shallow decked tunnel as an open cut, so it gets
 // a lid at the cut's rim and a floor at its bottom, the ways over it become bridges, and buildings over it
 // open. Deep tunnels are left to tunnels.ts.
-import { crossing, openPassages, type MapFeatures, type Rail, type Road } from "./osm.ts";
+import type { MapFeatures } from "./osm.ts";
+import { openPassages } from "./passages.ts";
 import { deckAt } from "./bridges.ts";
-import { WALKWAYS } from "./tunnels.ts";
-import type { Point } from "./geometry.ts";
+import { crossing, type Point } from "./geometry.ts";
+import { LEAST_CLEARANCE_M, LID_EDGE_M, LID_THICKNESS_M, MIN_CLEARANCE_M, userOf, widthOf, type Way } from "./ways.ts";
 
-/** How far beyond its way a tunnel's lid reaches on both sides (m), and how thick it is */
-export const LID_EDGE_M = 2;
-export const LID_THICKNESS_M = 0.5;
-/** A rail's lid is as wide as its ballast */
-const RAIL_WIDTH_M = 3;
 /** The ground beside a tunnel is looked for this far out on both sides, this often (m) */
 const SIDE_REACH_M = 25;
 const SIDE_STEP_M = 2;
@@ -21,29 +17,23 @@ const CUT_SHARE = 0.5;
 const SAMPLE_M = 2;
 /** The rim of a cut is where the ground rises less than this in a step (m), as at a bridge's approach */
 const RIM_RISE_M = 0.2;
-/** The lid leaves at least this much room over the floor (m), a typical underpass height */
-const CLEARANCE_M = 3.5;
 /** A tunnel this close to the lid of a tunnel in a cut (m, edge to edge) is beside it, in the same cut */
 const BESIDE_M = 2;
-/** A lid fitted to the decks over it leaves at least this much room over the floor (m) */
-const LID_ROOM_M = { people: 2.5, vehicles: 3.5, trains: 4 };
 /** A cut's bottom under a way is looked for this far beyond the way's edges (m) */
 const FLOOR_REACH_M = 4;
 /** A way meeting a tunnel this close to the tunnel's end (m) leads on from it */
 const AT_PORTAL_M = 1;
 
-type Way = Road | Rail;
-
 /** Gives tunnels in cuts lids, makes the ways over them bridges and opens the buildings over them */
 export function coverCutTunnels(features: MapFeatures, heightAt: (e: number, n: number) => number | undefined): { tunnels: number; crossings: number } {
   const tunnels: { way: Way; width: number }[] = [];
   const ways: { way: Way; width: number }[] = [
-    ...features.roads.map((way) => ({ way, width: way.width })),
-    ...features.rails.map((way) => ({ way, width: RAIL_WIDTH_M })),
+    ...features.roads.map((way) => ({ way, width: widthOf(way) })),
+    ...features.rails.map((way) => ({ way, width: widthOf(way) })),
   ];
   for (const { way, width } of ways) {
     if (way.tunnel && way.layer >= -1 && way.line.length >= 2) {
-      const lid = cutLid(way.line, heightAt);
+      const lid = cutLid(way.line, heightAt, MIN_CLEARANCE_M[userOf(way)]);
       if (lid) {
         way.lid = lid;
         way.floor = cutFloor(way.line, width, heightAt);
@@ -102,8 +92,8 @@ function direction(a: Point, c: Point): Point {
   return length > 0 ? [(c[0] - a[0]) / length, (c[1] - a[1]) / length] : [1, 0];
 }
 
-/** The lid's top at each point of a tunnel's line (the lower rim, at least clearance over the floor), or undefined if not in a cut */
-export function cutLid(line: Point[], heightAt: (e: number, n: number) => number | undefined): number[] | undefined {
+/** The lid's top at each point of a tunnel's line (the lower rim, at least `room` over the floor), or undefined if not in a cut */
+export function cutLid(line: Point[], heightAt: (e: number, n: number) => number | undefined, room: number): number[] | undefined {
   let samples = 0;
   let deep = 0;
   for (let i = 0; i + 1 < line.length; i++) {
@@ -125,7 +115,7 @@ export function cutLid(line: Point[], heightAt: (e: number, n: number) => number
   return line.map((p, i) => {
     const floor = heightAt(...p) ?? 0;
     const along = direction(line[Math.max(0, i - 1)], line[Math.min(line.length - 1, i + 1)]);
-    return Math.max(rims(p, along, heightAt)[0], floor + CLEARANCE_M + LID_THICKNESS_M);
+    return Math.max(rims(p, along, heightAt)[0], floor + room + LID_THICKNESS_M);
   });
 }
 
@@ -203,7 +193,8 @@ function besideCut(
  * Fits the lids of tunnels in cuts to the decks of the bridges over them, which run from the ground at their ends:
  * a lid at the lower rim or at the clearance over the floor stood over them or under them. A lid point goes to the
  * lowest deck crossing the line beside it, a deck over the lid no higher than the cut's higher rim where it crosses,
- * and at least LID_ROOM_M over the floor. Returns how many lids were moved.
+ * and at least its users' LEAST_CLEARANCE_M over the floor, as a way under a deck keeps where its cut cannot go deep
+ * enough (underbridges.ts). Returns how many lids were moved.
  */
 export function fitLidsToDecks(ways: Way[], heightAt: (e: number, n: number) => number | undefined): number {
   const decks = ways.filter((w) => w.bridge && w.deck && w.line.length >= 2);
@@ -213,8 +204,8 @@ export function fitLidsToDecks(ways: Way[], heightAt: (e: number, n: number) => 
     if (!lid || !floor) {
       continue;
     }
-    const room = !("width" in way) ? LID_ROOM_M.trains : WALKWAYS.has(way.kind) ? LID_ROOM_M.people : LID_ROOM_M.vehicles;
-    const width = "width" in way ? way.width : RAIL_WIDTH_M;
+    const room = LEAST_CLEARANCE_M[userOf(way)];
+    const width = widthOf(way);
     // the lowest deck crossing the line beside each point
     const lowest = lid.map(() => Infinity);
     for (let i = 0; i + 1 < way.line.length; i++) {

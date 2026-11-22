@@ -3,6 +3,8 @@
 // area's leaf type).
 import { bounds, type Area, type MapFeatures, type Rail, type Road, type Tree } from "./osm.ts";
 import { distanceToRing, distanceToSegment, pointInPolygon, polygonTest, RectGrid, type Point, type Rect } from "./geometry.ts";
+import { inTunnel, outOfTunnelsAndSpans } from "./profile.ts";
+import { RAIL_WIDTH_M } from "./ways.ts";
 
 /** An OSM tree this close (m) to a register tree is the same tree */
 const SAME_TREE_M = 4;
@@ -67,7 +69,6 @@ const WOODS_MIXES: Record<NonNullable<Area["leafType"]>, Mix> = {
 const PLANT_GAP_M = 2.5;
 const ROAD_CLEARANCE_M = 1.5;
 const BUILDING_CLEARANCE_M = 2;
-const RAIL_WIDTH_M = 3;
 /** Areas where nothing is planted even inside woods */
 const BARE_AREAS = new Set<Area["kind"]>(["water", "paved", "pitch"]);
 
@@ -127,8 +128,8 @@ const TRUNK_M = 0.3;
  */
 export function moveTreesOffWays(trees: Tree[], roads: Road[], rails: Rail[]): Tree[] {
   const lines = [
-    ...roads.filter((r) => !r.tunnel && !r.bridge).map((r) => ({ line: r.line, half: r.width / 2 })),
-    ...rails.filter((r) => !r.tunnel && !r.bridge).map((r) => ({ line: r.line, half: RAIL_WIDTH_M / 2 })),
+    ...roads.filter(outOfTunnelsAndSpans).map((r) => ({ line: r.line, half: r.width / 2 })),
+    ...rails.filter(outOfTunnelsAndSpans).map((r) => ({ line: r.line, half: RAIL_WIDTH_M / 2 })),
   ];
   if (trees.length === 0 || lines.length === 0) {
     return trees;
@@ -214,8 +215,8 @@ export function plantForests(features: MapFeatures, within: Rect): number {
     }
   }
   const lines = [
-    ...features.roads.filter((road) => !road.tunnel).map((road) => ({ line: road.line, clearance: road.width / 2 + ROAD_CLEARANCE_M })),
-    ...features.rails.filter((rail) => !rail.tunnel).map((rail) => ({ line: rail.line, clearance: RAIL_WIDTH_M / 2 + ROAD_CLEARANCE_M })),
+    ...features.roads.filter((road) => !inTunnel(road)).map((road) => ({ line: road.line, clearance: road.width / 2 + ROAD_CLEARANCE_M })),
+    ...features.rails.filter((rail) => !inTunnel(rail)).map((rail) => ({ line: rail.line, clearance: RAIL_WIDTH_M / 2 + ROAD_CLEARANCE_M })),
   ];
   for (const { line, clearance } of lines) {
     for (let k = 0; k + 1 < line.length; k++) {

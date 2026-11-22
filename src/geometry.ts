@@ -592,3 +592,29 @@ export class MinHeap<T> {
     return top;
   }
 }
+
+/** A way crossing a wall at a slant opens it at most this much wider than the way */
+const MAX_PASSAGE_SLANT = 3;
+
+/**
+ * Where the way p -> q crosses the wall a -> c: at (0 .. 1 along the wall) and the half-width in meters
+ * of the stretch of wall it needs, or undefined.
+ */
+export function crossing(a: Point, c: Point, p: Point, q: Point, width: number): { at: number; half: number } | undefined {
+  const [ux, uy] = [c[0] - a[0], c[1] - a[1]];
+  const [dx, dy] = [q[0] - p[0], q[1] - p[1]];
+  const cross = ux * dy - uy * dx;
+  const wall = Math.hypot(ux, uy);
+  const way = Math.hypot(dx, dy);
+  if (Math.abs(cross) < 1e-9 * wall * way) {
+    return undefined;
+  }
+  // a + ux * t = p + dx * s
+  const t = ((p[0] - a[0]) * dy - (p[1] - a[1]) * dx) / cross;
+  const s = ((p[0] - a[0]) * uy - (p[1] - a[1]) * ux) / cross;
+  if (t < 0 || t > 1 || s < 0 || s > 1) {
+    return undefined;
+  }
+  const sine = Math.abs(cross) / (wall * way);
+  return { at: t, half: Math.min(width / 2 / sine, (width / 2) * MAX_PASSAGE_SLANT) };
+}

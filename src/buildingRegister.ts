@@ -2,7 +2,8 @@
 // Features, one point per building, CC BY 4.0), applied to the OSM outlines the points fall in.
 import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
-import { bounds, LEVEL_HEIGHT_M, partOutlines, type Building, type BuildingUse, type GeoBox } from "./osm.ts";
+import { partOutlines } from "./buildingParts.ts";
+import { bounds, LEVEL_HEIGHT_M, type Building, type BuildingUse, type GeoBox } from "./osm.ts";
 import { indexBoxes, pointInPolygon, pointKey, ringArea, type Point } from "./geometry.ts";
 import { field, items, optionalNumber, optionalString } from "./json.ts";
 import { inGeoBox } from "./projection.ts";

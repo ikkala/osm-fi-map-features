@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Point } from "./geometry.ts";
-import { inheritFromOutlines, type Building } from "./osm.ts";
+import { inheritFromOutlines } from "./buildingParts.ts";
+import type { Building } from "./osm.ts";
 import { applyAges, storeyHeight } from "./ages.ts";
 
 function square(x: number, size: number, extra: Partial<Building> = {}): Building {

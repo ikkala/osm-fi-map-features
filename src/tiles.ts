@@ -2,6 +2,7 @@
 // y*size ... (y+1)*size meters from the map origin. Lines and areas are cut at tile edges; buildings,
 // points and bridge deck pieces belong whole to the tile of their centre.
 import { deckAt } from "./bridges.ts";
+import { profileOf } from "./profile.ts";
 import { clipPolygon, clipPolyline, ringCentroid, simplifyRing, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
 import {
   bounds,
@@ -41,10 +42,11 @@ export interface Tile extends TileKey, MapFeatures {
   /** The waterways in the tile's water, where the elevation model was there to level it */
   waterways?: Waterway[];
   /**
-   * The stretches of buildings' walls, the tile's and those around it, where the ground steps down outside them
-   * (buildingSteps.ts): from a to b with the building on the left, its outside on the right
+   * The lines where the ground steps, which its heights smooth into a slope (retaining walls and buildings' walls,
+   * those of the tiles around within reach too), each with on its left the side a point on it takes (a retaining
+   * wall's top, a building's outside): read the ground by tileGroundAt
    */
-  buildingSteps?: { a: Point; b: Point }[];
+  groundSteps?: Point[][];
 }
 
 /** Areas are simplified to this many meters before cutting. */
@@ -147,10 +149,10 @@ export function cutIntoTiles(features: MapFeatures, keys: TileKey[], size: numbe
     for (const tile of touched(road.line)) {
       for (const line of clipPolyline(road.line, tileRect(tile, size))) {
         const { footfall, cycling } = road;
+        const piece = { ...road, line, ...clippedDeck(road, line) };
         tile.roads.push({
-          ...road,
-          line,
-          ...clippedDeck(road, line),
+          ...piece,
+          profile: profileOf(piece).kind,
           ...(footfall && { footfall: line.map((p) => Math.round(deckAt(road.line, footfall, p))) }),
           ...(cycling && { cycling: line.map((p) => Math.round(deckAt(road.line, cycling, p))) }),
         } satisfies Road);
@@ -160,7 +162,8 @@ export function cutIntoTiles(features: MapFeatures, keys: TileKey[], size: numbe
   for (const rail of features.rails) {
     for (const tile of touched(rail.line)) {
       for (const line of clipPolyline(rail.line, tileRect(tile, size))) {
-        tile.rails.push({ ...rail, line, ...clippedDeck(rail, line) } satisfies Rail);
+        const piece = { ...rail, line, ...clippedDeck(rail, line) };
+        tile.rails.push({ ...piece, profile: profileOf(piece).kind } satisfies Rail);
       }
     }
   }

@@ -2,7 +2,8 @@
 // ground are known: height = rise + storeys × storey, fitted to the median height of each storey count, so that
 // the roof's rise over the eaves and the plinth go to the rise. scripts/measureStoreys.ts measures them from a
 // map's cached sources (see the README's measured defaults).
-import { bounds, partOutlines, type Building } from "./osm.ts";
+import { partOutlines } from "./buildingParts.ts";
+import { bounds, type Building } from "./osm.ts";
 import { pointInPolygon, ringCentroid, type Point, type Polygon } from "./geometry.ts";
 
 /** A building measured: its storeys, the year it was built, and its height over the ground to its roof's top */

@@ -61,7 +61,9 @@ export {
   type PowerLine,
 } from "./landmarks.ts";
 export { ORTHO_ATTRIBUTION } from "./ortho.ts";
-export { inheritFromOutlines, parseOsm, parseOverpassResponse, type OsmElement, type OverpassResponse, type ParseResult } from "./osm.ts";
+export { inheritFromOutlines } from "./buildingParts.ts";
+export { parseOsm, parseOverpassResponse, type OsmElement, type OverpassResponse, type ParseResult } from "./osm.ts";
+export { openBuildings, type ThroughBuildings } from "./passages.ts";
 export type {
   Area,
   AreaKind,
@@ -103,5 +105,8 @@ export { TAMPERE_TREE_REGISTER, TREE_REGISTERS, type TreeRegisterSource } from "
 export { lightPhases, type Light, type LightSector, type Seamark, type SeamarkKind } from "./seamarks.ts";
 export { readText, type TextSource } from "./text.ts";
 export { tileName, tileRect, type Heights, type Tile, type TileKey } from "./tiles.ts";
+export { stepReach, tileGroundAt } from "./ground.ts";
+export { onGround, profileOf, type Profile, type ProfileKind } from "./profile.ts";
 export { parseTunnelFloors, readTunnelFloors, type TunnelFloor } from "./tunnelFloors.ts";
 export type { Waterway, WaterwayKind } from "./waterways.ts";
+export { WAY_DIMENSIONS, type WayUser } from "./ways.ts";

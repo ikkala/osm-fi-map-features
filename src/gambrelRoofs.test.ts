@@ -3,9 +3,9 @@ import { test } from "node:test";
 import { fitGambrel, gambrelFaces, GAMBREL_REACH_M, isGambrel, kneeShare, taggedGambrels } from "./gambrelRoofs.ts";
 import { distanceToRing, pointInRing, ringArea, type Point, type Polygon } from "./geometry.ts";
 import { applyLaserShapes, chooseRoofShape } from "./laserRoofShapes.ts";
-import { parseOsm, type Building } from "./osm.ts";
+import { type Building } from "./osm.ts";
 import { LocalProjection } from "./projection.ts";
-import { defined } from "./testing.ts";
+import { defined, parseWorld } from "./testing.ts";
 
 // a house 14 m by 9.5 m, its long side at 50° from east, centred at (1000, 2000)
 const ANGLE = (50 * Math.PI) / 180;
@@ -134,7 +134,7 @@ test("a roof OSM tags gambrel is gabled until its height is known, then drawn by
     return { lat: latitude, lon: longitude };
   };
   // 12 m east to west by 8, its ridge so
-  const { features } = parseOsm(
+  const { features } = parseWorld(
     [{ type: "way", id: 40, tags: { building: "house", "roof:shape": "gambrel", "building:levels": "1", "roof:levels": "1" }, geometry: [at(0, 0), at(12, 0), at(12, 8), at(0, 8), at(0, 0)] }],
     origin,
   );

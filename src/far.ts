@@ -2,6 +2,8 @@
 import { boxCentre, orientedBox, triangulate, type Point } from "./geometry.ts";
 import type { AreaKind } from "./osm.ts";
 import { tileRect, type Heights, type Tile } from "./tiles.ts";
+import { inTunnel } from "./profile.ts";
+import { RAIL_WIDTH_M } from "./ways.ts";
 
 /** What a cell of the cover shows, by its index (see FarTile.cover); new classes go at the end, so the indices stay. */
 export const FAR_CLASSES = ["ground", "grass", "forest", "sand", "rock", "pitch", "paved", "water", "road", "path", "rail", "field"] as const;
@@ -62,7 +64,6 @@ const AREA_CLASS: Record<AreaKind, FarClass> = {
 const PATHS = new Set(["footway", "pedestrian", "cycleway", "path", "track", "bridleway", "steps"]);
 const PATH_WIDTH_M = 2;
 const ROAD_WIDTH_M = 6;
-const RAIL_WIDTH_M = 3;
 
 /** The summary of a tile of tileSize meters for drawing it from afar. */
 export function farTile(tile: Tile, tileSize: number, options: FarOptions = {}): FarTile {
@@ -108,13 +109,13 @@ function cover(tile: Tile, tileSize: number, size: number): { size: number; cell
     }
   };
   for (const road of tile.roads) {
-    if (!road.tunnel) {
+    if (!inTunnel(road)) {
       const path = PATHS.has(road.kind);
       line(classIndex(path ? "path" : "road"), road.line, road.width || (path ? PATH_WIDTH_M : ROAD_WIDTH_M));
     }
   }
   for (const rail of tile.rails) {
-    if (!rail.tunnel) {
+    if (!inTunnel(rail)) {
       line(classIndex("rail"), rail.line, RAIL_WIDTH_M);
     }
   }

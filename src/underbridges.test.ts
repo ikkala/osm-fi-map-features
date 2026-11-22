@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Point } from "./geometry.ts";
 import type { BridgeDeck, BridgeOutline, Rail, Road } from "./osm.ts";
-import { lowerUnderBridges, underBridges } from "./underbridges.ts";
+import { lowerUnderBridges } from "./underbridges.ts";
 
 function road(osm: string, line: Point[], extra: Partial<Road> = {}): Road {
   return { osm, kind: "residential", width: 6, layer: 0, bridge: false, tunnel: false, line, ...extra };
@@ -179,29 +179,10 @@ test("paths meeting under a bridge go down together, at one height where they me
   assert.equal(main.floor, undefined);
 });
 
-test("a way under a bridge with room enough goes down to its own ground where the model's spans the gap over it", () => {
-  // the model's ground spanning the gap under the deck from the embankments beside the way, 2.5 m over the way's
-  // ground at 95 on either side of the bridge
+test("a way under a bridge with room enough stays on its ground", () => {
   const deck = bridge();
   const path = road("w2", [[0, -60], [0, 60]], { kind: "footway", width: 2.5 });
-  const ways = [deck, path];
-  const ground = (_e: number, n: number) => (Math.abs(n) <= 4 ? 97.5 : 95);
-  assert.equal(lowerUnderBridges(ways, [deck], [], ground), 1);
-  const cut = ways.find((w) => w.osm === "w2" && w.floor);
-  assert.ok(cut?.floor);
-  // level with the ground on either side, under the deck that leaves it more room than it needs
-  assert.ok(cut.floor.every((f) => Math.abs(f - 95) < 1e-9));
-  // a hump of less than half a meter is left as it is
-  const low = bridge();
-  const other = road("w3", [[0, -60], [0, 60]], { kind: "footway", width: 2.5 });
-  assert.equal(lowerUnderBridges([low, other], [low], [], (_e, n) => (Math.abs(n) <= 4 ? 95.4 : 95)), 0);
+  assert.equal(lowerUnderBridges([deck, path], [deck], [], () => 95), 0);
+  assert.equal(path.floor, undefined);
 });
 
-test("a point is under a bridge within its way's width and edges, or in its outline with a bridge way in it", () => {
-  const square = (e: number): Point[] => [[e, -5], [e + 10, -5], [e + 10, 5], [e, 5]];
-  const outlines = [square(50), square(100)].map((outer, i) => ({ osm: `w${9 + i}`, polygon: { outer, holes: [] } }));
-  // the bridge reaches into the first outline; a street on the ground crosses the second
-  const under = underBridges([road("w1", [[-30, 0], [52, 0]], { layer: 1, bridge: true }), road("w2", [[-30, 20], [30, 20]]), road("w3", [[95, 0], [115, 0]])], outlines);
-  const points: Point[] = [[0, 3.4], [0, -3.6], [0, 20], [58, 4], [45, 4], [105, 0]];
-  assert.deepEqual(points.map(under), [true, false, false, true, false, false]);
-});

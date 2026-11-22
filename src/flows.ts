@@ -5,8 +5,9 @@
 // Each count matches the nearest road of its mode; the count/estimate ratio spreads, fading, along the counted
 // road (same id or name, or walkways in line with it) and less onto other roads.
 import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
-import { NOT_FOR_VEHICLES, type Road } from "./osm.ts";
+import { type Road } from "./osm.ts";
 import type { Point } from "./geometry.ts";
+import { WALKWAYS } from "./ways.ts";
 
 export type FlowMode = "walking" | "cycling" | "driving";
 
@@ -155,7 +156,7 @@ function goesOn(r: Match, road: FlowRoad, p: Point, mode: FlowMode): boolean {
   if ((r.road.osm !== undefined && r.road.osm === road.osm) || (r.road.name !== undefined && r.road.name === road.name)) {
     return true;
   }
-  if (mode === "driving" || road.kind !== r.road.kind || !NOT_FOR_VEHICLES.has(road.kind)) {
+  if (mode === "driving" || road.kind !== r.road.kind || !WALKWAYS.has(road.kind)) {
     return false;
   }
   const [a, b] = [r.a, r.b];
@@ -182,7 +183,7 @@ export function pullFlows(roads: FlowRoad[], others: FlowRoad[], counts: FlowCou
       continue;
     }
     // a count on one sidewalk of a street is about half the street's
-    const street = !NOT_FOR_VEHICLES.has(match.road.kind) && match.road.kind !== "living_street";
+    const street = !WALKWAYS.has(match.road.kind) && match.road.kind !== "living_street";
     const sides = match.road.sidewalks === "left" || match.road.sidewalks === "right" ? 1 : 2;
     const daily = count.mode !== "driving" && street && !count.whole ? count.daily * sides : count.daily;
     residuals[count.mode].push({ ...match, log: Math.log(Math.max(daily, 1) / Math.max(match.value, 1)) });

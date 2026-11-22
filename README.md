@@ -61,7 +61,8 @@ const builder = new MapBuilder({
 const info = await builder.info(); // tiles, OSM timestamp, attributions
 for (const key of info.tiles) {
   const tile = await builder.tile(key); // roads, rails, buildings, areas, trees, lamps, crossings, signals, gates, barriers, playEquipment, bridgeDecks,
-  // seamarks, landmarks, piers, dams, rides, powerLines, pistes, bicycleParkings, pitches, waterways, heights
+  // seamarks, landmarks, piers, dams, rides, powerLines, pistes, bicycleParkings, pitches, waterways, heights,
+  // groundSteps (the ground read from heights and groundSteps by tileGroundAt)
 
 }
 ```
@@ -105,11 +106,13 @@ whole map's tiles; `tile()` gives only those built.
 ## How the map is built
 
 How each feature is made from its tags, the registers and the elevation model is in its module's comments in `src/`,
-and what a tile's fields hold in the types (`src/osm.ts` and the modules it names). Where to look:
+and what a tile's fields hold in the types (`src/osm.ts` and the modules it names). `src/osm.ts` parses the elements
+into features; `src/world.ts` has the stages that build the world from them, in the order `MapBuilder` runs them.
+Where to look:
 
-- Buildings (`src/osm.ts`): which are left out under the ground, the filling under parts raised off it, heights from
-  `height`, storeys or the kind of building, guessed roofs, passages through buildings and their rooms, materials,
-  colours and surfaces. With them `src/buildingRegister.ts` (storeys, materials, uses and years from Ryhti),
+- Buildings (`src/osm.ts`): which are left out under the ground, heights from `height`, storeys or the kind of
+  building, guessed roofs, materials, colours and surfaces; `src/buildingParts.ts` (parts and their outlines, the
+  filling under parts raised off the ground) and `src/passages.ts` (passages through buildings and their rooms). With them `src/buildingRegister.ts` (storeys, materials, uses and years from Ryhti),
   `src/startDates.ts` and `src/ages.ts` (when a building was built, and its storeys' height then), `src/bases.ts`
   (where a building stands on a slope), `src/roofRidges.ts` (roofs drawn by their ridge lines), `src/roofTops.ts`
   and `src/laserScanning.ts` (measured roof tops, brought down to the laser-scanned roof), `src/laserRoofShapes.ts` and `src/roofWings.ts`
@@ -117,12 +120,18 @@ and what a tile's fields hold in the types (`src/osm.ts` and the modules it name
   (an outline split into the measured parts' heights), `src/ortho.ts` (roof
   colours), `src/windows.ts`, `src/entrances.ts` and `src/businesses.ts` (the businesses in a building and where
   each shows), `src/raisedPassages.ts` (passages on a bridge's deck).
-- The ground where the elevation model's 2 m grid smooths a step: `src/retainingWalls.ts`, `src/flights.ts` (steps
-  up an edge) and `src/buildingSteps.ts` (a building cut into a slope).
+- The ground, one model of it in layers each stage asks for: `src/ground.ts`; under bridges `src/bareGround.ts`.
+  Where the elevation model's 2 m grid smooths a step: `src/retainingWalls.ts`, `src/flights.ts` (steps up an edge)
+  and `src/buildingSteps.ts` (a building cut into a slope).
+- A way's vertical profile in the tiles (`profile`: what its surface lies on, its heights the field it names):
+  `src/profile.ts`.
+- Ways' users and dimensions (widths, clearances, the decks', lids' and roofs' thickness and reach, grades), which
+  the modules building around them share: `src/ways.ts`, exported as data in `WAY_DIMENSIONS`.
 - Tunnels: `src/tunnels.ts` (floors, rooms, ramps at the portals, floors known at points: `tunnelFloors`) and
   `src/cuts.ts` (a shallow tunnel the model has as an open cut, under a lid).
 - Bridges: `src/bridges.ts` (decks of spans and boardwalks, and steps telling a deck's height), `src/decks.ts`
-  (bridge outlines as decks), `src/underbridges.ts` (ways under a deck), `src/stairs.ts` (staircases' landings).
+  (bridge outlines as decks), `src/deckIndex.ts` (the decks' heights, and what is under or on one),
+  `src/underbridges.ts` (ways under a deck), `src/stairs.ts` (staircases' landings).
 - Railways and tramways: `src/trackbeds.ts`; platforms `src/platforms.ts`; pitches and level paved areas
   `src/pitches.ts`.
 - Trees `src/forests.ts` and `src/treeRegister.ts`, street lamps `src/lamps.ts`, crossings, traffic signals and

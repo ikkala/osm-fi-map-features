@@ -2,11 +2,11 @@
 // often runs on over a path with no opening of its own. A wall is cut open at a tunnel's portal in it too. A parapet
 // stands on a bridge's deck, over the ways passing under it, and so does a railing on a layer over the ground: they
 // open at their gates alone.
-import { distanceToSegment, pointKey, type Point } from "./geometry.ts";
+import { crossing, distanceToSegment, pointKey, type Point } from "./geometry.ts";
 import { deckAt } from "./bridges.ts";
-import { LID_EDGE_M } from "./cuts.ts";
-import { bounds, crossing, type Barrier, type Gate, type MapFeatures } from "./osm.ts";
-import { ROOM_SIDE_M } from "./tunnels.ts";
+import { DeckIndex } from "./deckIndex.ts";
+import { bounds, type Barrier, type Gate, type MapFeatures } from "./osm.ts";
+import { ROOM_SIDE_M, widthOf } from "./ways.ts";
 
 /** An opening is this much (m) wider than the way through it */
 const OPENING_MARGIN_M = 0.4;
@@ -17,7 +17,6 @@ const GATE_ALONG_COS = Math.cos(Math.PI / 4);
 /** A barrier is on a deck or lid this far (m) out of its edge, which is at least this much over the ground (m) */
 const ON_DECK_M = 1.5;
 const OVER_GROUND_M = 1;
-const DECK_EDGE_M = 0.5;
 /** A barrier crossing a bridge's way at this sine or more passes under it, at less runs along it */
 const CROSSING_SINE = 0.5;
 /** A barrier passing under a deck that is less than this (m) over its top is left out there */
@@ -35,7 +34,7 @@ const MIN_PIECE_M = 0.3;
  */
 export function openBarriers(features: MapFeatures): number {
   const ways = [
-    ...[...features.roads.map((r) => ({ line: r.line, width: r.width, over: r.bridge || r.tunnel })), ...features.rails.map((r) => ({ line: r.line, width: RAIL_WIDTH_M, over: r.bridge || r.tunnel }))]
+    ...[...features.roads.map((r) => ({ line: r.line, width: r.width, over: r.bridge || r.tunnel })), ...features.rails.map((r) => ({ line: r.line, width: widthOf(r), over: r.bridge || r.tunnel }))]
       .filter((w) => !w.over && w.line.length >= 2),
     ...portals(features),
   ].map((w) => ({ ...w, box: bounds(w.line) }));
@@ -82,7 +81,7 @@ function portals(features: MapFeatures): { line: Point[]; width: number }[] {
   }
   const result: { line: Point[]; width: number }[] = [];
   for (const way of tunnels) {
-    const width = ("width" in way ? way.width : RAIL_WIDTH_M) + ROOM_SIDE_M * 2;
+    const width = widthOf(way) + ROOM_SIDE_M * 2;
     for (const line of [way.line, [...way.line].reverse()]) {
       const lengths = cumulative(line);
       const [end, next] = [line[0], line[1]];
@@ -101,9 +100,6 @@ function bridgeRailing(barrier: Barrier): boolean {
   return barrier.kind === "fence" && barrier.material === "railing" && (barrier.layer ?? 0) > 0;
 }
 
-/** Railway tracks are this wide (m) where they go through a fence */
-const RAIL_WIDTH_M = 3;
-
 /** Meters along the line to each of its points */
 /**
  * Leaves out the stretches of barriers on bridges' decks and tunnels' lids (a railing along a bridge): a barrier
@@ -113,27 +109,11 @@ const RAIL_WIDTH_M = 3;
  * not on the ground, the look of the bridge's railing there. Returns how many stretches were left out.
  */
 export function leaveOutOnDecks(features: MapFeatures, heightAt: (e: number, n: number) => number | undefined): number {
-  // across: how far out of a bridge's way's line its deck is (m), none for a lid
-  const decks = [...features.roads, ...features.rails]
-    .flatMap((w): { line: Point[]; heights: number[]; reach: number; across?: number }[] => {
-      const half = ("width" in w ? w.width : RAIL_WIDTH_M) / 2;
-      if (w.bridge && w.deck) {
-        return [{ line: w.line, heights: w.deck, reach: half + DECK_EDGE_M + ON_DECK_M, across: half + DECK_EDGE_M }];
-      }
-      return w.lid ? [{ line: w.line, heights: w.lid, reach: half + LID_EDGE_M + ON_DECK_M }] : [];
-    })
-    .filter((d) => d.line.length >= 2)
-    .map((d) => ({ ...d, box: bounds(d.line) }));
+  const decks = new DeckIndex([...features.roads, ...features.rails]);
   let count = 0;
   const pieces: Barrier[] = [];
   for (const barrier of features.barriers) {
     if (barrier.parapet) {
-      pieces.push(barrier);
-      continue;
-    }
-    const box = bounds(barrier.line);
-    const near = decks.filter((d) => d.box.maxX + d.reach >= box.minX && d.box.minX - d.reach <= box.maxX && d.box.maxY + d.reach >= box.minY && d.box.minY - d.reach <= box.maxY);
-    if (near.length === 0) {
       pieces.push(barrier);
       continue;
     }
@@ -146,18 +126,11 @@ export function leaveOutOnDecks(features: MapFeatures, heightAt: (e: number, n: 
       const [from] = between(barrier.line, lengths, Math.max(0, d - SAMPLE_M / 2), Math.max(0, d - SAMPLE_M / 2));
       const [to] = between(barrier.line, lengths, Math.min(total, d + SAMPLE_M / 2), Math.min(total, d + SAMPLE_M / 2));
       const ground = heightAt(...p);
-      const on = near.some(({ line, heights, reach, across }) => {
-        let distance = Infinity;
-        let nearest = 0;
-        for (let i = 0; i + 1 < line.length; i++) {
-          const away = distanceToSegment(p, line[i], line[i + 1]);
-          if (away < distance) {
-            distance = away;
-            nearest = i;
-          }
-        }
+      const on = decks.coversNear(p, ON_DECK_M).some(({ kind, line, heights, half, edge, segment: nearest, distance }) => {
+        const reach = half + edge + ON_DECK_M;
+        const across = half + edge;
         const high = ground !== undefined && (deckAt(line, heights, p) - ground >= OVER_GROUND_M || bridgeRailing(barrier));
-        if (across === undefined) {
+        if (kind === "lid") {
           return distance <= reach && high;
         }
         if (barrier.kind === "retaining_wall") {

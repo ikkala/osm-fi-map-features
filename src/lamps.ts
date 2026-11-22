@@ -1,8 +1,9 @@
 // Guesses street lamps' heights and facing, which OSM rarely has: a lamp faces the nearest street (or else
 // path) and is as tall as lamps by such a way usually are.
-import { deckAt } from "./bridges.ts";
+import { DeckIndex } from "./deckIndex.ts";
 import { indexBoxes, nearestOnLine, type Point } from "./geometry.ts";
-import { bounds, NOT_FOR_VEHICLES, type Road, type StreetLamp } from "./osm.ts";
+import { bounds, type Road, type StreetLamp } from "./osm.ts";
+import { WALKWAYS } from "./ways.ts";
 
 /** A lamp faces the nearest street this close to it (m to the centre line), else the nearest path this close */
 const STREET_REACH_M = 15;
@@ -35,23 +36,20 @@ export function placeLamps(lamps: StreetLamp[], roads: Road[]): { facing: number
     bounds(lamps.map((lamp) => lamp.point)),
   );
   const counts = { facing: 0, heights: 0, onDecks: 0 };
+  const decks = new DeckIndex(candidates.map(({ road }) => road));
   for (const lamp of lamps) {
     const [e, n] = lamp.point;
     let street: Nearest | undefined;
     let path: Nearest | undefined;
-    let deck: Nearest | undefined;
     for (const { road, box } of near({ minX: e, minY: n, maxX: e, maxY: n }).map((index) => candidates[index])) {
       if (e < box.minX - reach || e > box.maxX + reach || n < box.minY - reach || n > box.maxY + reach) {
         continue;
       }
       const nearest = { road, ...nearestOnLine(road.line, lamp.point) };
-      if (NOT_FOR_VEHICLES.has(road.kind)) {
+      if (WALKWAYS.has(road.kind)) {
         path = closer(path, nearest);
       } else {
         street = closer(street, nearest);
-      }
-      if (road.deck && nearest.distance <= road.width / 2 + ON_DECK_M) {
-        deck = closer(deck, nearest);
       }
     }
     const facing = street && street.distance <= STREET_REACH_M ? street : path && path.distance <= PATH_REACH_M ? path : undefined;
@@ -65,8 +63,9 @@ export function placeLamps(lamps: StreetLamp[], roads: Road[]): { facing: number
       lamp.height = byStreet ? (MAIN_STREETS.has(byStreet.kind) ? MAIN_STREET_LAMP_M : STREET_LAMP_M) : PATH_LAMP_M;
       counts.heights++;
     }
-    if (deck?.road.deck) {
-      lamp.base = deckAt(deck.road.line, deck.road.deck, lamp.point);
+    const deck = decks.on(lamp.point, ON_DECK_M);
+    if (deck) {
+      lamp.base = deck.deck;
       counts.onDecks++;
     }
   }
