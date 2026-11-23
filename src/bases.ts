@@ -191,8 +191,7 @@ function lidUnder(b: Building, lids: { line: Point[]; lid: number[] }[]): number
       for (let k = 0; k <= steps; k++) {
         const t = k / steps;
         const p: Point = [a[0] + (c[0] - a[0]) * t, a[1] + (c[1] - a[1]) * t];
-        const inBox = inRect(p, box);
-        if (inBox && pointInPolygon(p, b.polygon)) {
+        if (inRect(p, box) && pointInPolygon(p, b.polygon)) {
           top = Math.max(top, lid[i] + (lid[i + 1] - lid[i]) * t);
         }
       }
@@ -211,15 +210,11 @@ function lowestGround(polygon: Polygon, heightAt: (e: number, n: number) => numb
 function groundRange(ring: Ring, heightAt: (e: number, n: number) => number | undefined): { low: number; high: number } | undefined {
   let low = Infinity;
   let high = -Infinity;
-  for (let i = 0; i < ring.length; i++) {
-    const [a, c] = [ring[i], ring[(i + 1) % ring.length]];
-    const steps = Math.max(1, Math.ceil(Math.hypot(c[0] - a[0], c[1] - a[1]) / SAMPLE_M));
-    for (let k = 0; k < steps; k++) {
-      const h = heightAt(a[0] + ((c[0] - a[0]) * k) / steps, a[1] + ((c[1] - a[1]) * k) / steps);
-      if (h !== undefined) {
-        low = Math.min(low, h);
-        high = Math.max(high, h);
-      }
+  for (const p of alongRing(ring)) {
+    const h = heightAt(...p);
+    if (h !== undefined) {
+      low = Math.min(low, h);
+      high = Math.max(high, h);
     }
   }
   return high >= low ? { low, high } : undefined;

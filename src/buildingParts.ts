@@ -22,8 +22,7 @@ export function raiseRoofsOverRoads(features: MapFeatures): void {
         const steps = Math.max(1, Math.ceil(Math.hypot(next[0] - p[0], next[1] - p[1])));
         for (let k = 0; k < steps; k++) {
           const q: Point = [p[0] + ((next[0] - p[0]) * k) / steps, p[1] + ((next[1] - p[1]) * k) / steps];
-          const inBox = inRect(q, box);
-          if (inBox && pointInPolygon(q, roof.polygon)) {
+          if (inRect(q, box) && pointInPolygon(q, roof.polygon)) {
             return true;
           }
         }

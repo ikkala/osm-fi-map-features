@@ -109,7 +109,7 @@ function estimate(roads: Road[], buildings: Building[], mode: Mode): FootfallRes
 }
 
 /** 1 at the point, falling smoothly to 0 at reach */
-function falloff(distance: number, reach: number): number {
+export function falloff(distance: number, reach: number): number {
   const t = 1 - (distance / reach) ** 2;
   return t > 0 ? t * t : 0;
 }

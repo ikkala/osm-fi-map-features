@@ -9,6 +9,7 @@ import { type Road } from "./osm.ts";
 import { pushTo, type Point } from "./geometry.ts";
 import { WALKWAYS } from "./ways.ts";
 import { inTunnel } from "./profile.ts";
+import { falloff } from "./footfall.ts";
 
 export type FlowMode = "walking" | "cycling" | "driving";
 
@@ -89,12 +90,6 @@ function estimates(road: FlowRoad, mode: FlowMode): number[] | undefined {
   }
   const base = estimateMotorTraffic(road);
   return base > 0 ? road.line.map(() => base) : undefined;
-}
-
-/** 1 at the point, falling smoothly to 0 at reach */
-function falloff(distance: number, reach: number): number {
-  const t = 1 - (distance / reach) ** 2;
-  return t > 0 ? t * t : 0;
 }
 
 interface Match {
