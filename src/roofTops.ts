@@ -201,13 +201,19 @@ export function applyRoofTops(buildings: Building[], parts: MeasuredPart[], lase
   return result;
 }
 
-/** The highest measured top over a point, if any part is over it */
-function partIndex(parts: MeasuredPart[]): (p: Point) => number | undefined {
+/** The parts in a grid of CELL_M, each with its box */
+export function partGrid(parts: MeasuredPart[]): RectGrid<{ part: MeasuredPart; box: Rect }> {
   const cells = new RectGrid<{ part: MeasuredPart; box: Rect }>(CELL_M);
   for (const part of parts) {
     const box = bounds(part.polygon.outer);
     cells.add(box, { part, box });
   }
+  return cells;
+}
+
+/** The highest measured top over a point, if any part is over it */
+function partIndex(parts: MeasuredPart[]): (p: Point) => number | undefined {
+  const cells = partGrid(parts);
   return (p) => {
     let highest: number | undefined;
     for (const { part, box } of cells.at(p)) {
