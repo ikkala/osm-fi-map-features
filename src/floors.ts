@@ -12,7 +12,7 @@
 //   it is missed, the roof is a lid.
 // Within the bounds a floor keeps as high as it can, no higher than it hangs between its portals.
 import { deckAt } from "./bridges.ts";
-import { distanceToRing, distanceToSegment, grownRect, indexOwnBoxes, inRect, MinHeap, nearestOnLine, nearestOnSegment, pointInPolygon, pointKey, pushTo, rectsMeet, RESOLUTION_M, type Point } from "./geometry.ts";
+import { distanceToRing, distanceToSegment, grownRect, indexOwnBoxes, inRect, metersAlong, MinHeap, nearestOnLine, nearestOnSegment, pointInPolygon, pointKey, pushTo, rectsMeet, RESOLUTION_M, type Point, type Rect } from "./geometry.ts";
 import type { LinearProgram, SolveLp } from "./lp.ts";
 import { bounds, type Building, type MapFeatures, type Road } from "./osm.ts";
 import { inTunnel, isBridge } from "./profile.ts";
@@ -494,8 +494,7 @@ function underWays(
   const roofs = features.buildings
     .filter((b) => b.shelter !== undefined)
     .map((b) => ({ polygon: b.polygon, box: bounds(b.polygon.outer) }));
-  const inBox = ([e, n]: Point, { box }: { box: ReturnType<typeof bounds> }, margin = 0) =>
-    e >= box.minX - margin && e <= box.maxX + margin && n >= box.minY - margin && n <= box.maxY + margin;
+  const inBox = (p: Point, { box }: { box: Rect }, margin = 0) => inRect(p, grownRect(box, margin));
   // a tunnel's portal on a roof's outline, or under it
   const endUnder = (q: Point, roof: (typeof roofs)[number]) => {
     const ring = roof.polygon.outer;
@@ -547,10 +546,8 @@ function underWays(
       }
       for (let i = 0; i + 1 < tunnel.line.length; i++) {
         const [a, c] = [tunnel.line[i], tunnel.line[i + 1]];
-        const length = Math.hypot(c[0] - a[0], c[1] - a[1]);
         let deepest = Infinity;
-        for (let d = 0; d <= length; d += 1) {
-          const p: Point = length > 0 ? [a[0] + ((c[0] - a[0]) * d) / length, a[1] + ((c[1] - a[1]) * d) / length] : a;
+        for (const p of metersAlong(a, c)) {
           if (freeEnds.some(({ q }) => Math.hypot(q[0] - p[0], q[1] - p[1]) < OVER_PORTAL_M) || underRoof(p)) {
             continue;
           }

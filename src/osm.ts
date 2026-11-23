@@ -13,18 +13,7 @@ import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { exactYear } from "./startDates.ts";
 import type { RoofFaces } from "./roofRidges.ts";
 import { WALKWAYS } from "./ways.ts";
-import {
-  dedupe,
-  extent,
-  orientedBox,
-  pointInRing,
-  pointKey,
-  ringArea,
-  stitchRings,
-  type Point,
-  type Polygon,
-  type Ring,
-} from "./geometry.ts";
+import { dedupe, extent, lineLength, orientedBox, pointInRing, pointKey, ringArea, stitchRings, type Point, type Polygon, type Ring } from "./geometry.ts";
 
 /** The main use classes of the Finnish building register; work includes the unclassified */
 export type BuildingUse = "house" | "holiday" | "apartments" | "public" | "work" | "ancillary" | "sauna";
@@ -680,8 +669,8 @@ export const GUESS_MIN_FILL = 0.85;
 const ROOF_PITCH = (27 * Math.PI) / 180;
 const SKILLION_PITCH = (10 * Math.PI) / 180;
 const MAX_GUESSED_ROOF_M = 6;
-/** roof:direction compass points */
-const COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+/** The points of the compass a direction (roof:direction=*, direction=*) may name, clockwise from north */
+export const COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
 
 /** Storeys of a building without height or levels, guessed from its type and floor area (m²) */
 export function estimatedLevels(kind: string, area: number): number {
@@ -1090,7 +1079,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
       }
       kept.add(r);
       grown = true;
-      const to = from + r.line.slice(1).reduce((sum, q, i) => sum + Math.hypot(q[0] - r.line[i][0], q[1] - r.line[i][1]), 0);
+      const to = from + lineLength(r.line);
       for (const k of ends) {
         reached.set(k, Math.min(reached.get(k) ?? Infinity, to));
       }

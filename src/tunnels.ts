@@ -3,7 +3,7 @@
 // the buildings' walls opened over the tunnels, and the tunnels at the ground under buildings. Tunnels in cuts
 // (cuts.ts) are left to their cut.
 import { pointAlong } from "./bridges.ts";
-import { distancesAlong, distanceToRing, distanceToSegment, inRect, MinHeap, nearestOnLine, pointInPolygon, pointKey, pushTo, rectsMeet, type Point } from "./geometry.ts";
+import { distancesAlong, distanceToRing, distanceToSegment, grownRect, inRect, lineLength, metersAlong, MinHeap, nearestOnLine, pointInPolygon, pointKey, pushTo, rectsMeet, type Point } from "./geometry.ts";
 import { openPassages } from "./passages.ts";
 import { inTunnel, offStructures, profileOf } from "./profile.ts";
 import { bounds, LANE_WIDTH_M, type Building, type MapFeatures, type Opening, type Road } from "./osm.ts";
@@ -389,7 +389,7 @@ function findPortals(features: MapFeatures, tunnels: Way[], nodes: Map<string, T
       return [p];
     }
     const end = outward[outward.length - 1];
-    const length = outward.reduce((sum, q, i) => (i > 0 ? sum + Math.hypot(q[0] - outward[i - 1][0], q[1] - outward[i - 1][1]) : 0), 0);
+    const length = lineLength(outward);
     return (byEnd.get(key(end)) ?? [])
       .filter((next) => next !== way)
       .map((next) => pointAlong(key(next.line[0]) === key(end) ? next.line : [...next.line].reverse(), d - length))
@@ -440,15 +440,10 @@ function findPortals(features: MapFeatures, tunnels: Way[], nodes: Map<string, T
 function findHouses(buildings: Building[], nodes: Map<string, TunnelNode>, modelAt: (e: number, n: number) => number | undefined): void {
   const grounded = buildings.filter((b) => b.shelter === undefined && b.minHeight === 0).map((b) => ({ b, box: bounds(b.polygon.outer) }));
   for (const node of nodes.values()) {
-    const [e, n] = node.p;
     const inward = node.next.map((next) => nodes.get(next.key)?.p).filter((p) => p !== undefined);
     const houses = grounded.filter(
       ({ b, box }) =>
-        e >= box.minX - PORTAL_IN_WALL_M &&
-        e <= box.maxX + PORTAL_IN_WALL_M &&
-        n >= box.minY - PORTAL_IN_WALL_M &&
-        n <= box.maxY + PORTAL_IN_WALL_M &&
-        (pointInPolygon(node.p, b.polygon) || distanceToRing(node.p, b.polygon.outer) <= PORTAL_IN_WALL_M),
+        inRect(node.p, grownRect(box, PORTAL_IN_WALL_M)) && (pointInPolygon(node.p, b.polygon) || distanceToRing(node.p, b.polygon.outer) <= PORTAL_IN_WALL_M),
     );
     node.house = houses.length > 0 ? Math.min(...houses.map(({ b }) => lowestGround(b, modelAt))) : undefined;
     node.inBuilding = node.portal !== undefined && !node.stairs && houses.some(({ b }) => inward.some((p) => pointInPolygon(p, b.polygon)));
@@ -663,7 +658,7 @@ function levelWaysOver(roads: Road[], tunnels: Way[], walls: PortalWall[], model
       // where along the road its width is over the wall: the wall widened by the road's half; its line must be too
       const reachOver = portalWallsAt([{ ...wall, half: margin }]);
       const lineOver = portalWallsAt([wall]);
-      const length = road.line.reduce((sum, q, i) => (i > 0 ? sum + Math.hypot(q[0] - road.line[i - 1][0], q[1] - road.line[i - 1][1]) : 0), 0);
+      const length = lineLength(road.line);
       const onWall: number[] = [];
       let over = false;
       for (let d = 0; d <= length; d += LEVEL_STEP_M) {
@@ -836,10 +831,7 @@ function meetingGroups(tunnels: Way[]): { ways: Way[]; keys: Set<string> }[] {
 /** Whether two lines come within `reach` of each other anywhere (looked at every meter along the first) */
 function linesWithin(line: Point[], other: Point[], reach: number): boolean {
   for (let i = 0; i + 1 < line.length; i++) {
-    const [a, c] = [line[i], line[i + 1]];
-    const length = Math.hypot(c[0] - a[0], c[1] - a[1]);
-    for (let d = 0; d <= length; d += 1) {
-      const p: Point = length > 0 ? [a[0] + ((c[0] - a[0]) * d) / length, a[1] + ((c[1] - a[1]) * d) / length] : a;
+    for (const p of metersAlong(line[i], line[i + 1])) {
       for (let k = 0; k + 1 < other.length; k++) {
         if (distanceToSegment(p, other[k], other[k + 1]) < reach) {
           return true;
@@ -935,11 +927,7 @@ export function rampsOut<T extends Way>(ways: T[], network: TunnelNetwork): numb
         if (level > 0 && along[rising] - level > 0.01) {
           ramp.splice(rising, 0, pointAlong(outward, level) ?? outward[rising]);
         }
-        let d = 0;
-        const heights = ramp.map((p, i) => {
-          d += i > 0 ? Math.hypot(p[0] - ramp[i - 1][0], p[1] - ramp[i - 1][1]) : 0;
-          return end > level ? floor + ((top - floor) * Math.max(0, d - level)) / (end - level) : floor;
-        });
+        const heights = distancesAlong(ramp).map((d) => (end > level ? floor + ((top - floor) * Math.max(0, d - level)) / (end - level) : floor));
         // the ways ending at its points on the way ramp on from its floor there
         ramp.forEach((p, i) => {
           if (i > 0 && i < ramp.length - 1 && (ends.get(pointKey(p)) ?? 0) > 0) {
