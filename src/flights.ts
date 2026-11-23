@@ -3,8 +3,8 @@
 // risers do. Where a straight flight with a step count (step_count) climbs much less in the model than its risers, the
 // ground steps along it: behind its top raised to the top found in the model a few meters on, under it straight down
 // to its foot, and past its foot lowered to the foot found a few meters on.
-import { pushTo, type Point } from "./geometry.ts";
-import type { Road } from "./osm.ts";
+import { grownRect, RectGrid, type Point } from "./geometry.ts";
+import { bounds, type Road } from "./osm.ts";
 import { inTunnel, isBridge } from "./profile.ts";
 
 /** Risers are at least this tall (m): a flight climbing less than its count of them in the model is smoothed */
@@ -89,24 +89,16 @@ export function stepAtFlights(
   if (flights.length === 0) {
     return heightAt;
   }
-  const cells = new Map<string, FlightStep[]>();
-  const cell = (e: number, n: number) => `${Math.floor(e / CELL_M)},${Math.floor(n / CELL_M)}`;
+  const cells = new RectGrid<FlightStep>(CELL_M);
   for (const flight of flights) {
-    const reach = REACH_M + flight.half + SIDE_EASE_M;
-    const [minE, maxE] = [Math.min(flight.top[0], flight.foot[0]) - reach, Math.max(flight.top[0], flight.foot[0]) + reach];
-    const [minN, maxN] = [Math.min(flight.top[1], flight.foot[1]) - reach, Math.max(flight.top[1], flight.foot[1]) + reach];
-    for (let i = Math.floor(minE / CELL_M); i <= Math.floor(maxE / CELL_M); i++) {
-      for (let j = Math.floor(minN / CELL_M); j <= Math.floor(maxN / CELL_M); j++) {
-        pushTo(cells, `${i},${j}`, flight);
-      }
-    }
+    cells.add(grownRect(bounds([flight.top, flight.foot]), REACH_M + flight.half + SIDE_EASE_M), flight);
   }
   return (e, n) => {
     let height = heightAt(e, n);
     if (height === undefined) {
       return height;
     }
-    for (const { top, foot, half, topHeight, footHeight } of cells.get(cell(e, n)) ?? []) {
+    for (const { top, foot, half, topHeight, footHeight } of cells.at([e, n])) {
       const length = Math.hypot(foot[0] - top[0], foot[1] - top[1]);
       const [ue, un] = [(foot[0] - top[0]) / length, (foot[1] - top[1]) / length];
       const along = (e - top[0]) * ue + (n - top[1]) * un;

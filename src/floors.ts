@@ -12,7 +12,7 @@
 //   it is missed, the roof is a lid.
 // Within the bounds a floor keeps as high as it can, no higher than it hangs between its portals.
 import { deckAt } from "./bridges.ts";
-import { distanceToRing, distanceToSegment, grownRect, indexOwnBoxes, MinHeap, nearestOnLine, nearestOnSegment, pointInPolygon, pointKey, pushTo, RESOLUTION_M, type Point } from "./geometry.ts";
+import { distanceToRing, distanceToSegment, grownRect, indexOwnBoxes, inRect, MinHeap, nearestOnLine, nearestOnSegment, pointInPolygon, pointKey, pushTo, RESOLUTION_M, type Point } from "./geometry.ts";
 import type { LinearProgram, SolveLp } from "./lp.ts";
 import { bounds, type Building, type MapFeatures, type Road } from "./osm.ts";
 import { inTunnel, isBridge } from "./profile.ts";
@@ -363,7 +363,7 @@ function covers(features: MapFeatures, network: TunnelNetwork, underBridge: (p: 
     [...nodes].filter(([, node]) => node.portal !== undefined && !node.stairs && (node.inBuilding === true) === inBuilding).map(([k]) => [k, 0]);
   const [fromOpen, fromHouse] = [false, true].map((inBuilding) => spread(nodes, portalsOf(inBuilding), (length) => length));
   const waters = features.areas.filter((a) => a.kind === "water").map((a) => ({ polygon: a.polygon, box: bounds(a.polygon.outer) }));
-  const inWater = ([e, n]: Point) => waters.some(({ polygon, box }) => e >= box.minX && e <= box.maxX && n >= box.minY && n <= box.maxY && pointInPolygon([e, n], polygon));
+  const inWater = (p: Point) => waters.some(({ polygon, box }) => inRect(p, box) && pointInPolygon(p, polygon));
   const cover: [string, number][] = [];
   for (const [k, node] of nodes) {
     const around = pointsAround(nodes, node);

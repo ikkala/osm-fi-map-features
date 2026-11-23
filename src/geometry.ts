@@ -26,6 +26,10 @@ export function distancesAlong(line: Point[], start = 0): number[] {
   return along;
 }
 
+export function inRect([x, y]: Point, box: Rect): boolean {
+  return x >= box.minX && x <= box.maxX && y >= box.minY && y <= box.maxY;
+}
+
 /** A rectangle grown by `by` on every side */
 export function grownRect(box: Rect, by: number): Rect {
   return { minX: box.minX - by, minY: box.minY - by, maxX: box.maxX + by, maxY: box.maxY + by };
@@ -224,6 +228,16 @@ export function extent(ring: Ring, angle: number): number {
   return max - min;
 }
 
+/** Points (east, north, a value) along and across a ring's box turned `angle` (radians), from the box's centre */
+export function inBoxFrame(points: [number, number, number][], ring: Ring, angle: number): [number, number, number][] {
+  const centre = boxCentre(ring, angle);
+  const [cos, sin] = [Math.cos(angle), Math.sin(angle)];
+  return points.map(([e, n, z]) => {
+    const [de, dn] = [e - centre[0], n - centre[1]];
+    return [de * cos + dn * sin, -de * sin + dn * cos, z];
+  });
+}
+
 /**
  * The smallest rectangle around a ring with a side along one of the ring's edges: the direction of its
  * long side (radians counter-clockwise from east, 0 .. pi), its length and its width.
@@ -351,13 +365,15 @@ function ringTest(ring: Ring): (point: Point) => boolean {
   };
 }
 
+const EVERYWHERE: Rect = { minX: -Infinity, minY: -Infinity, maxX: Infinity, maxY: Infinity };
+
 /** Spatial index of things by bounding box in square cells; only cells over `over` are kept. */
 export class RectGrid<T> {
   readonly #cell: number;
   readonly #over: Rect;
   readonly #cells = new Map<string, T[]>();
 
-  constructor(cell: number, over: Rect) {
+  constructor(cell: number, over: Rect = EVERYWHERE) {
     this.#cell = cell;
     this.#over = over;
   }

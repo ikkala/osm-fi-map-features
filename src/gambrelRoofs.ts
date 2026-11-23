@@ -9,7 +9,7 @@
 // as one's do and its lower slopes' points, on both sides, lie much nearer it than a gabled roof: dormers on them
 // and lower roofs beside them make the whole roof's misses alike. The roof is drawn as triangles (roofFaces) over the
 // outline, centred on its box, the knee's share of the roof's height along the outline's sides.
-import { boxCentre, orientedBox, ringArea, triangulate, type Point, type Polygon } from "./geometry.ts";
+import { inBoxFrame, orientedBox, ringArea, triangulate, type Point, type Polygon } from "./geometry.ts";
 import { GUESS_MIN_FILL, type Building } from "./osm.ts";
 import type { RoofFaces } from "./roofRidges.ts";
 
@@ -92,7 +92,8 @@ function line(rows: [number, number, number][]): [number, number, number] | unde
   return [(sz - c1 * sx) / n, c1, 0];
 }
 
-function median(values: number[]): number {
+/** The lower median, 0 of none */
+export function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted.length === 0 ? 0 : sorted[Math.floor((sorted.length - 1) / 2)];
 }
@@ -139,12 +140,7 @@ export function fitGambrel(points: [number, number, number][], outline: Polygon)
   if (outline.holes.length > 0 || Math.abs(ringArea(outline.outer)) < GUESS_MIN_FILL * box.length * box.width) {
     return undefined;
   }
-  const centre: Point = boxCentre(outline.outer, box.angle);
-  const [cos, sin] = [Math.cos(box.angle), Math.sin(box.angle)];
-  const local = points.map(([e, n, z]): [number, number, number] => {
-    const [de, dn] = [e - centre[0], n - centre[1]];
-    return [de * cos + dn * sin, -de * sin + dn * cos, z];
-  });
+  const local = inBoxFrame(points, outline.outer, box.angle);
   let best: GambrelFit | undefined;
   for (const angle of [0, 90]) {
     // along the ridge (s) and across it (t), and their half extents

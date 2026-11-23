@@ -10,7 +10,8 @@ import { field, isObject, items, optionalNumber, optionalString } from "./json.t
 import { fitGambrel, GAMBREL_REACH_M, type GambrelFit } from "./gambrelRoofs.ts";
 import { chooseRoofShape, fitRoofShapes, type LaserRoofShape, type RoofFit } from "./laserRoofShapes.ts";
 import type { RoofShape } from "./osm.ts";
-import { outlineKey } from "./ortho.ts";
+import { outlineKey, ringBox } from "./ortho.ts";
+import type { TmBox } from "./elevation.ts";
 
 export const LASER_ATTRIBUTION = "Laser scanning © Maanmittauslaitos (CC BY 4.0)";
 
@@ -315,7 +316,7 @@ export async function fetchLaserRoofs(
   const near = new Map<number, [number, number, number][]>();
   const ground = new Map<number, number>();
   const cells = new Map<string, number[]>();
-  const reach = (box: { minE: number; minN: number; maxE: number; maxN: number }) => ({
+  const reach = (box: TmBox) => ({
     minE: box.minE - GAMBREL_REACH_M,
     minN: box.minN - GAMBREL_REACH_M,
     maxE: box.maxE + GAMBREL_REACH_M,
@@ -525,12 +526,6 @@ async function readRoofs(key: string, options: CacheOptions): Promise<Map<string
 }
 
 /** The sheets a box's corners are in: all it reaches into, as a building is far smaller than a sheet */
-function cornerSheets(box: { minE: number; minN: number; maxE: number; maxN: number }): string[] {
+function cornerSheets(box: TmBox): string[] {
   return [...new Set([mapSheet(box.minE, box.minN), mapSheet(box.minE, box.maxN), mapSheet(box.maxE, box.minN), mapSheet(box.maxE, box.maxN)])];
-}
-
-function ringBox(ring: Point[]): { minE: number; minN: number; maxE: number; maxN: number } {
-  const es = ring.map(([e]) => e);
-  const ns = ring.map(([, n]) => n);
-  return { minE: Math.min(...es), minN: Math.min(...ns), maxE: Math.max(...es), maxN: Math.max(...ns) };
 }

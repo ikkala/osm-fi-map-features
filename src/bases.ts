@@ -1,6 +1,6 @@
 // The height buildings stand at on sloping ground: at an OSM entrance, else at their highest ground, with
 // walls down to the lowest ground (a plinth or basement on the downhill side).
-import { pointInPolygon, ringCentroid, type Point, type Polygon, type Ring } from "./geometry.ts";
+import { inRect, pointInPolygon, ringCentroid, type Point, type Polygon, type Ring } from "./geometry.ts";
 import { bounds, LEVEL_HEIGHT_M, type Area, type Building, type Entrance } from "./osm.ts";
 import { platformTopAt } from "./platforms.ts";
 
@@ -52,8 +52,8 @@ export function setBuildingBases(
   // an outline with parts: its entrances and those on its parts
   const outlines = buildings.filter((b) => b.hasParts).map((b) => ({ b, box: bounds(b.polygon.outer), entrances: [...(b.entrances ?? [])] }));
   const outlineOf = (part: Building) => {
-    const [x, y] = ringCentroid(part.polygon.outer);
-    return outlines.find(({ b: o, box }) => x >= box.minX && x <= box.maxX && y >= box.minY && y <= box.maxY && pointInPolygon([x, y], o.polygon));
+    const centre = ringCentroid(part.polygon.outer);
+    return outlines.find(({ b: o, box }) => inRect(centre, box) && pointInPolygon(centre, o.polygon));
   };
   const partOutline = new Map<Building, (typeof outlines)[number]>();
   for (const b of buildings) {
@@ -67,10 +67,10 @@ export function setBuildingBases(
   // what is drawn (not the outlines with parts), to see whether anything stands under a raised building
   const drawn = buildings.filter((b) => !b.hasParts).map((b) => ({ b, box: bounds(b.polygon.outer) }));
   const floating = (b: Building) => {
-    const [x, y] = ringCentroid(b.polygon.outer);
+    const centre = ringCentroid(b.polygon.outer);
     return !drawn.some(
       ({ b: o, box }) =>
-        o !== b && o.minHeight < b.minHeight && x >= box.minX && x <= box.maxX && y >= box.minY && y <= box.maxY && pointInPolygon([x, y], o.polygon),
+        o !== b && o.minHeight < b.minHeight && inRect(centre, box) && pointInPolygon(centre, o.polygon),
     );
   };
   let count = 0;
@@ -191,7 +191,7 @@ function lidUnder(b: Building, lids: { line: Point[]; lid: number[] }[]): number
       for (let k = 0; k <= steps; k++) {
         const t = k / steps;
         const p: Point = [a[0] + (c[0] - a[0]) * t, a[1] + (c[1] - a[1]) * t];
-        const inBox = p[0] >= box.minX && p[0] <= box.maxX && p[1] >= box.minY && p[1] <= box.maxY;
+        const inBox = inRect(p, box);
         if (inBox && pointInPolygon(p, b.polygon)) {
           top = Math.max(top, lid[i] + (lid[i + 1] - lid[i]) * t);
         }

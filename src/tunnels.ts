@@ -3,7 +3,7 @@
 // the buildings' walls opened over the tunnels, and the tunnels at the ground under buildings. Tunnels in cuts
 // (cuts.ts) are left to their cut.
 import { pointAlong } from "./bridges.ts";
-import { distancesAlong, distanceToRing, distanceToSegment, MinHeap, nearestOnLine, pointInPolygon, pointKey, pushTo, type Point } from "./geometry.ts";
+import { distancesAlong, distanceToRing, distanceToSegment, inRect, MinHeap, nearestOnLine, pointInPolygon, pointKey, pushTo, type Point } from "./geometry.ts";
 import { openPassages } from "./passages.ts";
 import { inTunnel, offStructures, profileOf } from "./profile.ts";
 import { bounds, LANE_WIDTH_M, type Building, type MapFeatures, type Opening, type Road } from "./osm.ts";
@@ -97,8 +97,7 @@ export function uncoverAtGrade(features: MapFeatures, heightAt: (e: number, n: n
   const buildings = features.buildings
     .filter((b) => !b.part && b.shelter === undefined)
     .map((b) => ({ polygon: b.polygon, box: bounds(b.polygon.outer) }));
-  const underBuilding = ([e, n]: Point) =>
-    buildings.some(({ polygon, box }) => e >= box.minX && e <= box.maxX && n >= box.minY && n <= box.maxY && pointInPolygon([e, n], polygon));
+  const underBuilding = (p: Point) => buildings.some(({ polygon, box }) => inRect(p, box) && pointInPolygon(p, polygon));
   const tunnels = [...features.roads, ...features.rails]
     .filter((way) => profileOf(way).kind === "bored" && way.layer >= -1 && way.line.length >= 2)
     .map((way) => {
@@ -168,7 +167,7 @@ export function uncoverAtGrade(features: MapFeatures, heightAt: (e: number, n: n
     const outline = densify([...b.polygon.outer, b.polygon.outer[0]], AT_GRADE_STEP_M);
     const low = Math.min(...outline.map((p) => heightAt(...p) ?? Infinity));
     for (const { passage, points } of near) {
-      const under = points.filter(([e, n]) => e >= box.minX && e <= box.maxX && n >= box.minY && n <= box.maxY && pointInPolygon([e, n], b.polygon));
+      const under = points.filter((p) => inRect(p, box) && pointInPolygon(p, b.polygon));
       const top = Math.max(...under.map((p) => heightAt(...p) ?? -Infinity));
       if (!Number.isFinite(low) || !Number.isFinite(top)) {
         continue;

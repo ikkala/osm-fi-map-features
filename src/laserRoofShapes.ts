@@ -6,8 +6,8 @@
 // them: a pitched one only where it fits the points closely, much better than a flat roof, is no steeper than a roof
 // is drawn and rises enough to tell, of shapes that fit about as well the simpler one; else a flat one only where the
 // points lie flat, not on trees (a building newer than the scanning) nor a roof of many levels.
-import { gambrelFaces, isGambrel, kneeShare, type GambrelFit } from "./gambrelRoofs.ts";
-import { boxCentre, orientedBox, ringArea, type Point, type Polygon } from "./geometry.ts";
+import { gambrelFaces, isGambrel, kneeShare, median, type GambrelFit } from "./gambrelRoofs.ts";
+import { inBoxFrame, orientedBox, ringArea, type Polygon } from "./geometry.ts";
 import { GUESS_MIN_FILL, roofDegrees, type Building, type RoofShape } from "./osm.ts";
 import { ridgeRoofs } from "./roofRidges.ts";
 import { roofShareOf, wingRidges } from "./roofWings.ts";
@@ -68,11 +68,39 @@ export interface RoofFit {
   wings?: number;
 }
 
-/** Fits z = top - slope * d(u, v) to the points, leaving out the far ones; undefined with too few left */
-function fitDown(points: [number, number, number][], d: (u: number, v: number) => number): { top: number; slope: number; miss: number } | undefined {
+type RoofPoint = [number, number, number];
+
+/**
+ * Fits to the points (undefined where it cannot), again on those left each round after the ones far off the fit are
+ * left out, until too few are left; with the median miss of all the points
+ */
+function trimmedFit<F extends object>(points: RoofPoint[], fit: (kept: RoofPoint[]) => F | undefined, miss: (f: F, p: RoofPoint) => number): (F & { miss: number }) | undefined {
   let kept = points;
-  let fit: { top: number; slope: number } | undefined;
+  let found: F | undefined;
   for (let round = 0; round <= TRIM_ROUNDS; round++) {
+    const f = fit(kept);
+    if (f === undefined) {
+      return undefined;
+    }
+    found = f;
+    const misses = points.map((p) => miss(f, p));
+    const limit = Math.max(TRIM_TIMES * median(misses), TRIM_FLOOR_M);
+    const next = points.filter((_, i) => misses[i] <= limit);
+    if (next.length < MIN_SHAPE_POINTS / 2 || next.length === kept.length) {
+      break;
+    }
+    kept = next;
+  }
+  if (found === undefined) {
+    return undefined;
+  }
+  const f = found;
+  return { ...f, miss: median(points.map((p) => miss(f, p))) };
+}
+
+/** Fits z = top - slope * d(u, v) to the points, leaving out the far ones; undefined with too few left */
+function fitDown(points: RoofPoint[], d: (u: number, v: number) => number): { top: number; slope: number; miss: number } | undefined {
+  const fit = (kept: RoofPoint[]) => {
     // least squares of z = top - slope * d
     let [n, sd, sz, sdd, sdz] = [0, 0, 0, 0, 0];
     for (const [u, v, z] of kept) {
@@ -81,28 +109,14 @@ function fitDown(points: [number, number, number][], d: (u: number, v: number) =
     }
     const det = n * sdd - sd * sd;
     const slope = det > 1e-9 ? -(n * sdz - sd * sz) / det : 0;
-    fit = { top: (sz + slope * sd) / n, slope };
-    const f = fit;
-    const misses = points.map(([u, v, z]) => Math.abs(z - (f.top - f.slope * d(u, v))));
-    const limit = Math.max(TRIM_TIMES * median(misses), TRIM_FLOOR_M);
-    const next = points.filter((_, i) => misses[i] <= limit);
-    if (next.length < MIN_SHAPE_POINTS / 2 || next.length === kept.length) {
-      break;
-    }
-    kept = next;
-  }
-  if (fit === undefined) {
-    return undefined;
-  }
-  const f = fit;
-  return { ...f, miss: median(points.map(([u, v, z]) => Math.abs(z - (f.top - f.slope * d(u, v))))) };
+    return { top: (sz + slope * sd) / n, slope };
+  };
+  return trimmedFit(points, fit, (f, [u, v, z]) => Math.abs(z - (f.top - f.slope * d(u, v))));
 }
 
 /** Fits a plane z = c + gu * u + gv * v, leaving out the far points */
-function fitPlane(points: [number, number, number][]): { c: number; gu: number; gv: number; miss: number } | undefined {
-  let kept = points;
-  let plane: { c: number; gu: number; gv: number } | undefined;
-  for (let round = 0; round <= TRIM_ROUNDS; round++) {
+function fitPlane(points: RoofPoint[]): { c: number; gu: number; gv: number; miss: number } | undefined {
+  const fit = (kept: RoofPoint[]) => {
     let [n, su, sv, sz, suu, svv, suv, suz, svz] = [0, 0, 0, 0, 0, 0, 0, 0, 0];
     for (const [u, v, z] of kept) {
       [n, su, sv, sz] = [n + 1, su + u, sv + v, sz + z];
@@ -117,30 +131,13 @@ function fitPlane(points: [number, number, number][]): { c: number; gu: number; 
     }
     const gu = (cuz * cvv - cvz * cuv) / det;
     const gv = (cvz * cuu - cuz * cuv) / det;
-    plane = { c: mz - gu * mu - gv * mv, gu, gv };
-    const p = plane;
-    const misses = points.map(([u, v, z]) => Math.abs(z - (p.c + p.gu * u + p.gv * v)));
-    const limit = Math.max(TRIM_TIMES * median(misses), TRIM_FLOOR_M);
-    const next = points.filter((_, i) => misses[i] <= limit);
-    if (next.length < MIN_SHAPE_POINTS / 2 || next.length === kept.length) {
-      break;
-    }
-    kept = next;
-  }
-  if (plane === undefined) {
-    return undefined;
-  }
-  const p = plane;
-  return { ...p, miss: median(points.map(([u, v, z]) => Math.abs(z - (p.c + p.gu * u + p.gv * v)))) };
-}
-
-function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted.length === 0 ? 0 : sorted[Math.floor((sorted.length - 1) / 2)];
+    return { c: mz - gu * mu - gv * mv, gu, gv };
+  };
+  return trimmedFit(points, fit, (p, [u, v, z]) => Math.abs(z - (p.c + p.gu * u + p.gv * v)));
 }
 
 /** The shape of a roof from the points on it, as chooseRoofShape chooses from fitRoofShapes' fits */
-export function fitRoofShape(points: [number, number, number][], outline: Polygon): LaserRoofShape | undefined {
+export function fitRoofShape(points: RoofPoint[], outline: Polygon): LaserRoofShape | undefined {
   return chooseRoofShape(fitRoofShapes(points, outline));
 }
 
@@ -148,18 +145,13 @@ export function fitRoofShape(points: [number, number, number][], outline: Polygo
  * Every shape fitted to a roof's points (easting, northing and height, in the outline's frame), the flat one first;
  * none when they are too few.
  */
-export function fitRoofShapes(points: [number, number, number][], outline: Polygon): RoofFit[] {
+export function fitRoofShapes(points: RoofPoint[], outline: Polygon): RoofFit[] {
   if (points.length < MIN_SHAPE_POINTS) {
     return [];
   }
   const box = orientedBox(outline.outer);
-  const centre: Point = boxCentre(outline.outer, box.angle);
-  const [cos, sin] = [Math.cos(box.angle), Math.sin(box.angle)];
   // along the box's long side (u) and across it (v), from its centre
-  const local = points.map(([e, n, z]): [number, number, number] => {
-    const [de, dn] = [e - centre[0], n - centre[1]];
-    return [de * cos + dn * sin, -de * sin + dn * cos, z];
-  });
+  const local = inBoxFrame(points, outline.outer, box.angle);
   const [a, b] = [box.length / 2, box.width / 2];
   const fits: RoofFit[] = [];
   const flat = fitDown(local, () => 0);

@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
 import { partOutlines } from "./buildingParts.ts";
 import { bounds, LEVEL_HEIGHT_M, type Building, type BuildingUse, type GeoBox } from "./osm.ts";
-import { indexBoxes, pointInPolygon, pointKey, pushTo, ringArea, type Point } from "./geometry.ts";
+import { indexBoxes, inRect, pointInPolygon, pointKey, pushTo, ringArea, type Point } from "./geometry.ts";
 import { field, items, optionalNumber, optionalString } from "./json.ts";
 import { inGeoBox } from "./projection.ts";
 import { allows } from "./startDates.ts";
@@ -218,7 +218,7 @@ export function applyRegister(buildings: Building[], register: RegisterBuilding[
     const p = points[i];
     let found = false;
     for (const { b, box } of near({ minX: p[0], minY: p[1], maxX: p[0], maxY: p[1] }).map((index) => boxes[index])) {
-      if (p[0] >= box.minX && p[0] <= box.maxX && p[1] >= box.minY && p[1] <= box.maxY && pointInPolygon(p, b.polygon)) {
+      if (inRect(p, box) && pointInPolygon(p, b.polygon)) {
         pushTo(inside, b, r);
         found = true;
       }

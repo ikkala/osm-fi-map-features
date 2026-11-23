@@ -2,7 +2,7 @@
 // the ground around, so where a building is cut into a slope the slope goes on out of its wall, a heap of ground
 // against it. Outside such a wall the ground is taken down to the slope's foot, as far out as the slope reaches, as
 // on a retaining wall's low side (retainingWalls.ts); the ground inside is left as it is.
-import { distanceToSegment, pointInPolygon, polygonTest, pushTo, type Point, type Polygon, type Rect } from "./geometry.ts";
+import { distanceToSegment, grownRect, pointInPolygon, polygonTest, RectGrid, type Point, type Polygon, type Rect } from "./geometry.ts";
 import { bounds, type Building } from "./osm.ts";
 import { FLAT_M, MIN_STEP_M, REACH_M, slopeEnd, STRETCH_M, type GroundStep } from "./retainingWalls.ts";
 
@@ -195,33 +195,17 @@ function meet(p: Point, q: Point, a: Point, b: Point): { at: Point; proper: bool
 
 /** Items by the squares (CELL_M by default) their boxes touch: near(box, reach) has those whose boxes come within reach of box */
 function index<T>(entries: { item: T; box: Rect }[], cell = CELL_M): { near: (box: Rect, reach: number) => T[] } {
-  const cells = new Map<string, { item: T; box: Rect }[]>();
-  const range = (box: Rect, reach: number) => ({
-    x0: Math.floor((box.minX - reach) / cell),
-    x1: Math.floor((box.maxX + reach) / cell),
-    y0: Math.floor((box.minY - reach) / cell),
-    y1: Math.floor((box.maxY + reach) / cell),
-  });
+  const cells = new RectGrid<{ item: T; box: Rect }>(cell);
   for (const entry of entries) {
-    const { x0, x1, y0, y1 } = range(entry.box, 0);
-    for (let x = x0; x <= x1; x++) {
-      for (let y = y0; y <= y1; y++) {
-        pushTo(cells, `${x},${y}`, entry);
-      }
-    }
+    cells.add(entry.box, entry);
   }
   return {
     near(box, reach) {
       const found = new Set<{ item: T; box: Rect }>();
-      const { x0, x1, y0, y1 } = range(box, reach);
-      for (let x = x0; x <= x1; x++) {
-        for (let y = y0; y <= y1; y++) {
-          for (const entry of cells.get(`${x},${y}`) ?? []) {
-            const b = entry.box;
-            if (b.minX <= box.maxX + reach && b.maxX >= box.minX - reach && b.minY <= box.maxY + reach && b.maxY >= box.minY - reach) {
-              found.add(entry);
-            }
-          }
+      for (const entry of cells.within(grownRect(box, reach))) {
+        const b = entry.box;
+        if (b.minX <= box.maxX + reach && b.maxX >= box.minX - reach && b.minY <= box.maxY + reach && b.maxY >= box.minY - reach) {
+          found.add(entry);
         }
       }
       return [...found].map((entry) => entry.item);

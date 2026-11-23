@@ -3,7 +3,7 @@
 // banks. A still water gets one level, the median of its surface; a flowing one falls along the
 // waterways in it, never rising downstream, and each point of it is as high as the waterway nearest it.
 import { deckAt } from "./bridges.ts";
-import { clipPolyline, distancesAlong, distanceToSegment, pointKey, polygonTest, pushTo, RectGrid, ringArea, type Point, type Polygon, type Rect } from "./geometry.ts";
+import { clipPolyline, distancesAlong, distanceToSegment, inRect, pointKey, polygonTest, pushTo, RectGrid, ringArea, type Point, type Polygon, type Rect } from "./geometry.ts";
 import { bounds, type Area, type GeoBox, type OverpassResponse } from "./osm.ts";
 import { inTunnel } from "./profile.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
@@ -126,7 +126,7 @@ export function setWaterLevels(areas: Area[], lines: WaterwayLine[], heightAt: (
   for (const water of waters) {
     grid.add(water.box, water);
   }
-  const watersAt = (p: Point) => grid.at(p).filter((w) => p[0] >= w.box.minX && p[0] <= w.box.maxX && p[1] >= w.box.minY && p[1] <= w.box.maxY && w.inside(p));
+  const watersAt = (p: Point) => grid.at(p).filter((w) => inRect(p, w.box) && w.inside(p));
 
   for (const water of waters) {
     const surface = surfaceOf(water, heightAt);
@@ -242,7 +242,7 @@ function insideTest(polygon: Polygon): (point: Point) => boolean {
     holes.add(box, { box, inside: polygonTest({ outer: hole, holes: [] }) });
   }
   return (p) =>
-    outer(p) && !holes.at(p).some(({ box, inside }) => p[0] >= box.minX && p[0] <= box.maxX && p[1] >= box.minY && p[1] <= box.maxY && inside(p));
+    outer(p) && !holes.at(p).some(({ box, inside }) => inRect(p, box) && inside(p));
 }
 
 /** The median and spread (25th to 75th percentile) of heightAt inside a water area, or undefined off the elevation model */
