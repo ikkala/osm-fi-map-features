@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { clipPolyline, clipRing, indexBoxes, orientedBox, pointInPolygon, polygonTest, RectGrid, ringArea, simplifyLine, simplifyRing, stitchRings, triangulate, type Point, type Polygon } from "./geometry.ts";
+import { clipPolyline, clipRing, densify, indexBoxes, orientedBox, pointInPolygon, polygonTest, RectGrid, ringArea, simplifyLine, simplifyRing, stitchRings, triangulate, type Point, type Polygon } from "./geometry.ts";
 import { defined } from "./testing.ts";
 
 const rect = { minX: 0, minY: 0, maxX: 10, maxY: 10 };
@@ -119,4 +119,8 @@ test("orientedBox finds a turned rectangle's long side", () => {
   assert.deepEqual([((box.angle * 180) / Math.PI).toFixed(1), box.length.toFixed(3), box.width.toFixed(3)], ["30.0", "8.000", "2.000"]);
   // the long side north-south
   assert.equal(((orientedBox([[0, 0], [2, 0], [2, 8], [0, 8]]).angle * 180) / Math.PI).toFixed(1), "90.0");
+});
+
+test("densify adds points so none are further apart than the step", () => {
+  assert.deepEqual(densify([[0, 0], [25, 0], [30, 0]], 10), [[0, 0], [25 / 3, 0], [50 / 3, 0], [25, 0], [30, 0]]);
 });

@@ -27,6 +27,20 @@ export function metersAlong(a: Point, c: Point): Point[] {
   return points;
 }
 
+/** The line with points added so that none are further apart than step */
+export function densify(line: Point[], step: number): Point[] {
+  const out: Point[] = [line[0]];
+  for (let i = 1; i < line.length; i++) {
+    const [a, c] = [line[i - 1], line[i]];
+    const pieces = Math.ceil(Math.hypot(c[0] - a[0], c[1] - a[1]) / step);
+    for (let k = 1; k < pieces; k++) {
+      out.push([a[0] + ((c[0] - a[0]) * k) / pieces, a[1] + ((c[1] - a[1]) * k) / pieces]);
+    }
+    out.push(c);
+  }
+  return out;
+}
+
 /** A line's length */
 export function lineLength(line: Point[]): number {
   let length = 0;

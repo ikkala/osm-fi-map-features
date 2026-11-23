@@ -3,8 +3,7 @@
 // there, else the ground averaged around it. Tramways meeting end to end, two at a point, are one line for
 // this, their changes of grade are rounded to vertical curves, under a deck their bed leaves a tram its room, and
 // one branching off another's middle ends at that one's bed.
-import { densify } from "./tunnels.ts";
-import { distancesAlong, pushTo, type Point } from "./geometry.ts";
+import { densify, distancesAlong, pushTo, type Point } from "./geometry.ts";
 import type { Rail } from "./osm.ts";
 import { profileOf } from "./profile.ts";
 import { TRAMWAYS } from "./ways.ts";

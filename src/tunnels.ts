@@ -3,7 +3,7 @@
 // the buildings' walls opened over the tunnels, and the tunnels at the ground under buildings. Tunnels in cuts
 // (cuts.ts) are left to their cut.
 import { pointAlong } from "./bridges.ts";
-import { distancesAlong, distanceToRing, distanceToSegment, grownRect, inRect, lineLength, metersAlong, MinHeap, nearestOnLine, pointInPolygon, pointKey, pushTo, rectsMeet, type Point } from "./geometry.ts";
+import { densify, distancesAlong, distanceToRing, distanceToSegment, grownRect, inRect, lineLength, metersAlong, MinHeap, nearestOnLine, pointInPolygon, pointKey, pushTo, rectsMeet, type Point } from "./geometry.ts";
 import { openPassages } from "./passages.ts";
 import { inTunnel, offStructures, profileOf } from "./profile.ts";
 import { bounds, LANE_WIDTH_M, type Building, type MapFeatures, type Opening, type Road } from "./osm.ts";
@@ -976,18 +976,4 @@ export function spread(nodes: Map<string, TunnelNode>, starts: [string, number][
     }
   }
   return best;
-}
-
-/** The line with points added so that none are further apart than step */
-export function densify(line: Point[], step: number): Point[] {
-  const out: Point[] = [line[0]];
-  for (let i = 1; i < line.length; i++) {
-    const [a, c] = [line[i - 1], line[i]];
-    const pieces = Math.ceil(Math.hypot(c[0] - a[0], c[1] - a[1]) / step);
-    for (let k = 1; k < pieces; k++) {
-      out.push([a[0] + ((c[0] - a[0]) * k) / pieces, a[1] + ((c[1] - a[1]) * k) / pieces]);
-    }
-    out.push(c);
-  }
-  return out;
 }
