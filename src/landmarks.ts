@@ -2,7 +2,7 @@
 // and buoys (seamarks.ts), masts, flagpoles, boulders, fountains, artworks and memorials, power lines with their
 // towers and poles, piers, dams and weirs, amusement rides (rides.ts) and ski and skating tracks.
 import { dedupe, distanceToSegment, grownRect, halfwayAlong, nearestPlace, ringArea, ringCentroid, segmentGrid, type Point, type Ring } from "./geometry.ts";
-import { bounds, meters, truthy, type GeoBox, type OverpassResponse, type Rail, type Road } from "./osm.ts";
+import { bounds, COMPASS, meters, truthy, type GeoBox, type OverpassResponse, type Rail, type Road } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { COURSE_KINDS, RIDE_KINDS, setCourseHeights, type Ride } from "./rides.ts";
 import { outOfTunnelsAndSpans } from "./profile.ts";
@@ -322,9 +322,6 @@ function addElement(result: Landmarks, tags: Record<string, string>, shape: Shap
     });
   }
 }
-
-/** The points of the compass direction=* may name, clockwise from north */
-const COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
 
 /** direction=* (degrees clockwise from north, or a point of the compass) as degrees counter-clockwise from east */
 export function degreesOf(direction: string | undefined): number | undefined {

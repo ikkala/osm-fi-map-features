@@ -17,6 +17,25 @@ export interface Rect {
   maxY: number;
 }
 
+/** The points every meter from a toward c, from a on (a alone where c is a) */
+export function metersAlong(a: Point, c: Point): Point[] {
+  const length = Math.hypot(c[0] - a[0], c[1] - a[1]);
+  const points: Point[] = [];
+  for (let d = 0; d <= length; d += 1) {
+    points.push(length > 0 ? [a[0] + ((c[0] - a[0]) * d) / length, a[1] + ((c[1] - a[1]) * d) / length] : a);
+  }
+  return points;
+}
+
+/** A line's length */
+export function lineLength(line: Point[]): number {
+  let length = 0;
+  for (let i = 1; i < line.length; i++) {
+    length += Math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]);
+  }
+  return length;
+}
+
 /** Each point's distance along a line, from `start` at its first */
 export function distancesAlong(line: Point[], start = 0): number[] {
   const along = [start];
