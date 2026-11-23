@@ -6,6 +6,7 @@ import type { Point, Rect } from "./geometry.ts";
 import { bounds, elementsWithin, fetchOverpass, mergeOverpass, overpassQuery, type GeoBox, type OsmElement } from "./osm.ts";
 import { inGeoBox, LocalProjection, type GeoPoint } from "./projection.ts";
 import { cutGroundSteps, Ground, latticed, stepLines } from "./ground.ts";
+import { loadLp } from "./lp.ts";
 import { ROOF_TOP_SOURCES, type RoofTopSource } from "./roofTops.ts";
 import { cutIntoTiles, tileHeights, tileName, tilePieces, tilesCoveringAny, type Tile, type TileKey } from "./tiles.ts";
 import { overlaps, TREE_REGISTERS, type TreeRegisterSource } from "./treeRegister.ts";
@@ -372,7 +373,7 @@ export class MapBuilder {
       const stepped = steppedGround(world, ground, logger);
       const knownFloors = (this.#options.tunnelFloors ?? []).map(({ at, floor, name }) => ({ p: this.#projection.toMeters(at), floor, name }));
       const spanned = spanStage(world, coverStage(world, stepped, logger), logger);
-      const tunnelled = tunnelStage(world, spanned, knownFloors, logger);
+      const tunnelled = tunnelStage(world, spanned, knownFloors, await loadLp(), logger);
       const decked = deckStage(world, tunnelled, logger);
       bedStage(world, tunnelled, decked, logger);
       shaped = { stepped, tunnelled, decked };
