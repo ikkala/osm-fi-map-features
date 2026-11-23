@@ -3,7 +3,7 @@
 // the buildings' walls opened over the tunnels, and the tunnels at the ground under buildings. Tunnels in cuts
 // (cuts.ts) are left to their cut.
 import { pointAlong } from "./bridges.ts";
-import { distancesAlong, distanceToRing, distanceToSegment, inRect, MinHeap, nearestOnLine, pointInPolygon, pointKey, pushTo, type Point } from "./geometry.ts";
+import { distancesAlong, distanceToRing, distanceToSegment, inRect, MinHeap, nearestOnLine, pointInPolygon, pointKey, pushTo, rectsMeet, type Point } from "./geometry.ts";
 import { openPassages } from "./passages.ts";
 import { inTunnel, offStructures, profileOf } from "./profile.ts";
 import { bounds, LANE_WIDTH_M, type Building, type MapFeatures, type Opening, type Road } from "./osm.ts";
@@ -160,7 +160,7 @@ export function uncoverAtGrade(features: MapFeatures, heightAt: (e: number, n: n
   });
   for (const b of features.buildings) {
     const box = bounds(b.polygon.outer);
-    const near = rooms.filter((r) => r.box.minX <= box.maxX && r.box.maxX >= box.minX && r.box.minY <= box.maxY && r.box.maxY >= box.minY);
+    const near = rooms.filter((r) => rectsMeet(r.box, box));
     if (near.length === 0) {
       continue;
     }
@@ -279,7 +279,7 @@ export function openPortals(buildings: Building[], basements: Road[], roads: Roa
     const reach = bounds(line);
     for (const b of buildings) {
       const box = bounds(b.polygon.outer);
-      if (box.maxX < reach.minX || box.minX > reach.maxX || box.maxY < reach.minY || box.minY > reach.maxY) {
+      if (!rectsMeet(box, reach)) {
         continue;
       }
       const before = b.passages?.length ?? 0;
@@ -657,7 +657,7 @@ function levelWaysOver(roads: Road[], tunnels: Way[], walls: PortalWall[], model
     for (const { road, box: b } of candidates) {
       const half = road.width / 2;
       const margin = wall.half + half;
-      if (b.maxX < box.minX - margin || b.minX > box.maxX + margin || b.maxY < box.minY - margin || b.minY > box.maxY + margin) {
+      if (!rectsMeet(b, box, margin)) {
         continue;
       }
       // where along the road its width is over the wall: the wall widened by the road's half; its line must be too

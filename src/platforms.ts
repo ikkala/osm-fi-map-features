@@ -3,7 +3,7 @@
 // platform is as high over the tramways passing it instead, over their lowest bed beside it, so that a tram's
 // floor clears it all along; where the tramway rises along it, as a street on a hill does, the platform rises with
 // it, level across.
-import { distanceToRing, orientedBox, pointInPolygon, ringCentroid, type Point, type Polygon } from "./geometry.ts";
+import { distanceToRing, orientedBox, pointInPolygon, rectsMeet, ringCentroid, type Point, type Polygon } from "./geometry.ts";
 import { bounds, type Area, type Rail } from "./osm.ts";
 import { TRAMWAYS } from "./ways.ts";
 
@@ -86,7 +86,7 @@ function bedsBeside(area: Area, trams: Rail[], keep: (h: number) => boolean): { 
   for (const tram of trams) {
     const bed = tram.bed;
     const near = bounds(tram.line);
-    if (!bed || near.minX > box.maxX + TRAM_NEAR_M || near.maxX < box.minX - TRAM_NEAR_M || near.minY > box.maxY + TRAM_NEAR_M || near.maxY < box.minY - TRAM_NEAR_M) {
+    if (!bed || !rectsMeet(near, box, TRAM_NEAR_M)) {
       continue;
     }
     for (let i = 1; i < tram.line.length; i++) {

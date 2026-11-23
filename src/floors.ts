@@ -12,7 +12,7 @@
 //   it is missed, the roof is a lid.
 // Within the bounds a floor keeps as high as it can, no higher than it hangs between its portals.
 import { deckAt } from "./bridges.ts";
-import { distanceToRing, distanceToSegment, grownRect, indexOwnBoxes, inRect, MinHeap, nearestOnLine, nearestOnSegment, pointInPolygon, pointKey, pushTo, RESOLUTION_M, type Point } from "./geometry.ts";
+import { distanceToRing, distanceToSegment, grownRect, indexOwnBoxes, inRect, MinHeap, nearestOnLine, nearestOnSegment, pointInPolygon, pointKey, pushTo, rectsMeet, RESOLUTION_M, type Point } from "./geometry.ts";
 import type { LinearProgram, SolveLp } from "./lp.ts";
 import { bounds, type Building, type MapFeatures, type Road } from "./osm.ts";
 import { inTunnel, isBridge } from "./profile.ts";
@@ -220,7 +220,7 @@ function besides(tunnels: Way[], nodes: Map<string, TunnelNode>, through: Map<st
       // its partner's would cross
       const branch = branches.get(a.way)?.has(b.way);
       const first = branch || (!branches.get(b.way)?.has(a.way) && i < j);
-      if (a === b || (a.way.layer === b.way.layer && !first) || a.box.minX > b.box.maxX + reach || a.box.maxX < b.box.minX - reach || a.box.minY > b.box.maxY + reach || a.box.maxY < b.box.minY - reach) {
+      if (a === b || (a.way.layer === b.way.layer && !first) || !rectsMeet(a.box, b.box, reach)) {
         continue;
       }
       const edges = branch ? hallEdges(a.way, b.way, reach, nodes, through) : [];
@@ -540,7 +540,7 @@ function underWays(
       const margin = reach + half;
       if (
         way.layer <= tunnel.layer ||
-        b.maxX < box.minX - margin || b.minX > box.maxX + margin || b.maxY < box.minY - margin || b.minY > box.maxY + margin ||
+        !rectsMeet(b, box, margin) ||
         way.line.some((p) => points.has(pointKey(p)))
       ) {
         continue;

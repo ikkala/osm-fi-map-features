@@ -1,7 +1,7 @@
 // Ways through buildings: the walls opened where a way passes through a building (a building passage, a tunnel or
 // covered way found to run through one, a railway into a hall, a covered way at a door) and the rooms through it.
 import { fillUnderFloatingParts, markBuildingsWithParts, groundFloatingBuildings, raiseRoofsOverRoads } from "./buildingParts.ts";
-import { crossing, dedupe, distanceToRing, indexBoxes, nearestOnLine, pointInPolygon, pointInRing, pointKey, pushTo, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
+import { crossing, dedupe, distanceToRing, indexBoxes, nearestOnLine, pointInPolygon, pointInRing, pointKey, pushTo, rectsMeet, type Point, type Polygon, type Ring } from "./geometry.ts";
 import { bounds, PASSAGE_HEIGHT_M, WALKWAY_PASSAGE_HEIGHT_M, type Building, type ParseResult, type Passage, type PassageRoom, type Rail, type Road } from "./osm.ts";
 import { inTunnel, isBridge } from "./profile.ts";
 import { ridgeRoofs } from "./roofRidges.ts";
@@ -28,7 +28,6 @@ export function openPassages(buildings: Building[], passages: Passage[], rooms =
   const roomed = new Set<Building>();
   const boxes = buildings.map((b) => bounds(b.polygon.outer));
   const near = indexBoxes(boxes, bounds(passages.flatMap((passage) => passage.line)));
-  const apart = (a: Rect, b: Rect) => a.maxX < b.minX || a.minX > b.maxX || a.maxY < b.minY || a.minY > b.maxY;
   for (const passage of passages) {
     const reach = bounds(passage.line);
     const segments = passage.line.slice(1).map((q, k) => bounds([passage.line[k], q]));
@@ -38,11 +37,11 @@ export function openPassages(buildings: Building[], passages: Passage[], rooms =
         continue;
       }
       const box = boxes[index];
-      if (apart(box, reach)) {
+      if (!rectsMeet(box, reach)) {
         continue;
       }
       // a segment crosses the walls only where its box meets the building's
-      const crossable = segments.flatMap((segment, k) => (apart(segment, box) ? [] : [k]));
+      const crossable = segments.flatMap((segment, k) => (rectsMeet(segment, box) ? [k] : []));
       for (const ring of [b.polygon.outer, ...b.polygon.holes]) {
         for (let i = 0; i < ring.length; i++) {
           for (const k of crossable) {
@@ -108,7 +107,7 @@ export function openDoorways(buildings: Building[], ways: Road[], heightAt: (e: 
     const reach = bounds(way.line);
     for (const b of buildings) {
       const box = bounds(b.polygon.outer);
-      if (box.maxX < reach.minX - DOOR_ON_WAY_M || box.minX > reach.maxX + DOOR_ON_WAY_M || box.maxY < reach.minY - DOOR_ON_WAY_M || box.minY > reach.maxY + DOOR_ON_WAY_M) {
+      if (!rectsMeet(box, reach, DOOR_ON_WAY_M)) {
         continue;
       }
       const atDoor = (b.entrances ?? []).some((e) => !e.guessed && way.line.some((p) => Math.hypot(p[0] - e.at[0], p[1] - e.at[1]) < DOOR_ON_WAY_M));
@@ -418,7 +417,7 @@ function runsThroughBuildings(line: Point[], buildings: Building[], arcade = fal
       return false;
     }
     const box = bounds(b.polygon.outer);
-    return box.maxX >= reach.minX && box.minX <= reach.maxX && box.maxY >= reach.minY && box.minY <= reach.maxY;
+    return rectsMeet(box, reach);
   });
   const deepInside = (p: Point) =>
     !goesOn(p) && grounded.some((b) => pointInPolygon(p, b.polygon) && distanceToRing(p, b.polygon.outer) > THROUGH_END_SLACK_M);

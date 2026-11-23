@@ -1,6 +1,6 @@
 // The height buildings stand at on sloping ground: at an OSM entrance, else at their highest ground, with
 // walls down to the lowest ground (a plinth or basement on the downhill side).
-import { inRect, pointInPolygon, ringCentroid, type Point, type Polygon, type Ring } from "./geometry.ts";
+import { inRect, pointInPolygon, rectsMeet, ringCentroid, type Point, type Polygon, type Ring } from "./geometry.ts";
 import { bounds, LEVEL_HEIGHT_M, type Area, type Building, type Entrance } from "./osm.ts";
 import { platformTopAt } from "./platforms.ts";
 
@@ -154,7 +154,7 @@ function platformUnder(b: Building, platforms: Area[]): number {
       continue;
     }
     const p = bounds(platform.polygon.outer);
-    if (p.maxX < box.minX || p.minX > box.maxX || p.maxY < box.minY || p.minY > box.maxY) {
+    if (!rectsMeet(p, box)) {
       continue;
     }
     const samples = [ringCentroid(b.polygon.outer), ...alongRing(b.polygon.outer)];

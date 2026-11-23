@@ -57,6 +57,11 @@ export function segmentGrid(lines: { line: Point[]; half: number }[], cell: numb
   return grid;
 }
 
+/** Whether two rectangles meet, or come within `margin` of each other */
+export function rectsMeet(a: Rect, b: Rect, margin = 0): boolean {
+  return a.minX <= b.maxX + margin && a.maxX >= b.minX - margin && a.minY <= b.maxY + margin && a.maxY >= b.minY - margin;
+}
+
 /** A rectangle grown by `by` on every side */
 export function grownRect(box: Rect, by: number): Rect {
   return { minX: box.minX - by, minY: box.minY - by, maxX: box.maxX + by, maxY: box.maxY + by };
