@@ -1788,8 +1788,6 @@ export function meters(value: string | undefined): number | undefined {
   return match[2] === "ft" || match[2] === "'" ? amount * 0.3048 : amount;
 }
 
-/** The year of a start_date such as "1965", "1965-05-01", "1960s" or "1904..1920" (its first); undefined for "C19", "~1900", ... */
-
 /** Parses a plain number such as "3" or "2.5"; lists like "3;4" use the first value. */
 export function number(value: string | undefined): number | undefined {
   if (value === undefined) {
