@@ -2,7 +2,7 @@
 // staircases along its side facing the nearest street, other buildings with windows one main door on
 // that side. Wider blocks of flats get none: their doors are as often in the yard.
 import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
-import { distanceToRing, nearestOnSegment, orientedBox, RectGrid, ringArea, ringCentroid, type Point, type Rect, type Ring } from "./geometry.ts";
+import { boxCentre, distanceToRing, nearestOnSegment, orientedBox, RectGrid, ringArea, ringCentroid, type Point, type Rect, type Ring } from "./geometry.ts";
 import { bounds, type Building, type Entrance, type GeoBox, type OverpassResponse, type Road } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { inTunnel, isBridge } from "./profile.ts";
@@ -81,7 +81,7 @@ export function guessEntrances(buildings: Building[], roads: Road[]): number {
     const box = orientedBox(ring);
     const along: Point = [Math.cos(box.angle), Math.sin(box.angle)];
     const across: Point = [-along[1], along[0]];
-    const centre = boxCentre(ring, along, across);
+    const centre = boxCentre(ring, box.angle);
     // beyond this from the centroid a street is beyond MAX_STREET_M from the whole outline (+1 m rounding)
     const centroid = ringCentroid(ring);
     const radius = Math.max(...ring.map(([x, y]) => Math.hypot(x - centroid[0], y - centroid[1])));
@@ -122,17 +122,6 @@ export function guessEntrances(buildings: Building[], roads: Road[]): number {
     }
   }
   return count;
-}
-
-/** The centre of a ring's box along the axes along and across */
-function boxCentre(ring: Ring, along: Point, across: Point): Point {
-  const range = (axis: Point) => {
-    const values = ring.map(([x, y]) => x * axis[0] + y * axis[1]);
-    return (Math.min(...values) + Math.max(...values)) / 2;
-  };
-  const a = range(along);
-  const c = range(across);
-  return [along[0] * a + across[0] * c, along[1] * a + across[1] * c];
 }
 
 /** Where the line through from in direction dir last crosses the ring, going that way; undefined if it misses */

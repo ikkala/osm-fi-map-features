@@ -13,7 +13,7 @@ import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { exactYear } from "./startDates.ts";
 import type { RoofFaces } from "./roofRidges.ts";
 import { WALKWAYS } from "./ways.ts";
-import { dedupe, extent, lineLength, orientedBox, pointInRing, pointKey, ringArea, stitchRings, type Point, type Polygon, type Ring } from "./geometry.ts";
+import { dedupe, extent, lineLength, orientedBox, orientRings, pointInRing, pointKey, ringArea, stitchRings, type Point, type Polygon, type Ring } from "./geometry.ts";
 
 /** The main use classes of the Finnish building register; work includes the unclassified */
 export type BuildingUse = "house" | "holiday" | "apartments" | "public" | "work" | "ancillary" | "sauna";
@@ -706,7 +706,7 @@ export interface OverpassResponse {
   elements: OsmElement[];
 }
 
-interface LatLon {
+export interface LatLon {
   lat: number;
   lon: number;
 }
@@ -955,7 +955,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
         continue;
       }
       const closed = isClosed(element.geometry ?? []);
-      const polygon = () => normalize({ outer: points, holes: [] });
+      const polygon = () => orientRings({ outer: points, holes: [] });
       // a closed way as a line goes back to its start: the outline's points leave the closing one out
       const line = closed && points.length >= 3 ? [...points, points[0]] : points;
       // a road under construction is drawn as the road it will be: it is mostly there, and in use between works
@@ -1042,7 +1042,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
       const outers = outer.rings.map((ring) => dedupe(ring.map(toPoint))).filter((ring) => ring.length >= 3);
       const holes = inner.rings.map((ring) => dedupe(ring.map(toPoint))).filter((ring) => ring.length >= 3);
       for (const ring of outers) {
-        const polygon = normalize({ outer: ring, holes: holes.filter((hole) => pointInRing(hole[0], ring)) });
+        const polygon = orientRings({ outer: ring, holes: holes.filter((hole) => pointInRing(hole[0], ring)) });
         addPolygonFeature(features, bridgeOutlines, playgrounds, pitches, osm, tags, polygon);
       }
     }
@@ -1786,16 +1786,11 @@ export function number(value: string | undefined): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-function isClosed(geometry: LatLon[]): boolean {
+/** Whether a way's geometry closes back on its start */
+export function isClosed(geometry: LatLon[]): boolean {
   return geometry.length >= 4 && sameLatLon(geometry[0], geometry[geometry.length - 1]);
 }
 
-function sameLatLon(a: LatLon, b: LatLon): boolean {
+export function sameLatLon(a: LatLon, b: LatLon): boolean {
   return a.lat === b.lat && a.lon === b.lon;
-}
-
-/** Outer rings counter-clockwise, holes clockwise (seen with east right and north up). */
-function normalize(polygon: Polygon): Polygon {
-  const orient = (ring: Ring, ccw: boolean) => (ringArea(ring) > 0 === ccw ? ring : [...ring].reverse());
-  return { outer: orient(polygon.outer, true), holes: polygon.holes.map((hole) => orient(hole, false)) };
 }

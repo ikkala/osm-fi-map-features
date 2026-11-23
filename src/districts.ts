@@ -2,8 +2,8 @@
 // the municipality and its places of a suburb's kind, each with its name and the kind it is mapped as, as cities
 // map them differently. A user's points matched to them (districtOf) are a Derivative Database under the ODbL (see
 // the README's Licences); the user's own data stays a database of its own.
-import { dedupe, pointInPolygon, ringArea, ringCentroid, stitchRings, type Point, type Polygon } from "./geometry.ts";
-import { fetchOverpass, type FetchOptions, type GeoBox, type OsmElement } from "./osm.ts";
+import { dedupe, orientRings, pointInPolygon, polygonArea, ringCentroid, stitchRings, type Point, type Polygon } from "./geometry.ts";
+import { fetchOverpass, isClosed, sameLatLon, type FetchOptions, type GeoBox, type LatLon, type OsmElement } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 
 /** The kinds a district can be mapped as, from the largest commonly: "admin_level=<n>" or "place=<value>" */
@@ -45,22 +45,6 @@ export function districtKind(tags: Record<string, string>): string | undefined {
   return tags.place !== undefined && kinds.includes(`place=${tags.place}`) ? `place=${tags.place}` : undefined;
 }
 
-type LatLon = { lat: number; lon: number };
-
-function sameLatLon(a: LatLon, b: LatLon): boolean {
-  return a.lat === b.lat && a.lon === b.lon;
-}
-
-/** Outer rings counter-clockwise, holes clockwise */
-function oriented(polygon: Polygon): Polygon {
-  const orient = (ring: Point[], ccw: boolean) => (ringArea(ring) > 0 === ccw ? ring : [...ring].reverse());
-  return { outer: orient(polygon.outer, true), holes: polygon.holes.map((hole) => orient(hole, false)) };
-}
-
-function polygonArea(polygon: Polygon): number {
-  return Math.abs(ringArea(polygon.outer)) - polygon.holes.reduce((sum, hole) => sum + Math.abs(ringArea(hole)), 0);
-}
-
 /**
  * The districts of an Overpass answer (districtsQuery's), in meters around `origin`: a relation's outer and inner
  * members stitched into rings, a closed way a ring of its own; with warnings of the rings that do not close.
@@ -82,9 +66,9 @@ export function parseDistricts(elements: OsmElement[], origin: GeoPoint): { dist
     if (element.type === "way") {
       const ring = dedupe((element.geometry ?? []).map(toPoint));
       const geometry = element.geometry ?? [];
-      const closed = geometry.length >= 4 && sameLatLon(geometry[0], geometry[geometry.length - 1]);
+      const closed = isClosed(geometry);
       if (closed && ring.length >= 3) {
-        polygons = [oriented({ outer: ring, holes: [] })];
+        polygons = [orientRings({ outer: ring, holes: [] })];
       }
     } else {
       const members = element.members ?? [];
@@ -96,7 +80,7 @@ export function parseDistricts(elements: OsmElement[], origin: GeoPoint): { dist
       }
       const outers = outer.rings.map((ring) => dedupe(ring.map(toPoint))).filter((ring) => ring.length >= 3);
       const holes = inner.rings.map((ring) => dedupe(ring.map(toPoint))).filter((ring) => ring.length >= 3);
-      polygons = outers.map((ring) => oriented({ outer: ring, holes: holes.filter((hole) => pointInPolygon(hole[0], { outer: ring, holes: [] })) }));
+      polygons = outers.map((ring) => orientRings({ outer: ring, holes: holes.filter((hole) => pointInPolygon(hole[0], { outer: ring, holes: [] })) }));
       const labelNode = members.find((m) => m.type === "node" && m.role === "label");
       if (labelNode && labelNode.lat !== undefined && labelNode.lon !== undefined) {
         label = toPoint({ lat: labelNode.lat, lon: labelNode.lon });
