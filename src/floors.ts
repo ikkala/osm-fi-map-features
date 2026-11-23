@@ -1,6 +1,5 @@
-// The floors of the bored tunnels, over the network of their points (tunnels.ts): a linear program for each group of
-// tunnels that touch (lp.ts), their bounds missed only by priority, at the least cost (HARD_COST and on), and each
-// conflict told with its way and place:
+// The floors of the bored tunnels, over the network of their points (tunnels.ts), in the heights' program
+// (heights.ts), their bounds missed only by priority, at the least cost (HARD_COST and on):
 // - the floors known from plans hold;
 // - straight between known floors of a tunnel and on to its portals, a tunnel's grade between its points, its floor
 //   bending no more than MAX_BEND_M over BEND_SPAN_M, tunnels of one layer whose rooms overlap one hall (a point of
@@ -13,7 +12,8 @@
 // Within the bounds a floor keeps as high as it can, no higher than it hangs between its portals.
 import { deckAt } from "./bridges.ts";
 import { densify, distanceToRing, distanceToSegment, grownRect, indexOwnBoxes, inRect, metersAlong, MinHeap, nearestOnLine, nearestOnSegment, pointInPolygon, pointKey, pushTo, rectsMeet, RESOLUTION_M, type Point, type Rect } from "./geometry.ts";
-import { SoftProgram, type SolveLp } from "./lp.ts";
+import type { HeightTag } from "./heights.ts";
+import type { NamedPrograms } from "./lp.ts";
 import { bounds, type Building, type MapFeatures, type Road } from "./osm.ts";
 import { inTunnel, isBridge } from "./profile.ts";
 import { acrossRoom, BED_M, COVER_M, lowestGround, pointsAround, spread, WALL_FOOTING_M, WATER_DEPTH_M, type TunnelNetwork, type TunnelNode } from "./tunnels.ts";
@@ -34,14 +34,15 @@ export const MAX_BEND_M = 0.1;
  * The floors' bounds by priority, as the cost (per meter) of missing one at a point: the known floors hold; then the
  * straight floors between them, grades, bends and halls' shared floors (missed only where those leave no room for
  * them); then the room under what is over a tunnel and over what is under it; then a portal at its height (no higher,
- * and lower only for those); then the cover, a shortfall making the roof a lid. Each meter a floor is deeper than it
- * needs costs SHALLOW_COST, so that the floors keep as high as their bounds let them.
+ * and lower only for those), cheaper than a deck raised over it (heights.ts), so that a tunnel goes down under a deck
+ * rather than lift it; then the cover, a shortfall making the roof a lid. Each meter a floor is deeper than it needs
+ * costs SHALLOW_COST, so that the floors keep as high as their bounds let them.
  */
 export const HARD_COST = 1e5;
 export const ROOM_COST = 1e3;
-const PORTAL_COST = 1e2;
-const COVER_COST = 1;
-const SHALLOW_COST = 1e-3;
+export const PORTAL_COST = 1e-2;
+const COVER_COST = 1e-4;
+export const SHALLOW_COST = 1e-6;
 /** A point this far (m) past the end of another tunnel's line is on a way going on from it, not beside it */
 const PAST_END_M = 0.5;
 
@@ -60,18 +61,19 @@ export interface KnownFloor {
   name?: string;
 }
 
-/** A floor's bound missed (the bounds' costs by priority): on which way, where most and by how much (m) */
-export interface FloorConflict {
-  way: string;
-  bound: "known" | "grade" | "bend" | "hall" | "room" | "portal" | "cover";
+/** A way over a tunnel's point k, its surface's lowest over the room at `at` on the ground there, and the room and roof under it */
+export interface OverTunnel {
+  k: string;
+  way: Way;
   at: Point;
-  by: number;
+  ground: number;
+  depth: number;
 }
 
 /** A bound on a sum of floors (their points' keys and factors), missed at its cost a meter, told at k */
-interface FloorBound {
+export interface FloorBound {
   cost: number;
-  bound: FloorConflict["bound"];
+  bound: HeightTag["bound"];
   k: string;
   terms: [string, number][];
   lower: number;
@@ -79,34 +81,32 @@ interface FloorBound {
 }
 
 /**
- * Solves the floors of the bored tunnels (tunnels.ts' network) with lp, as high as their bounds let them and no higher
- * than they hang between their portals, and under the decks over them (deckOver: the deck over a point, over a way on
- * a layer, as the decks will be set). Under a bridge (`underBridge`) the floor is not kept under the elevation model,
- * which has no ground there. Returns how many tunnels got floors, how many of the known floors were on a tunnel, the
- * ways of the tunnels going down from a portal in a building under it (a ramp into a basement and the ways on from
- * it; see `openPortals`), and the bounds missed.
+ * The floors of the bored tunnels (tunnels.ts' network) in the heights' program (heights.ts): a column at each point,
+ * as high as its bounds let it and no higher than it hangs between its portals, and under the decks over them
+ * (deckOver: the deck's height over a point, over a way on a layer, as the program's terms). Under a bridge
+ * (`underBridge`) the floor is not kept under the elevation model, which has no ground there. Returns how many of the
+ * known floors were on a tunnel, the ways of the tunnels going down from a portal in a building under it (a ramp
+ * into a basement and the ways on from it; see `openPortals`), the bounds, and the ways over the tunnels, whose
+ * heights the program has where they leave the ground (the room and roof under them are its rows).
  */
-export function solveFloors(
+export function floorRows(
+  program: NamedPrograms<HeightTag>,
   features: MapFeatures,
   network: TunnelNetwork,
-  lp: SolveLp,
-  underBridge: (p: Point) => boolean = () => false,
-  known: readonly KnownFloor[] = [],
-  deckOver?: (p: Point, layer: number) => { deck: number } | undefined,
-): { floors: number; known: number; basements: Road[]; conflicts: FloorConflict[] } {
+  underBridge: (p: Point) => boolean,
+  known: readonly KnownFloor[],
+  deckOver: (p: Point, layer: number) => [string, number][] | undefined,
+): { known: number; basements: Road[]; bounds: FloorBound[]; over: OverTunnel[] } {
   const { tunnels, nodes, through, heightAt } = network;
   const { beside, under } = besides(tunnels, nodes, through);
   // the tunnels that touch a portal in a building go down into a basement under it
   const groups = touching(network, [...beside, ...under]);
   const basements = groups.filter(({ keys }) => keys.some((k) => nodes.get(k)?.inBuilding)).flatMap(({ ways }) => ways.filter(isRoad));
-  const at = (cost: number, bound: FloorConflict["bound"], lower: boolean) => ([k, v]: [string, number]): FloorBound =>
+  const at = (cost: number, bound: FloorBound["bound"], lower: boolean) => ([k, v]: [string, number]): FloorBound =>
     ({ cost, bound, k, terms: [[k, 1]], lower: lower ? v : -Infinity, upper: lower ? Infinity : v });
   const bounds = [
-    ...[
-      ...underWays(features, tunnels, nodes, heightAt, underBridge),
-      ...underDecks([...features.roads, ...features.rails], network, deckOver),
-      ...underFootings(features.buildings, network, new Set(basements)),
-    ].map(at(ROOM_COST, "room", false)),
+    ...underFootings(features.buildings, network, new Set(basements)).map(at(ROOM_COST, "room", false)),
+    ...underDecks([...features.roads, ...features.rails], network, deckOver),
     ...under.map(([low, high]): FloorBound => ({ cost: ROOM_COST, bound: "room", k: low, terms: [[low, 1], [high, -1]], lower: -Infinity, upper: -(nodes.get(low)?.depth ?? 0) })),
     ...[...covers(features, network, underBridge), ...hang(nodes)].map(at(COVER_COST, "cover", false)),
   ];
@@ -116,55 +116,29 @@ export function solveFloors(
   bounds.push(...[...nodes].filter(([, node]) => node.portal !== undefined && !node.known).map(([k, node]): [string, number] => [k, node.floor]).map(at(PORTAL_COST, "portal", true)));
   // a known floor keeps its own, in a hall too, where the other has its own
   bounds.push(...beside.filter(([p, q]) => p !== q && !(nodes.get(p)?.known && nodes.get(q)?.known)).map(([p, q]): FloorBound => ({ cost: HARD_COST, bound: "hall", k: p, terms: [[p, 1], [q, -1]], lower: 0, upper: 0 })));
-  const { floors, conflicts } = optimize(network, groups, bounds, lp);
+  // a floor no steeper than TUNNEL_GRADE between a way's points, bending no more than MAX_BEND_M from the line between
+  // its heights BEND_SPAN_M before and after along a way, and a car park's no lower than its level
   for (const [k, node] of nodes) {
-    node.floor = floors.get(k) ?? Infinity;
+    const f = node.known ? node.floor : undefined;
+    const lower = f ?? node.level ?? -Infinity;
+    program.column(k, f === undefined ? -SHALLOW_COST : 0, lower, node.known || node.portal !== undefined ? Math.max(lower, node.floor) : Infinity);
+    node.next.filter(({ key }) => k < key).forEach(({ key, length }) => bounds.push({ cost: HARD_COST, bound: "grade", k, terms: [[k, 1], [key, -1]], lower: -TUNNEL_GRADE * length, upper: TUNNEL_GRADE * length }));
   }
-  const floored = tunnels.filter((way) => way.line.every((p) => Number.isFinite(nodes.get(pointKey(p))?.floor)));
-  floored.forEach((way) => (way.floor = way.line.map((p) => nodes.get(pointKey(p))?.floor ?? Infinity)));
-  return { floors: floored.length, known: knownAt, basements, conflicts };
+  tunnels.forEach((way) => bends(way.line).forEach(({ k, terms, allowed }) => bounds.push({ cost: HARD_COST, bound: "bend", k, terms, lower: -allowed, upper: allowed })));
+  for (const { cost, bound, k, terms, lower, upper } of bounds) {
+    program.soft({ cost, lower, upper, terms, tag: { way: through.get(k)?.[0]?.osm ?? k, bound, at: nodes.get(k)?.p ?? [0, 0] } });
+  }
+  return { known: knownAt, basements, bounds, over: underWays(features, tunnels, nodes, heightAt, underBridge) };
 }
 
-/**
- * The floors at the least cost of the bounds they miss (FloorBounds, by the priorities' costs), one linear program for
- * each group of tunnels that meet, share a hall or cross: a floor no steeper than TUNNEL_GRADE between a way's points,
- * bending no more than MAX_BEND_M from the line between its heights BEND_SPAN_M before and after along a way (on a
- * curve as gentle near its ends), and a car park's no lower than its level. A group with no bound gets no floors.
- */
-function optimize(network: TunnelNetwork, groups: { keys: string[]; ways: Way[] }[], bounds: FloorBound[], lp: SolveLp): { floors: Map<string, number>; conflicts: FloorConflict[] } {
-  const { nodes, through } = network;
-  const floors = new Map<string, number>();
-  const missed = new Map<string, FloorConflict>();
-  for (const { keys, ways } of groups) {
-    const index = new Map(keys.map((k, i) => [k, i]));
-    const program = new SoftProgram<{ k: string; bound: FloorConflict["bound"] }>();
-    keys.forEach((k) => {
-      const node = nodes.get(k);
-      const f = node?.known ? node.floor : undefined;
-      program.column(f === undefined ? -SHALLOW_COST : 0, f ?? node?.level ?? -Infinity, node?.known || node?.portal !== undefined ? (node?.floor ?? Infinity) : Infinity);
-    });
-    const soft = ({ cost, bound, k, terms, lower, upper }: FloorBound) =>
-      program.soft({ cost, lower, upper, tag: { k, bound }, terms: terms.map(([q, v]): [number, number] => [index.get(q) ?? -1, v]) });
-    const grades = keys.flatMap((k) =>
-      (nodes.get(k)?.next ?? []).filter(({ key }) => k < key).map(({ key, length }): FloorBound => ({ cost: HARD_COST, bound: "grade", k, terms: [[k, 1], [key, -1]], lower: -TUNNEL_GRADE * length, upper: TUNNEL_GRADE * length })),
-    );
-    const bent = ways.flatMap((way) => bends(way.line).map(({ k, terms, allowed }): FloorBound => ({ cost: HARD_COST, bound: "bend", k, terms, lower: -allowed, upper: allowed })));
-    [...grades, ...bent, ...bounds.filter(({ k }) => index.has(k))].forEach(soft);
-    // a group of tunnels with no bound gets no floors
-    const solved = program.solve(lp, RESOLUTION_M / 2);
-    if (!solved) {
-      continue;
-    }
-    keys.forEach((k, i) => floors.set(k, solved.x[i]));
-    // the most each way misses each bound by
-    for (const { tag: { k, bound }, by } of solved.missed) {
-      const way = through.get(k)?.[0]?.osm ?? k;
-      if (by > (missed.get(`${way} ${bound}`)?.by ?? 0)) {
-        missed.set(`${way} ${bound}`, { way, bound, at: nodes.get(k)?.p ?? [0, 0], by });
-      }
-    }
+/** Sets the tunnels' floors the program solved (a group with no bound gets none): how many tunnels got floors */
+export function setFloors(network: TunnelNetwork, values: Map<string, number>): number {
+  for (const [k, node] of network.nodes) {
+    node.floor = values.get(k) ?? Infinity;
   }
-  return { floors, conflicts: [...missed.values()] };
+  const floored = network.tunnels.filter((way) => way.line.every((p) => Number.isFinite(network.nodes.get(pointKey(p))?.floor)));
+  floored.forEach((way) => (way.floor = way.line.map((p) => network.nodes.get(pointKey(p))?.floor ?? Infinity)));
+  return floored.length;
 }
 
 /**
@@ -464,7 +438,7 @@ function underWays(
   nodes: Map<string, TunnelNode>,
   heightAt: (e: number, n: number) => number | undefined,
   underBridge: (p: Point) => boolean,
-): [string, number][] {
+): OverTunnel[] {
   const inTunnels = new Set(tunnels);
   const over = [...features.roads, ...features.rails]
     .filter((w) => !inTunnels.has(w) && !inTunnel(w) && !isBridge(w) && w.line.length >= 2)
@@ -481,7 +455,7 @@ function underWays(
       (pointInPolygon(q, roof.polygon) || ring.some((a, i) => distanceToSegment(q, a, ring[(i + 1) % ring.length]) < OVER_PORTAL_M))
     );
   };
-  const floors: [string, number][] = [];
+  const floors: OverTunnel[] = [];
   for (const tunnel of tunnels) {
     const reach = widthOf(tunnel) / 2 + ROOM_SIDE_M;
     const box = bounds(tunnel.line);
@@ -524,7 +498,7 @@ function underWays(
       }
       for (let i = 0; i + 1 < tunnel.line.length; i++) {
         const [a, c] = [tunnel.line[i], tunnel.line[i + 1]];
-        let deepest = Infinity;
+        let deepest: { ground: number; at: Point } | undefined;
         for (const p of metersAlong(a, c)) {
           if (freeEnds.some(({ q }) => Math.hypot(q[0] - p[0], q[1] - p[1]) < OVER_PORTAL_M) || underRoof(p)) {
             continue;
@@ -533,17 +507,15 @@ function underWays(
             const at = nearestOnSegment(p, way.line[k], way.line[k + 1]);
             const distance = Math.hypot(at[0] - p[0], at[1] - p[1]);
             const ground = distance <= margin && !pastPortal(p, at, margin) && !underBridge(at) ? heightAt(...at) : undefined;
-            if (ground !== undefined) {
-              deepest = Math.min(deepest, ground);
+            if (ground !== undefined && ground < (deepest?.ground ?? Infinity)) {
+              deepest = { ground, at };
             }
           }
         }
-        if (Number.isFinite(deepest)) {
-          for (const q of [a, c]) {
-            const node = nodes.get(pointKey(q));
-            if (node) {
-              floors.push([pointKey(q), deepest - node.depth]);
-            }
+        for (const q of deepest ? [a, c] : []) {
+          const node = nodes.get(pointKey(q));
+          if (node && deepest) {
+            floors.push({ k: pointKey(q), way, ...deepest, depth: node.depth });
           }
         }
       }
@@ -554,24 +526,25 @@ function underWays(
 
 /**
  * The floors the decks over tunnels need at the tunnels' points and halfway to their neighbours: the bridges' (deckOver:
- * the deck over a point, over a way on a layer, as the decks will be set), and the floors of the tunnels in cuts over
- * them (not leading on into them) as decks: the room and roof under the deck, the deck as thick as a tunnel's roof. The
- * elevation model has no ground under a bridge, and at a bridge's end has it up at the deck, so that a tunnel under a
- * bridge's end would otherwise come out at the deck's height.
+ * the deck's height over a point, over a way on a layer, as the program's terms), and the floors of the tunnels in
+ * cuts over them (not leading on into them) as decks: the room and roof under the deck, the deck as thick as a
+ * tunnel's roof. The elevation model has no ground under a bridge, and at a bridge's end has it up at the deck, so that
+ * a tunnel under a bridge's end would otherwise come out at the deck's height.
  */
-function underDecks(ways: Way[], network: TunnelNetwork, deckOver?: (p: Point, layer: number) => { deck: number } | undefined): [string, number][] {
+function underDecks(ways: Way[], network: TunnelNetwork, deckOver: (p: Point, layer: number) => [string, number][] | undefined): FloorBound[] {
   const { nodes, through } = network;
   // a tunnel in a cut leading on into the tunnels is no deck over them
   const cuts = ways.filter((w) => w.lid !== undefined && w.line.length >= 2 && !w.line.some((p) => nodes.has(pointKey(p))));
-  const found: [string, number][] = [];
+  const found: FloorBound[] = [];
   for (const [k, node] of nodes) {
     const layer = Math.max(...(through.get(k) ?? []).map((w) => w.layer));
-    const decks = deckOver ? pointsAround(nodes, node).map((p) => deckOver(p, layer)?.deck) : [];
-    const cutFloors = cuts.map((way) => (way.floor && way.layer > layer && nearestOnLine(way.line, node.p).distance < node.half + widthOf(way) / 2 ? deckAt(way.line, way.floor, node.p) : undefined));
-    const over = [...decks, ...cutFloors].filter((d) => d !== undefined);
-    if (over.length > 0) {
-      found.push([k, Math.min(...over) - (node.depth - COVER_M)]);
-    }
+    const row = (terms: [string, number][], over: number): FloorBound => ({ cost: ROOM_COST, bound: "room", k, terms: [[k, 1], ...terms], lower: -Infinity, upper: over - (node.depth - COVER_M) });
+    pointsAround(nodes, node).forEach((p) => {
+      const deck = deckOver(p, layer);
+      found.push(...(deck ? [row(deck.map(([q, v]): [string, number] => [q, -v]), 0)] : []));
+    });
+    const cutFloors = cuts.flatMap((way) => (way.floor && way.layer > layer && nearestOnLine(way.line, node.p).distance < node.half + widthOf(way) / 2 ? [deckAt(way.line, way.floor, node.p)] : []));
+    found.push(...(cutFloors.length > 0 ? [row([], Math.min(...cutFloors))] : []));
   }
   return found;
 }

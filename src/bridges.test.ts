@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { deckAt, solveDecks } from "./bridges.ts";
+import { deckAt } from "./bridges.ts";
+import { solveHeights, type HeightOptions } from "./heights.ts";
 import type { Point } from "./geometry.ts";
 import { loadLp } from "./lp.ts";
-import type { Rail, Road } from "./osm.ts";
+import type { MapFeatures, Rail, Road } from "./osm.ts";
 import { defined } from "./testing.ts";
 import { isRoad, type Way } from "./ways.ts";
 
@@ -13,9 +14,14 @@ let ids = 0;
 function line(bridge: boolean, points: Point[], extra: Partial<Road> = {}): Road {
   return { osm: `w${++ids}`, kind: "footway", width: 2, layer: bridge ? 1 : 0, bridge, tunnel: false, line: points, ...extra };
 }
+/** Solves the heights of the roads and rails, the pieces split off pushed onto them */
+function solveDecks(roads: Road[], rails: Rail[], heightAt: (e: number, n: number) => number | undefined, options: HeightOptions = {}): void {
+  const features: MapFeatures = { roads, rails, buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], playEquipment: [], bridgeDecks: [] };
+  solveHeights(features, heightAt, lp, options);
+}
 /** Solves the decks of `lines`, the pieces split off pushed onto them */
 function solve(lines: Road[], heightAt: (e: number, n: number) => number | undefined, indoors?: (p: Point) => boolean, through?: (l: Road) => boolean): Road[] {
-  solveDecks(lines, [], heightAt, lp, indoors, through);
+  solveDecks(lines, [], heightAt, { indoors, through });
   return lines;
 }
 /** Heights within a centimetre of those expected */
@@ -293,7 +299,7 @@ test("a boardwalk with a floor (a ramp down to a tunnel) is decked as a bridge, 
   assert.deepEqual([ramp.line, ramp.deck, ramp.boardwalk], [[[0, 0], [20, 0]], [100, 100], undefined]);
 });
 
-test("a deck rises over a way under it to the room OSM tells, never dipping, its landings and approaches rising within their reach, the way keeping to the ground", () => {
+test("a deck rises over a way under it to the room OSM tells, never dipping, its landings and approaches rising as far as that needs at their grade, the way keeping to the ground", () => {
   // level ground at 100; a 60 m footbridge from e = 0 to e = 60 over a path at e = 50 with 5 m of room told: the
   // deck's top at 106 over it
   const flat = () => 100;
@@ -309,10 +315,15 @@ test("a deck rises over a way under it to the room OSM tells, never dipping, its
     assert.ok(at(e) >= (at(e - 2) + at(e + 2)) / 2 - 1e-6, `dips at ${e}`);
   }
   assert.ok(lines.filter((l) => l.osm === under.osm).every((l) => l.floor === undefined && l.deck === undefined));
-  // the approaches raised, no farther than their reach
+  // the approaches raised, down to the ground at their users' grade
   const ramps = lines.filter((l) => !l.bridge && l.deck);
   assert.equal(ramps.length, 2);
-  assert.ok(ramps.every((r) => r.line.every(([e]) => e >= -24 - 1e-6 && e <= 84 + 1e-6)));
+  for (const ramp of ramps) {
+    const deck = defined(ramp.deck);
+    const along = ramp.line.map(([e]) => e);
+    deck.slice(1).forEach((h, i) => assert.ok(Math.abs(h - deck[i]) <= 0.08 * Math.abs(along[i + 1] - along[i]) + 1e-6, `${along} ${deck}`));
+    assert.ok(Math.abs(Math.min(...deck) - 100) < 1e-6);
+  }
 });
 
 test("a deck high enough over the way under it stays as it is", () => {
@@ -362,7 +373,7 @@ const bridge = () => road("w1", [[-30, 0], [30, 0]], { layer: 1, bridge: true })
 const under = (level: number) => (e: number) => (Math.abs(e) >= 30 ? 100 : level);
 /** Solves them, the roads and the rails, and the cut stretches of `osm` */
 function cut(roads: Road[], level: number, rails: Rail[] = []): { cuts: (osm: string) => Way[] } {
-  solveDecks(roads, rails, under(level), lp);
+  solveDecks(roads, rails, under(level));
   return { cuts: (osm) => [...roads, ...rails].filter((w) => w.osm === osm && w.floor) };
 }
 
@@ -402,23 +413,26 @@ test("a cut's ramps ease out of its bottom, with only the points its floor's sha
   }
 });
 
-test("a cut is held at the ground where a way of another kind or layer meets it, its ramp rising before it", () => {
-  // 1.7 m down for a person's room: ramps at 8 % end 21 m past the bottom
-  const path = road("w2", [[0, -60], [0, 32], [0, 60]], { kind: "footway", width: 2.5 });
-  const street = road("w3", [[-30, 32], [0, 32], [30, 32]]);
+test("a way crossing a cut goes down with it there, within a ramp of its own; a way of another layer meeting it holds it", () => {
+  // 1.7 m down for a person's room: ramps at 8 % end 21 m past the bottom; a street across the ramp 22 m out
+  const path = road("w2", [[0, -60], [0, 22], [0, 60]], { kind: "footway", width: 2.5 });
+  const street = road("w3", [[-30, 22], [0, 22], [30, 22]]);
   const ways = [bridge(), path, street];
-  const [floor] = cut(ways, 98).cuts("w2");
+  const solved = cut(ways, 98);
+  const [floor] = solved.cuts("w2");
   assert.ok(floor?.floor);
   assert.ok(Math.min(...floor.floor) <= 96.3 + 0.02);
-  assert.ok(Math.max(...floor.line.map(([, n]) => n)) <= 32 + 1e-6);
-  assert.equal(street.floor, undefined);
+  const heightAt = (osm: string) => [...solved.cuts(osm)].flatMap((w) => w.line.flatMap(([e, n], i) => (e === 0 && n === 22 ? [defined(w.floor)[i]] : [])));
+  const [shared] = heightAt("w2");
+  assert.ok(shared !== undefined && shared < 98 - 0.01);
+  assert.deepEqual(heightAt("w3"), [shared]);
+  assert.ok(solved.cuts("w3").every((w) => w.line.every(([e], i) => Math.abs(e) < 30 - 1e-9 || Math.abs(defined(w.floor)[i] - 98) < 1e-6)));
   // a path on another layer across the other ramp holds it there too
   const other = road("w4", [[0, -60], [0, -10], [0, 60]], { kind: "footway", width: 2.5 });
   const above = road("w5", [[-20, -10], [0, -10], [20, -10]], { kind: "footway", width: 2.5, layer: 1 });
   const held = [bridge(), other, above];
   const cuts = cut(held, 98).cuts("w4");
-  assert.ok(cuts.every((w) => w.line.every(([, n]) => n >= -10 - 1e-6)));
-  assert.ok(cuts.some((w) => Math.min(...(w.floor ?? [])) > 96.3 + 0.5));
+  assert.ok(cuts.every((w) => w.line.every(([, n], i) => n > -10 + 1e-6 || (n === -10 && Math.abs(defined(w.floor)[i] - 98) < 1e-6))));
 });
 
 test("a way whose room would need a cut deeper than 3 m goes down 3 m, the deck rising between its landings for the rest; one ending under the bridge is held at its end", () => {
@@ -462,7 +476,8 @@ test("paths meeting under a bridge go down together, at one height where they me
     }
     return undefined;
   };
-  assert.ok((floorAt("w2", [0, 2]) ?? Infinity) <= 96.3 + 0.02);
+  // a person's room under the deck there
+  assert.ok(deckAt(ways[0].line, defined(ways[0].deck), [0, 0]) - 1 - (floorAt("w2", [0, 2]) ?? Infinity) >= 2.7 - 0.02);
   assert.equal(floorAt("w3", [0, 2]), floorAt("w2", [0, 2]));
   const crossing = floorAt("w4", [0, 12]);
   assert.ok(crossing !== undefined && crossing < 98 - 0.05);
@@ -498,7 +513,7 @@ test("a railway under a deck keeps its users' least room: the deck rises for it,
   const tram: Rail = { osm: "w2", kind: "rail", layer: 0, bridge: false, tunnel: false, line: [[0, -200], [0, 200]] };
   const roads = [footbridge, west, east];
   const rails = [tram];
-  solveDecks(roads, rails, (e) => (Math.abs(e) >= 10 ? 100 : 97), lp);
+  solveDecks(roads, rails, (e) => (Math.abs(e) >= 10 ? 100 : 97));
   const lowest = Math.min(97, ...rails.flatMap((w) => w.floor ?? []));
   const deck = deckAt(footbridge.line, defined(footbridge.deck), [0, 0]);
   assert.ok(deck - 1 - lowest >= 4.8 - 0.01, `${deck} over ${lowest}`);
@@ -537,7 +552,7 @@ test("a steep short bridge keeps its landings: its deck as steep as they are, no
   assert.deepEqual([west.deck, east.deck], [undefined, undefined]);
 });
 
-test("a deck raises the ways off it only within the approaches' reach: past it they keep to the ground", () => {
+test("a raise never spreads into the network: an approach is held at the ground at the first junction on its line", () => {
   const flat = () => 100;
   // a path off the bridge's west landing, branching 10 m out
   const ways = [
@@ -551,8 +566,9 @@ test("a deck raises the ways off it only within the approaches' reach: past it t
   solve(ways, flat);
   const raised = ways.filter((w) => !w.bridge && w.deck);
   assert.ok(raised.length >= 2);
-  const reach = (p: Point) => (p[0] <= 0 ? Math.abs(p[0]) + Math.abs(p[1]) : p[0] - 60);
-  assert.ok(raised.every((w) => w.line.every((p) => reach(p) <= 24 + 1e-6)), JSON.stringify(raised.map((w) => w.line)));
+  assert.ok(raised.every((w) => w.line.every(([e, n]) => n === 0 && (e >= -10 - 1e-6 || e >= 60))), JSON.stringify(raised.map((w) => w.line)));
+  const west = defined(raised.find((w) => w.line.some(([e]) => e < 0)));
+  assert.ok(Math.abs(deckAt(west.line, defined(west.deck), [-10, 0]) - 100) < 1e-6);
 });
 
 test("ways side by side under a deck each keep their room: a road's cut leaves the cycleway beside it its own", () => {
@@ -566,22 +582,22 @@ test("ways side by side under a deck each keep their room: a road's cut leaves t
   assert.ok(top - lowest("w2") >= 4.2 - 0.02 && top - lowest("w3") >= 2.7 - 0.02, `${top} ${lowest("w2")} ${lowest("w3")}`);
 });
 
-test("a tramway under a deck goes down into a cut where it can; where a way meeting it holds it, its bed goes down under the deck instead (trackbeds.ts), and the deck rises only where that is not enough", () => {
+test("a tramway under a deck goes down into a cut where it can; where a way of another layer meeting it holds it, its bed goes down under the deck instead (trackbeds.ts), and the deck rises only where that is not enough", () => {
   const tram = (): Rail => ({ osm: "w2", kind: "tram", layer: 0, bridge: false, tunnel: false, line: [[0, -200], [0, 6], [0, 200]] });
   const free = [tram()];
   cut([bridge()], 97, free);
   assert.ok(free.some((r) => r.floor && Math.min(...r.floor) < 97 - 1));
   // a street across it by the deck: the deck's underside 2 m over the ground, which the bed 3 m down makes 5 m
-  const street = () => road("w3", [[-20, 6], [0, 6], [20, 6]]);
+  const street = () => road("w3", [[-20, 6], [0, 6], [20, 6]], { layer: 1 });
   const held = [tram()];
   const deck = bridge();
-  solveDecks([deck, street()], held, under(97), lp);
+  solveDecks([deck, street()], held, under(97));
   assert.ok(held.every((r) => r.floor === undefined || Math.min(...r.floor) > 97 - 0.5));
   near(deck.deck, [100, 100]);
   // 0.5 m over the ground it is not enough: the deck rises by the rest
   const higher = bridge();
   const rails = [tram()];
-  solveDecks([higher, street()], rails, under(98.5), lp);
+  solveDecks([higher, street()], rails, under(98.5));
   const lowest = Math.min(98.5, ...rails.flatMap((r) => r.floor ?? []));
   assert.ok(deckAt(higher.line, defined(higher.deck), [0, 0]) > 100.1 && deckAt(higher.line, defined(higher.deck), [0, 0]) - 1 - (lowest - 3) >= 4 - 0.01);
 });

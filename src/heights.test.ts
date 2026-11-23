@@ -1,0 +1,136 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { deckAt } from "./bridges.ts";
+import { MAX_BEND_M } from "./floors.ts";
+import { nearestOnLine, type Point } from "./geometry.ts";
+import { solveHeights } from "./heights.ts";
+import { loadLp } from "./lp.ts";
+import type { MapFeatures, Rail, Road } from "./osm.ts";
+import { defined } from "./testing.ts";
+import type { Way } from "./ways.ts";
+
+const lp = await loadLp();
+
+function road(osm: string, line: Point[], extra: Partial<Road> = {}): Road {
+  return { osm, kind: "footway", width: 2.5, layer: 0, bridge: false, tunnel: false, line, ...extra };
+}
+
+/** Solves the heights of the roads and rails over the ground, the pieces split off pushed onto them */
+function solve(roads: Road[], ground: (e: number, n: number) => number | undefined, rails: Rail[] = []): MapFeatures {
+  const features: MapFeatures = { roads, rails, buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], playEquipment: [], bridgeDecks: [] };
+  solveHeights(features, ground, lp);
+  return features;
+}
+
+/** The height of the pieces of `osm` at a point of theirs (their deck or floor, else the ground's) */
+function heightAt(ways: Way[], osm: string, p: Point, ground: number): number | undefined {
+  const pieces = ways.filter((w) => w.osm === osm && nearestOnLine(w.line, p).distance < 1e-6);
+  const piece = pieces.find((w) => w.deck ?? w.floor) ?? pieces[0];
+  const heights = piece?.deck ?? piece?.floor;
+  return piece && (heights ? deckAt(piece.line, heights, p) : ground);
+}
+
+/** The most a line's heights bend from the line between them `span` m before and after, looked at every half meter */
+function mostBend(line: Point[], heights: number[], span = 10): number {
+  const along = line.map((_, i) => (i === 0 ? 0 : 0));
+  line.forEach((p, i) => i > 0 && (along[i] = along[i - 1] + Math.hypot(p[0] - line[i - 1][0], p[1] - line[i - 1][1])));
+  const at = (d: number) => {
+    const i = Math.max(1, along.findIndex((x) => x >= d));
+    const t = (d - along[i - 1]) / (along[i] - along[i - 1] || 1);
+    return heights[i - 1] + (heights[i] - heights[i - 1]) * t;
+  };
+  let most = 0;
+  for (let d = span; d <= (along.at(-1) ?? 0) - span; d += 0.5) {
+    most = Math.max(most, Math.abs(at(d) - (at(d - span) + at(d + span)) / 2));
+  }
+  return most;
+}
+
+test("an approach is as long as its rise needs: a deck raised 6 m for the room told under it comes down at its users' grade, on through the joints of its line", () => {
+  // a footbridge over a path with 5 m of room told, its west approach three ways joined end to end
+  const flat = () => 100;
+  const ways = [
+    road("w1", [[-200, 0], [-60, 0]]),
+    road("w2", [[-60, 0], [-20, 0]]),
+    road("w3", [[-20, 0], [0, 0]]),
+    road("w4", [[0, 0], [40, 0]], { bridge: true, layer: 1 }),
+    road("w5", [[40, 0], [240, 0]]),
+    road("w6", [[20, -50], [20, 50]], { clearance: 5 }),
+  ];
+  const { roads } = solve(ways, flat);
+  const deck = defined(ways[3].deck);
+  assert.ok(Math.max(...deck) >= 106 - 0.01, `${deck}`);
+  // west: down from the landing to the ground through w3, w2 and into w1, no steeper than 8 % and no shorter than that needs
+  const west = (e: number) => Math.max(...["w1", "w2", "w3"].map((osm) => heightAt(roads, osm, [e, 0], 100) ?? 100));
+  for (let e = -198; e <= 0; e += 2) {
+    assert.ok(Math.abs(west(e) - west(e - 2)) <= 0.08 * 2 + 1e-6, `${e}: ${west(e - 2)} ${west(e)}`);
+  }
+  assert.ok(west(-40) > 100.5 && west(-200) === 100);
+});
+
+test("a cut's floor is a smooth line, not the ground's bends: off the ground it bends no more than MAX_BEND_M over 10 m, where it meets the ground a little more", () => {
+  // a path under a road bridge too low over it, the ground under the path rippling a metre every 16 m
+  const wavy = (e: number, n: number) => (Math.abs(e) >= 30 ? 100 : 98 + 0.5 * Math.sin((n * Math.PI) / 8));
+  const bridge = road("w1", [[-30, 0], [30, 0]], { kind: "residential", width: 6, bridge: true, layer: 1 });
+  const path = road("w2", [[0, -80], [0, 80]]);
+  const { roads } = solve([bridge, path], wavy);
+  const cuts = roads.filter((w) => w.osm === "w2" && w.floor);
+  assert.ok(cuts.length > 0);
+  for (const cut of cuts) {
+    // the ground under it bends 0.7 m so
+    assert.ok(mostBend(cut.line, defined(cut.floor)) <= 1.5 * MAX_BEND_M, `${mostBend(cut.line, defined(cut.floor))}`);
+  }
+});
+
+test("a way crossing a cut has its surface in the cut's room at the cut's floor across from it, and the two share the height where they cross", () => {
+  // a street in a cut under a footbridge, a path across it 6 m from the deck
+  const flat = (e: number) => (Math.abs(e) >= 30 ? 100 : 98.5);
+  const bridge = road("w1", [[-30, 0], [30, 0]], { bridge: true, layer: 1, width: 4 });
+  const street = road("w2", [[0, -80], [0, 9], [0, 80]], { kind: "residential", width: 7 });
+  const path = road("w3", [[-40, 9], [0, 9], [40, 9]]);
+  const { roads } = solve([bridge, street, path], flat);
+  const streetAt = (n: number) => defined(heightAt(roads, "w2", [0, n], 98.5));
+  assert.ok(streetAt(0) < 98.5 - 1, `${streetAt(0)}`);
+  assert.equal(heightAt(roads, "w3", [0, 9], 98.5), streetAt(9));
+  // across the street's room (its 3.5 m and 1 m beside it) the path is level with the street's floor there
+  for (const piece of roads.filter((w) => w.osm === "w3" && w.floor)) {
+    piece.line.forEach(([e], i) => Math.abs(e) <= 4.5 && assert.ok(Math.abs(defined(piece.floor)[i] - streetAt(9)) < 0.01, `${e}: ${defined(piece.floor)[i]}`));
+  }
+});
+
+test("a ramp out of a tunnel solved with the deck over it: under the deck it keeps its room, rising from the tunnel's floor at the portal", () => {
+  // an underpass under a hill; its way out east passes under a footbridge's deck 10 m from the portal
+  const ground = (e: number, n: number) => (Math.abs(n) >= 20 && e > 0 ? 100 : e < 0 ? 104 : 100);
+  const tunnel = road("w1", [[-60, 0], [0, 0]], { tunnel: true, layer: -1, width: 3 });
+  const west = road("w2", [[-100, 0], [-60, 0]]);
+  const out = road("w3", [[0, 0], [80, 0]]);
+  const bridge = road("w4", [[10, -20], [10, 20]], { bridge: true, layer: 1, width: 3 });
+  const { roads } = solve([west, tunnel, out, bridge], ground);
+  const floor = defined(tunnel.floor).at(-1) ?? Infinity;
+  const ramp = defined(roads.find((w) => w.osm === "w3" && w.floor));
+  assert.equal(defined(ramp.floor)[0], floor);
+  const under = defined(heightAt(roads, "w3", [10, 0], 100));
+  const deck = deckAt(bridge.line, defined(bridge.deck), [10, 0]);
+  assert.ok(deck - 1 - under >= 2.7 - 0.02, `deck ${deck}, under it ${under}`);
+  const heights = defined(ramp.floor);
+  heights.slice(1).forEach((h, i) => assert.ok(Math.abs(h - heights[i]) <= 0.6 * Math.hypot(ramp.line[i + 1][0] - ramp.line[i][0], ramp.line[i + 1][1] - ramp.line[i][1]) + 1e-6));
+});
+
+test("a cut under a railway's deck, which keeps to its landings, takes the paths crossing it down with it, not into its room", () => {
+  // a track under a railway bridge landing at 100, paths crossing it either side of the deck
+  const ground = (e: number) => (Math.abs(e) >= 15 ? 100 : 99);
+  const railway: Rail = { osm: "w1", kind: "rail", layer: 1, bridge: true, tunnel: false, line: [[-15, 0], [15, 0]] };
+  const rails = [railway, { osm: "w5", kind: "rail", layer: 0, bridge: false, tunnel: false, line: [[-80, 0], [-15, 0]] } satisfies Rail, { osm: "w6", kind: "rail", layer: 0, bridge: false, tunnel: false, line: [[15, 0], [80, 0]] } satisfies Rail];
+  const track = road("w2", [[0, -80], [0, -8], [0, 8], [0, 80]], { kind: "track", width: 3 });
+  const paths = [road("w3", [[-30, -8], [0, -8], [30, -8]]), road("w4", [[-30, 8], [0, 8], [30, 8]])];
+  const { roads } = solve([track, ...paths], ground, rails);
+  assert.ok([defined(railway.deck)[0], defined(railway.deck).at(-1)].every((h) => Math.abs((h ?? 0) - 100) < 1e-6));
+  const trackAt = (n: number) => defined(heightAt(roads, "w2", [0, n], 99));
+  assert.ok(trackAt(0) < 99 - 1, `${trackAt(0)}`);
+  for (const [osm, n] of [["w3", -8], ["w4", 8]] as const) {
+    assert.equal(heightAt(roads, osm, [0, n], 99), trackAt(n));
+    for (const piece of roads.filter((w) => w.osm === osm && w.floor)) {
+      piece.line.forEach(([e], i) => Math.abs(e) <= 2.5 && assert.ok(Math.abs(defined(piece.floor)[i] - trackAt(n)) < 0.01, `${osm} ${e}`));
+    }
+  }
+});

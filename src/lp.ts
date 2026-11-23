@@ -1,6 +1,7 @@
 // Linear programs, solved with HiGHS (highs.dev, MIT) compiled to WebAssembly: deterministic, one thread.
 import { createRequire } from "node:module";
 import type { Highs } from "highs";
+import { pushTo } from "./geometry.ts";
 
 // its CommonJS build: the types read the package as CommonJS
 const loadHighs: () => Promise<Highs> = createRequire(import.meta.url)("highs");
@@ -37,49 +38,104 @@ export function loadLp(): Promise<SolveLp> {
   return loading;
 }
 
-/** A bound on a sum of columns' values (column → factor), missed at `cost` a unit, its miss told as `tag` */
-export interface SoftRow<T> {
+/** A bound on a sum of named columns' values (name → factor), missed at `cost` a unit, its miss told as `tag` */
+export interface NamedRow<T> {
   cost: number;
-  terms: Iterable<[number, number]>;
+  terms: [string, number][];
   lower: number;
   upper: number;
   tag: T;
 }
 
-/** A linear program whose rows' bounds may be missed, each by a slack of its own at its row's cost */
-export class SoftProgram<T> {
-  readonly #program: LinearProgram = { cost: [], lower: [], upper: [], rows: [] };
-  readonly #slacks: { column: number; tag: T }[] = [];
+/**
+ * Rows over named columns whose bounds may be missed, each by a slack of its own at its row's cost, solved as one
+ * program for each group of columns the rows join: a group with no optimum (unbounded, or its columns' bounds
+ * crossed) gets no values
+ */
+export class NamedPrograms<T> {
+  readonly #columns = new Map<string, [cost: number, lower: number, upper: number]>();
+  readonly #rows: NamedRow<T>[] = [];
 
-  /** A column at a cost a unit within its bounds: its index */
-  column(cost: number, lower: number, upper: number): number {
-    this.#program.lower.push(lower);
-    this.#program.upper.push(upper);
-    return this.#program.cost.push(cost) - 1;
+  /** A column at a cost a unit within its bounds, replacing one of that name */
+  column(name: string, cost: number, lower: number, upper: number): void {
+    this.#columns.set(name, [cost, lower, upper]);
   }
 
-  /** lower <= the terms' sum <= upper, missed by the slack's value at the row's cost */
-  soft({ cost, terms, lower, upper, tag }: SoftRow<T>): void {
-    if (lower === -Infinity && upper === Infinity) {
-      return;
-    }
-    const slack = this.column(cost, 0, Infinity);
-    this.#slacks.push({ column: slack, tag });
-    const sum = new Map<number, number>();
-    for (const [c, v] of terms) {
-      sum.set(c, (sum.get(c) ?? 0) + v);
-    }
-    if (upper < Infinity) {
-      this.#program.rows.push({ terms: new Map([...sum, [slack, -1]]), lower: -Infinity, upper });
-    }
-    if (lower > -Infinity) {
-      this.#program.rows.push({ terms: new Map([...sum, [slack, 1]]), lower, upper: Infinity });
-    }
+  has(name: string): boolean {
+    return this.#columns.has(name);
   }
 
-  /** The columns' values at the optimum and the rows missed by at least `least`, by how much; undefined where there is none */
-  solve(lp: SolveLp, least: number): { x: Float64Array; missed: { tag: T; by: number }[] } | undefined {
-    const x = lp(this.#program);
-    return x && { x, missed: this.#slacks.filter(({ column }) => x[column] >= least).map(({ column, tag }) => ({ tag, by: x[column] })) };
+  /** lower <= the terms' sum <= upper, over columns that are there by the time it is solved */
+  soft(row: NamedRow<T>): void {
+    this.#rows.push(row);
   }
+
+  /**
+   * The columns' values, and the rows missed by at least `least`, by how much, by group, with `extra` rows (over the
+   * same columns as rows already there), in each group of columns or only those with a column `only` takes
+   */
+  solve(lp: SolveLp, least: number, extra: NamedRow<T>[] = [], only: (name: string) => boolean = () => true): { values: Map<string, number>; missed: Map<string, { tag: T; by: number }[]> } {
+    const all = [...this.#rows, ...extra].filter((r) => r.terms.length > 0 && (r.lower > -Infinity || r.upper < Infinity));
+    const group = groupsOf(all.flatMap((r) => r.terms.map(([name]): [string, string] => [r.terms[0][0], name])));
+    const names = new Map<string, string[]>();
+    const rows = new Map<string, NamedRow<T>[]>();
+    this.#columns.forEach((_, name) => pushTo(names, group(name), name));
+    all.forEach((r) => pushTo(rows, group(r.terms[0][0]), r));
+    const values = new Map<string, number>();
+    const missed = new Map<string, { tag: T; by: number }[]>();
+    for (const [root, list] of [...names].filter(([, list]) => list.some(only))) {
+      const index = new Map(list.map((name, i) => [name, i]));
+      const program: LinearProgram = { cost: [], lower: [], upper: [], rows: [] };
+      const column = (cost: number, lower: number, upper: number) => {
+        program.lower.push(lower);
+        program.upper.push(upper);
+        return program.cost.push(cost) - 1;
+      };
+      list.forEach((name) => column(...(this.#columns.get(name) ?? [0, 0, 0])));
+      const slacks = (rows.get(root) ?? []).map(({ cost, terms, lower, upper, tag }) => {
+        const slack = column(cost, 0, Infinity);
+        const sum = new Map<number, number>();
+        for (const [name, v] of terms) {
+          const c = index.get(name) ?? unknown(name);
+          sum.set(c, (sum.get(c) ?? 0) + v);
+        }
+        program.rows.push(...(upper < Infinity ? [{ terms: new Map([...sum, [slack, -1]]), lower: -Infinity, upper }] : []));
+        program.rows.push(...(lower > -Infinity ? [{ terms: new Map([...sum, [slack, 1]]), lower, upper: Infinity }] : []));
+        return { slack, tag };
+      });
+      const x = lp(program);
+      list.forEach((name, i) => x && values.set(name, x[i]));
+      missed.set(root, x ? slacks.filter(({ slack }) => x[slack] >= least).map(({ slack, tag }) => ({ tag, by: x[slack] })) : []);
+    }
+    return { values, missed };
+  }
+}
+
+/** The groups that pairs of names join: each name's group's root */
+export function groupsOf(pairs: [string, string][]): (name: string) => string {
+  const parent = new Map<string, string>();
+  const find = (k: string): string => {
+    let root = k;
+    for (let up = parent.get(root); up !== undefined && up !== root; up = parent.get(root)) {
+      root = up;
+    }
+    for (let at = k; at !== root; ) {
+      const up = parent.get(at) ?? root;
+      parent.set(at, root);
+      at = up;
+    }
+    return root;
+  };
+  pairs.forEach(([a, b]) => {
+    const [ra, rb] = [find(a), find(b)];
+    if (ra !== rb) {
+      parent.set(ra, rb);
+    }
+  });
+  return find;
+}
+
+
+function unknown(name: string): never {
+  throw new Error(`a row over ${name}, which has no column`);
 }

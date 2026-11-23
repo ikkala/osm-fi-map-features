@@ -1,5 +1,5 @@
 // Tunnels. OSM does not tell a tunnel's depth: the network of the bored tunnels' points (tunnelNetwork), for their
-// floors to be solved (floors.ts), the portals' walls, the ramps out of the portals down to the floors (rampsOut),
+// floors to be solved (floors.ts), the portals' walls, the ramps out of the portals (heights.ts),
 // the buildings' walls opened over the tunnels, and the tunnels at the ground under buildings. Tunnels in cuts
 // (cuts.ts) are left to their cut.
 import { pointAlong } from "./bridges.ts";
@@ -26,14 +26,6 @@ const RISING = new Set(["steps", "corridor"]);
 /** A portal's floor is the lowest ground at the tunnel's end and this far out along the ways leading on, and on past a short one (m) */
 const PORTAL_REACH_M = 4;
 const PORTAL_STEP_M = 2;
-/** A way leading on from a portal ramps down to the floor when the ground there is this much over it (m); sampling step and reach (m) */
-const RAMP_TOLERANCE_M = 0.3;
-const RAMP_STEP_M = 2;
-const RAMP_REACH_M = 40;
-/** A ramp goes on past a short way out of a portal at most this far from the portal (m): beyond the wall the model has the open ground */
-const RAMP_ON_M = 8;
-/** ... and only with at least this much of that left to rise in (m), so the ramp going on is no wall */
-const RAMP_ON_LEFT_M = 4;
 /** A tunnel this share under buildings, whose ground rises nowhere this much over its ends (m), runs at the ground; sampling step (m) */
 const UNDER_BUILDINGS_SHARE = 0.5;
 const AT_GRADE_RISE_M = 3;
@@ -47,6 +39,8 @@ const WALL_CELL_M = 20;
 /** A way over a portal's wall is levelled this far along it either way at most (m), looked at this often (m) */
 const LEVEL_REACH_M = 10;
 const LEVEL_STEP_M = 1;
+/** ... where the model is more than this lower than the wall's top (m) */
+const LEVEL_TOLERANCE_M = 0.3;
 
 /** A tunnel's point */
 export interface TunnelNode {
@@ -675,7 +669,7 @@ function levelWaysOver(roads: Road[], tunnels: Way[], walls: PortalWall[], model
       const lower = (d: number) => {
         const p = pointAlong(road.line, d);
         const h = p && modelAt(...p);
-        return h !== undefined && h < wall.top - RAMP_TOLERANCE_M;
+        return h !== undefined && h < wall.top - LEVEL_TOLERANCE_M;
       };
       const [first, last] = [onWall[0], onWall[onWall.length - 1]];
       let [from, to] = [first, last];
@@ -840,117 +834,6 @@ function linesWithin(line: Point[], other: Point[], reach: number): boolean {
     }
   }
   return false;
-}
-
-/**
- * Splits ramps off ways leading on from the network's portals, rising from the floors solved there (floors.ts)
- * until they meet the ground; stairs beside a tunnel start rising once out of its room. A way that ends before its
- * ramp meets the ground, where other ways go on, rises as the grade lets it, and they ramp on from there, up to
- * RAMP_ON_M from the portal; ways ending at a ramp on its way ramp on from its floor there. Returns the count.
- */
-export function rampsOut<T extends Way>(ways: T[], network: TunnelNetwork): number {
-  const { nodes, heightAt } = network;
-  const tunnels = new Set<Way>(network.tunnels);
-  const added: T[] = [];
-  let count = 0;
-  // a boardwalk lies on the ground, its deck over it: it ramps on as a way on the ground does
-  const free = (way: T) => !tunnels.has(way) && way.line.length >= 2 && (!way.deck || (isRoad(way) && way.boardwalk === true)) && !way.lid && !way.floor;
-  // how many of the ways that may ramp end at each point; a ramp goes on only where no other way passes or stays
-  const ends = new Map<string, number>();
-  const held = new Set<string>();
-  for (const way of ways) {
-    way.line.forEach((p, i) => {
-      if (free(way) && (i === 0 || i === way.line.length - 1)) {
-        ends.set(pointKey(p), (ends.get(pointKey(p)) ?? 0) + 1);
-      } else {
-        held.add(pointKey(p));
-      }
-    });
-  }
-  // where ramps start: the floor there, how much further they may reach, whether that is on past a short way, and
-  // how far they stay level before rising
-  let startAt = (p: Point): { floor: number; reach: number; on?: boolean; level?: number } | undefined => {
-    const node = nodes.get(pointKey(p));
-    const portal = node && Number.isFinite(node.floor) && (node.portal !== undefined || node.stairs || node.sideStairs);
-    return portal ? { floor: node.floor, level: node.sideStairs ? node.half : 0, reach: RAMP_REACH_M } : undefined;
-  };
-  for (;;) {
-    const onward = new Map<string, { floor: number; reach: number; on: boolean }>();
-    for (const way of ways) {
-      for (const atStart of [true, false]) {
-        if (!free(way)) {
-          break;
-        }
-        const outward = atStart ? way.line : [...way.line].reverse();
-        const start = startAt(outward[0]);
-        if (start === undefined || (heightAt(...outward[0]) ?? start.floor) <= start.floor + RAMP_TOLERANCE_M) {
-          continue;
-        }
-        const floor = start.floor;
-        const along = distancesAlong(outward);
-        const length = along[along.length - 1];
-        const reach = Math.min(start.reach, length);
-        const grade = isRoad(way) && RISING.has(way.kind) ? STAIRS_GRADE : TUNNEL_GRADE;
-        const flat = Math.min(start.level ?? 0, length);
-        const rise = (d: number) => grade * Math.max(0, d - flat);
-        let end = reach;
-        let met = false;
-        for (let d = RAMP_STEP_M; d < reach; d += RAMP_STEP_M) {
-          const p = pointAlong(outward, d);
-          const h = p && heightAt(...p);
-          if (h !== undefined && h <= floor + rise(d)) {
-            end = d;
-            met = true;
-            break;
-          }
-        }
-        const last = outward[outward.length - 1];
-        const endPoint = end >= length - 0.01 ? last : (pointAlong(outward, end) ?? last);
-        const ground = heightAt(...endPoint) ?? floor;
-        // short of the ground at the way's end: the ways going on from there ramp on
-        const goesOn =
-          !met &&
-          end >= length - 0.01 &&
-          (start.on ? start.reach : RAMP_ON_M) - length >= RAMP_ON_LEFT_M &&
-          ground > floor + rise(length) + RAMP_TOLERANCE_M &&
-          (ends.get(pointKey(last)) ?? 0) > 1 &&
-          !held.has(pointKey(last));
-        const top = goesOn ? floor + rise(length) : ground;
-        if (goesOn) {
-          const reachOn = (start.on ? start.reach : RAMP_ON_M) - length;
-          onward.set(pointKey(last), { floor: Math.min(top, onward.get(pointKey(last))?.floor ?? Infinity), reach: reachOn, on: true });
-        }
-        const ramp: Point[] = [...outward.filter((_, i) => along[i] < end), endPoint];
-        // level to where it starts rising, with a point there
-        const level = flat < end ? flat : 0;
-        const rising = along.findIndex((a) => a >= level);
-        if (level > 0 && along[rising] - level > 0.01) {
-          ramp.splice(rising, 0, pointAlong(outward, level) ?? outward[rising]);
-        }
-        const heights = distancesAlong(ramp).map((d) => (end > level ? floor + ((top - floor) * Math.max(0, d - level)) / (end - level) : floor));
-        // the ways ending at its points on the way ramp on from its floor there
-        ramp.forEach((p, i) => {
-          if (i > 0 && i < ramp.length - 1 && (ends.get(pointKey(p)) ?? 0) > 0) {
-            onward.set(pointKey(p), { floor: Math.min(heights[i], onward.get(pointKey(p))?.floor ?? Infinity), reach: RAMP_REACH_M, on: true });
-          }
-        });
-        count++;
-        if (end >= length - 0.01) {
-          way.floor = atStart ? heights : heights.reverse();
-          break;
-        }
-        const rest = [endPoint, ...outward.filter((_, i) => along[i] > end)];
-        way.line = atStart ? rest : rest.reverse();
-        added.push({ ...way, line: atStart ? ramp : ramp.reverse(), floor: atStart ? heights : heights.reverse() });
-      }
-    }
-    if (onward.size === 0) {
-      break;
-    }
-    startAt = (p) => onward.get(pointKey(p));
-  }
-  ways.push(...added);
-  return count;
 }
 
 /** Shortest-path search: the least start + cost(meters along the tunnels) at every node reached */

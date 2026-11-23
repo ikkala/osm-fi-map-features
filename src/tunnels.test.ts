@@ -4,9 +4,10 @@ import type { Point, Polygon } from "./geometry.ts";
 import type { Building, MapFeatures, Rail, Road } from "./osm.ts";
 import { inTunnel } from "./profile.ts";
 import { defined } from "./testing.ts";
-import { easedDepth, solveFloors, type KnownFloor } from "./floors.ts";
+import { easedDepth, type KnownFloor } from "./floors.ts";
+import { solveHeights } from "./heights.ts";
 import { loadLp } from "./lp.ts";
-import { BED_M, CAR_PARK_CLEARANCE_M, COVER_M, WALL_FOOTING_M, fitRoomsUnderDecks, openPortals, portalWallsAt, raiseToWalls, rampsOut, roomHeight, setTunnelRooms, tunnelNetwork, uncoverAtGrade, WATER_DEPTH_M } from "./tunnels.ts";
+import { BED_M, CAR_PARK_CLEARANCE_M, COVER_M, WALL_FOOTING_M, fitRoomsUnderDecks, openPortals, portalWallsAt, raiseToWalls, roomHeight, setTunnelRooms, tunnelNetwork, uncoverAtGrade, WATER_DEPTH_M } from "./tunnels.ts";
 import { CLEARANCE_M, ROOF_M } from "./ways.ts";
 
 function road(osm: string, line: Point[], extra: Partial<Road> = {}): Road {
@@ -19,18 +20,10 @@ function features(roads: Road[], rails: Rail[] = []): MapFeatures {
 
 const lp = await loadLp();
 
-/** The tunnels' floors solved (floors.ts) on their network, and the ramps out of their portals */
-function solveTunnels(
-  map: MapFeatures,
-  ground: (e: number, n: number) => number | undefined,
-  levels: ReadonlyMap<Road | Rail, number[]> = new Map(),
-  underBridge: (p: Point) => boolean = () => false,
-  known: KnownFloor[] = [],
-  deckOver?: (p: Point, layer: number) => { deck: number } | undefined,
-) {
-  const network = tunnelNetwork(map, ground, levels);
-  const solved = solveFloors(map, network, lp, underBridge, known, deckOver);
-  return { ...solved, ramps: rampsOut(map.roads, network) + rampsOut(map.rails, network), walls: network.walls };
+/** The tunnels' floors and the ramps out of their portals solved (heights.ts) */
+function solveTunnels(map: MapFeatures, ground: (e: number, n: number) => number | undefined, levels: ReadonlyMap<Road | Rail, number[]> = new Map(), known: KnownFloor[] = []) {
+  const solved = solveHeights(map, ground, lp, { levels, known });
+  return { ...solved, ramps: solved.cuts, walls: solved.network.walls };
 }
 
 const round = (values: number[] | undefined) => values?.map((v) => Math.round(v * 10) / 10);
@@ -45,7 +38,7 @@ test("a tunnel's floor goes straight from portal to portal when the ground over 
   assert.equal(tunnel.line.length, 21);
   // the ways out stay at the floor under the portals' walls (the hill's ground raised over the ends), level to the ground on
   const ramps = map.roads.filter((r) => r.floor && !r.tunnel).map((r) => [r.line, round(r.floor)]);
-  assert.deepEqual(ramps, [[[[-2, 0], [0, 0]], [100, 100]], [[[200, 0], [202, 0]], [90, 90]]]);
+  assert.deepEqual(ramps.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))), [[[[-2, 0], [0, 0]], [100, 100]], [[[200, 0], [202, 0]], [90, 90]]]);
   assert.deepEqual(round(tunnel.floor), tunnel.line.map(([e]) => Math.round((100 - e / 20) * 10) / 10));
 });
 
@@ -103,49 +96,51 @@ test("a portal's floor is the ramp's just outside it, not the top of the portal'
   assert.equal(round(tunnel.floor)?.[0], 93);
 });
 
+/** A high bridge along a tunnel at e = 0 from n = -10 to 70, as wide as `width`, landing on the ground at 100 */
+const along = (width: number) => road("w9", [[0, -10], [0, 70]], { kind: "footway", width, bridge: true, layer: 1 });
+const banks = (ground: (e: number, n: number) => number) => (e: number, n: number) => (n < -5 || n > 65 ? 100 : ground(e, n));
+
 test("under a bridge the floor goes level between its portals, not down under the model's span", () => {
   // a footway along under a bridge, portals at 83; the model under the deck spans the gap at 86
-  const ground = (e: number, n: number) => (n <= 0 || n >= 60 ? 83 : 86);
-  const floors = (underBridge?: (p: Point) => boolean) => {
-    const tunnel = road("w1", [[0, 0], [0, 60]], { kind: "footway", width: 5, tunnel: true, layer: -1 });
-    solveTunnels(features([road("w2", [[0, -20], [0, 0]], { kind: "footway", width: 2.5 }), tunnel, road("w3", [[0, 60], [0, 80]], { kind: "footway", width: 2.5 })]), ground, new Map(), underBridge);
-    return round(tunnel.floor);
-  };
-  assert.deepEqual(floors(([, n]) => n >= 0 && n <= 60), [83, 83, 83, 83, 83, 83, 83]);
+  const ground = banks((e: number, n: number) => (n <= 0 || n >= 60 ? 83 : 86));
+  const tunnel = road("w1", [[0, 0], [0, 60]], { kind: "footway", width: 5, tunnel: true, layer: -1 });
+  solveTunnels(features([road("w2", [[0, -4], [0, 0]], { kind: "footway", width: 2.5 }), tunnel, road("w3", [[0, 60], [0, 64]], { kind: "footway", width: 2.5 }), along(8)]), ground);
+  assert.deepEqual(round(tunnel.floor), [83, 83, 83, 83, 83, 83, 83]);
 });
 
-test("a tunnel under a bridge's deck goes deep enough for its room and roof under the deck, coming up to its portals no steeper than a road tunnel", () => {
+test("a tunnel under a bridge's deck goes deep enough for its room and roof under the deck, coming up to its portals no steeper than a road tunnel, the deck staying", () => {
   // a footway 40 m along under a bridge's end, its portals at the ground at 88, the deck over its middle at 88.3
-  const ground = () => 88;
-  const deck = (p: Point, layer: number) => (layer < 1 && p[1] >= 15 && p[1] <= 25 ? { deck: 88.3 } : undefined);
-  const floors = (deckOver?: (p: Point, layer: number) => { deck: number } | undefined) => {
+  const floors = (bridged: boolean) => {
     const tunnel = road("w1", [[0, 0], [0, 40]], { kind: "footway", width: 5, tunnel: true, layer: -1 });
-    solveTunnels(features([road("w2", [[0, -20], [0, 0]], { kind: "footway", width: 2.5 }), tunnel, road("w3", [[0, 40], [0, 60]], { kind: "footway", width: 2.5 })]), ground, new Map(), ([, n]) => n >= 15 && n <= 25, [], deckOver);
-    return { floor: defined(tunnel.floor), room: roomHeight(tunnel) };
+    const bridge = road("w9", [[-30, 20], [30, 20]], { kind: "footway", width: 9, bridge: true, layer: 1 });
+    solveTunnels(features([road("w2", [[0, -20], [0, 0]], { kind: "footway", width: 2.5 }), tunnel, road("w3", [[0, 40], [0, 60]], { kind: "footway", width: 2.5 }), ...(bridged ? [bridge] : [])]), (e) => (Math.abs(e) >= 30 ? 88.3 : 88));
+    return { floor: defined(tunnel.floor), room: roomHeight(tunnel), deck: bridge.deck };
   };
   // without the deck, at the ground's level, and the deck over the roof
-  const level = floors();
+  const level = floors(false);
   assert.ok(Math.min(...level.floor) > 88.3 - ROOF_M - level.room);
   // with it, the room and the roof under the deck over the middle
-  const under = floors(deck);
+  const under = floors(true);
   const middle = under.floor[Math.floor(under.floor.length / 2)];
-  assert.ok(middle <= 88.3 - ROOF_M - under.room + 1e-9, String(middle));
+  assert.ok(middle <= 88.3 - ROOF_M - under.room + 1e-6, String(middle));
   for (let i = 1; i < under.floor.length; i++) {
-    assert.ok(Math.abs(under.floor[i] - under.floor[i - 1]) <= 0.07 * 10 + 1e-9, String(under.floor));
+    assert.ok(Math.abs(under.floor[i] - under.floor[i - 1]) <= 0.07 * 10 + 1e-6, String(under.floor));
   }
+  assert.ok(defined(under.deck).every((h) => Math.abs(h - 88.3) < 1e-6), String(under.deck));
 });
 
 test("a street ending at a bridge over a tunnel does not sink its floor under the model's ground there", () => {
   // the tunnel along under the bridge's end, the street's end over its room at the bridge, where the model is low
-  const ground = (e: number, n: number) => (n <= 0 || n >= 60 ? 83 : e > 4 ? 88 : 85);
-  const floors = (underBridge?: (p: Point) => boolean) => {
+  const ground = banks((e: number, n: number) => (n <= 0 || n >= 60 ? 83 : e > 4 ? 88 : 85));
+  const floors = (width: number) => {
     const tunnel = road("w1", [[0, 0], [0, 60]], { kind: "footway", width: 5, tunnel: true, layer: -1 });
     const street = road("w4", [[4, 30], [40, 30]], { kind: "residential", width: 7 });
-    solveTunnels(features([road("w2", [[0, -20], [0, 0]], { kind: "footway", width: 2.5 }), tunnel, street, road("w3", [[0, 60], [0, 80]], { kind: "footway", width: 2.5 })]), ground, new Map(), underBridge);
+    solveTunnels(features([road("w2", [[0, -4], [0, 0]], { kind: "footway", width: 2.5 }), tunnel, street, road("w3", [[0, 60], [0, 64]], { kind: "footway", width: 2.5 }), along(width)]), ground);
     return round(tunnel.floor);
   };
-  assert.ok(Math.min(...(floors(([e, n]) => e <= 4 && n >= 0 && n <= 60) ?? [])) >= 83 - 1e-9);
-  assert.ok(Math.min(...(floors(([e, n]) => e < 4 && n >= 0 && n <= 60) ?? [])) < 83 - 0.5);
+  // the street's end under the deck (its half width and edge reach 4 m off its line), or beside it
+  assert.ok(Math.min(...(floors(7) ?? [])) >= 83 - 1e-9);
+  assert.ok(Math.min(...(floors(5) ?? [])) < 83 - 0.5);
 });
 
 test("the floor sinks under a dip in the ground, no steeper than a road tunnel, and not at the portals", () => {
@@ -251,8 +246,8 @@ test("a way out of a portal comes down to the floor where the ground by the port
   assert.deepEqual(counts(solveTunnels(map, ground)), { floors: 1, ramps: 1 });
   // the ramp is split off the way: from where a 7 % slope from the floor meets the ground (4 m out) to the portal
   const ramp = defined(map.roads.find((r) => r.osm === "w2" && r.floor));
-  assert.deepEqual(ramp.line, [[-4, 0], [0, 0]]);
-  assert.deepEqual(ramp.floor, [93, 93]);
+  assert.deepEqual([ramp.line[0], ramp.line.at(-1), defined(ramp.floor)[0], defined(ramp.floor).at(-1)], [[-4, 0], [0, 0], 93, 93]);
+  ramp.line.forEach(([e], i) => assert.ok(defined(ramp.floor)[i] <= 93 + 0.07 * -e + 1e-6));
   assert.deepEqual([out.line, out.floor], [[[-20, 0], [-4, 0]], undefined]);
 });
 
@@ -285,9 +280,9 @@ test("stairs are the portals of an underpass with no other way out, their foot a
   const map = features([tunnel, ...stairs]);
   solveTunnels(map, () => 100);
   assert.deepEqual(round(tunnel.floor), tunnel.line.map(() => 100 - 3 - ROOF_M - COVER_M));
-  // rising 0.6 a meter, to the ground 8 m on
+  // rising 0.6 a meter from the floor until they meet the ground, 8 m on
   const ramps = map.roads.filter((r) => r.kind === "steps" && r.floor);
-  assert.deepEqual(ramps.map((r) => [r.line, round(r.floor)]), [[[[0, 0], [-8, 0]], [96 - COVER_M, 100]], [[[30, 0], [38, 0]], [96 - COVER_M, 100]]]);
+  assert.deepEqual(ramps.map((r) => [r.line, round(r.floor)]), [[[[0, 0], [-6, 0], [-8, 0]], [96 - COVER_M, 99.3, 100]], [[[30, 0], [36, 0], [38, 0]], [96 - COVER_M, 99.3, 100]]]);
 });
 
 test("stairs up out of an underpass where it goes on past them rise from its floor there, once out of its room", () => {
@@ -298,12 +293,12 @@ test("stairs up out of an underpass where it goes on past them rise from its flo
   const map = features([hall, stairs, road("w3", [[-20, 0], [0, 0]]), road("w4", [[100, 0], [120, 0]])]);
   solveTunnels(map, ground);
   assert.deepEqual(round(hall.floor), hall.line.map(() => 100));
-  // level across the room (2 m and 1 m beside the way), then 0.6 a meter: to the ground 10 m on, met at the 2 m step after
+  // level across the room (2 m and 1 m beside the way), then 0.6 a meter until they meet the ground, 10 m on
   const ramp = defined(map.roads.find((r) => r.osm === "w2" && r.floor));
-  assert.deepEqual([ramp.line, round(ramp.floor)], [[[50, 0], [50, -3], [50, -14]], [100, 100, 106]]);
+  assert.deepEqual([ramp.line, round(ramp.floor)], [[[50, 0], [50, -3], [50, -12], [50, -14]], [100, 100, 105.4, 106]]);
 });
 
-test("a way ending at a ramp on its way ramps on from the ramp's floor there; a way passing through does not", () => {
+test("the ways meeting a ramp on its way go down with it there, within their own ramps: one ending there, and one passing through", () => {
   // a footway underpass 12 m long under a street on level ground at 100; the way out west ramps up 40 m
   const tunnel = road("w1", [[0, 0], [12, 0]], { tunnel: true, layer: -1, kind: "footway", width: 2.5 });
   const west = road("w3", [[-60, 0], [-20, 0], [-10, 0], [0, 0]], { kind: "footway", width: 2.5 });
@@ -315,7 +310,11 @@ test("a way ending at a ramp on its way ramps on from the ramp's floor there; a 
   const at = ramp.line.findIndex(([e]) => e === -10);
   assert.ok(defined(ramp.floor)[at] < 99, `the ramp at ${defined(ramp.floor)[at]}`);
   assert.deepEqual([joining.line[0], defined(joining.floor)[0], defined(joining.floor).at(-1)], [[-10, 0], defined(ramp.floor)[at], 100]);
-  assert.equal(across.floor, undefined);
+  // the path across at -20 shares the ramp's height there, back at the ground at its ends
+  const crossing = map.roads.filter((r) => r.osm === "w6" && r.floor);
+  const shared = ramp.line.findIndex(([e]) => e === -20);
+  assert.ok(crossing.some((r) => r.line.some(([e, n], i) => e === -20 && n === 0 && Math.abs(defined(r.floor)[i] - defined(ramp.floor)[shared]) < 1e-9)));
+  assert.ok(crossing.every((r) => r.line.every(([, n], i) => Math.abs(n) < 10 - 1e-9 || Math.abs(defined(r.floor)[i] - 100) < 1e-6)));
 });
 
 test("under water the floor is deeper by the water's depth and a bed over the roof", () => {
@@ -491,7 +490,7 @@ test("a way going on past a portal from a short way out of it is not over the tu
   assert.ok((round(tunnel.floor)?.at(-1) ?? 0) > 99);
 });
 
-test("a ramp goes on past a short way out of a portal, up to the ground 8 m from the portal", () => {
+test("a ramp goes on through a joint past a short way out of a portal, as far as it rises at TUNNEL_GRADE to the ground", () => {
   // the cut beyond the portal at 102; a street over the tunnel by the portal takes the floor down to 100 less the cover
   const ground = (e: number) => (e <= 40 ? 104 : 102);
   const tunnel = underpass();
@@ -499,12 +498,16 @@ test("a ramp goes on past a short way out of a portal, up to the ground 8 m from
   const onward = road("w4", [[40.5, 0], [80, 0]], { kind: "cycleway", width: 2.5 });
   const map = features([road("w2", [[-20, 0], [0, 0]]), tunnel, short, onward, road("w5", [[36, -20], [36, 20]])]);
   solveTunnels(map, ground);
-  assert.equal(round(tunnel.floor)?.at(-1), 100 - COVER_M);
-  // the short way rises 7 % of its 0.5 m, and the way on from it, short of where 7 % would meet the ground, to it 8 m out
-  assert.deepEqual(round(short.floor), [100 - COVER_M, 100 - COVER_M]);
+  const portal = defined(tunnel.floor).at(-1) ?? Infinity;
+  assert.ok(portal <= 100 - COVER_M + 1e-6, `${portal}`);
+  // the short way and the way on from it one ramp, rising no steeper than 7 % to the ground, where it ends
+  assert.deepEqual([defined(short.floor)[0], short.line.at(-1)], [portal, [40.5, 0]]);
   const ramp = defined(map.roads.find((r) => r.osm === "w4" && r.floor));
-  assert.deepEqual([ramp.line, round(ramp.floor)], [[[40.5, 0], [48, 0]], [100 - COVER_M, 102]]);
-  assert.deepEqual(onward.line, [[48, 0], [80, 0]]);
+  const floor = defined(ramp.floor);
+  assert.ok(Math.abs(floor[0] - (defined(short.floor).at(-1) ?? 0)) < 1e-9 && Math.abs((floor.at(-1) ?? 0) - 102) < 1e-6);
+  const along = ramp.line.map(([e]) => e);
+  floor.slice(1).forEach((h, i) => assert.ok(h - floor[i] <= 0.07 * (along[i + 1] - along[i]) + 1e-6, `${floor}`));
+  assert.ok((along.at(-1) ?? 0) >= 40.5 + (102 - portal) / 0.07 - 1);
 });
 
 test("the ground over a tunnel's end is raised to the ground in from it, where the model slopes down to the portal", () => {
@@ -524,23 +527,17 @@ test("the ground over a tunnel's end is raised to the ground in from it, where t
   assert.ok(portal <= 100 - COVER_M && portal > 99, `${portal}`);
 });
 
-test("a ramp does not go on where a way passes through the short way's end: the short way rises to the ground there", () => {
+test("a way crossing a ramp at a joint's point goes down with it there, at one height with it, within a ramp of its own", () => {
   const ground = (e: number) => (e <= 40 ? 104 : 102);
   const short = stub();
   const across = road("w6", [[40.5, -20], [40.5, 0], [40.5, 20]], { kind: "service", width: 4 });
   const map = features([road("w2", [[-20, 0], [0, 0]]), underpass(), short, road("w4", [[40.5, 0], [80, 0]], { kind: "cycleway", width: 2.5 }), across, road("w5", [[36, -20], [36, 20]])]);
   solveTunnels(map, ground);
-  assert.deepEqual(round(short.floor), [100 - COVER_M, 102]);
-  assert.equal(map.roads.filter((r) => r.osm === "w4" && r.floor).length, 0);
-});
-
-test("a ramp goes on only past a way short enough to leave 4 m of the 8 to rise in; a longer way rises to the ground itself", () => {
-  const ground = (e: number) => (e <= 40 ? 104 : 102);
-  const longer = road("w3", [[40, 0], [46.5, 0]], { kind: "footway", width: 2.5 });
-  const map = features([road("w2", [[-20, 0], [0, 0]]), underpass(), longer, road("w4", [[46.5, 0], [80, 0]], { kind: "cycleway", width: 2.5 }), road("w5", [[36, -20], [36, 20]])]);
-  solveTunnels(map, ground);
-  assert.deepEqual(round(longer.floor), [100 - COVER_M, 102]);
-  assert.equal(map.roads.filter((r) => r.osm === "w4" && r.floor).length, 0);
+  const at = defined(short.floor).at(-1) ?? Infinity;
+  assert.ok(at < 102 - 1, `${at}`);
+  const floorAt = (osm: string) => map.roads.filter((r) => r.osm === osm && r.floor).flatMap((r) => r.line.flatMap(([e, n], i) => (e === 40.5 && n === 0 ? [defined(r.floor)[i]] : [])));
+  assert.deepEqual([...floorAt("w6"), ...floorAt("w4")], [at, at]);
+  assert.deepEqual([across.line[0], defined(across.floor)[0]], [[40.5, -20], 102]);
 });
 
 test("a way over a portal is level over the cut in front of it, wider than the tunnel, and the cut stays", () => {
@@ -609,7 +606,7 @@ test("a hall makes no two points of one way one: beside one point of another, a 
     { p: [79.55, 0], floor: 100, name: "w1" },
     { p: [80.45, 0], floor: 99, name: "w1" },
   ];
-  solveTunnels(features([footway, cycleway, ...outs]), (e) => (e <= 0 || e >= 160 ? 100 : 110), new Map(), () => false, known);
+  solveTunnels(features([footway, cycleway, ...outs]), (e) => (e <= 0 || e >= 160 ? 100 : 110), new Map(), known);
   const at = (e: number) => defined(footway.floor)[footway.line.findIndex((p) => p[0] === e && p[1] === 0)];
   assert.deepEqual([at(79.55), at(80.45)], [100, 99]);
 });
@@ -900,7 +897,7 @@ test("a known floor holds the tunnel's point nearest it, deeper or shallower tha
   const floors = (known: { p: Point; floor: number }[]) => {
     const tunnel = road("w1", [[0, 0], [200, 0]], { tunnel: true, layer: -2 });
     const map = features([road("w2", [[-50, 0], [0, 0]]), tunnel, road("w3", [[200, 0], [250, 0]])]);
-    const result = solveTunnels(map, () => 100, new Map(), () => false, known);
+    const result = solveTunnels(map, () => 100, new Map(), known);
     return { floor: defined(tunnel.floor), line: tunnel.line, known: result.known };
   };
   const plain = floors([]);
@@ -930,7 +927,7 @@ test("a known floor with the tunnel's name holds that tunnel's point, not anothe
     const main = road("w1", [[0, 0], [200, 0]], { tunnel: true, layer: -2, name: "Main" });
     const service = road("w4", [[100.5, -30], [100.5, 30]], { kind: "service", width: 4, tunnel: true, layer: -1 });
     const map = features([road("w2", [[-50, 0], [0, 0]]), main, road("w3", [[200, 0], [250, 0]]), road("w5", [[100.5, -80], [100.5, -30]]), service, road("w6", [[100.5, 30], [100.5, 80]])]);
-    solveTunnels(map, () => 100, new Map(), () => false, [{ p: [100.6, 0.5], floor: 80, name }]);
+    solveTunnels(map, () => 100, new Map(), [{ p: [100.6, 0.5], floor: 80, name }]);
     return defined(main.floor)[main.line.findIndex(([e]) => e === 100)];
   };
   assert.notEqual(floorAt100(), 80);
@@ -946,7 +943,7 @@ test("between two known floors of a tunnel's name, and on to its portals, the fl
   const east = road("w9", [[100, 0], [200, 0]], { tunnel: true, layer: -2, name: "Main" });
   const branch = road("w7", [[100, 0], [100, -60]], { kind: "trunk_link", width: 6, tunnel: true, layer: -2 });
   const map = features([road("w2", [[-50, 0], [0, 0]]), west, east, road("w3", [[200, 0], [250, 0]]), branch, road("w8", [[100, -60], [100, -110]])]);
-  solveTunnels(map, () => 100, new Map(), () => false, [
+  solveTunnels(map, () => 100, new Map(), [
     { p: [50, 0], floor: 80, name: "Main" },
     { p: [150, 0], floor: 84, name: "Main" },
   ]);

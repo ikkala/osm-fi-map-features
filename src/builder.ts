@@ -23,15 +23,14 @@ import {
   detailStage,
   footfallStage,
   gambrelStage,
+  heightStage,
   osmWorld,
   pitchStage,
   registerStage,
   roofColourStage,
-  spanStage,
   steppedGround,
   streetStage,
   treeStage,
-  tunnelStage,
   waterStage,
   type BuildingGround,
   type Decked,
@@ -362,8 +361,7 @@ export class MapBuilder {
       const stepped = steppedGround(world, ground, logger);
       const knownFloors = (this.#options.tunnelFloors ?? []).map(({ at, floor, name }) => ({ p: this.#projection.toMeters(at), floor, name }));
       const lp = await loadLp();
-      const spanned = spanStage(world, coverStage(world, stepped, logger), lp, logger);
-      const tunnelled = tunnelStage(world, spanned, knownFloors, lp, logger);
+      const tunnelled = heightStage(world, coverStage(world, stepped, logger), knownFloors, lp, logger);
       const decked = deckStage(world, tunnelled, logger);
       bedStage(world, tunnelled, decked, logger);
       shaped = { stepped, tunnelled, decked };

@@ -1,8 +1,8 @@
 // The stages that build the map's world from OpenStreetMap's features and the other sources, in the order MapBuilder
 // runs them. Each takes what it builds on as its arguments and returns what later stages need (`after`, where a stage
 // only has to follow another), so a stage cannot run before those it depends on: the ground stepped at walls before
-// the tunnels' lids, the lids before the bridges' decks (the ways over them are bridges), the decks before the tunnels'
-// floors under them, the portals' raised ground before the outlines' decks, the decks before the track beds, the lamps
+// the tunnels' lids, the lids before the heights (the ways over them are bridges), the portals' raised ground before
+// the outlines' decks, the decks before the track beds, the lamps
 // and the barriers on them, the building register before the buildings' looks and the doors guessed from their
 // windows, the buildings' bases before their measured heights.
 import { applyAges } from "./ages.ts";
@@ -13,7 +13,6 @@ import { bareUnderBridges } from "./bareGround.ts";
 import { DeckIndex, tramBedCeiling } from "./deckIndex.ts";
 import { inheritFromOutlines } from "./buildingParts.ts";
 import { buildingSteps } from "./buildingSteps.ts";
-import { solveDecks } from "./bridges.ts";
 import { setOutlineDecks, standOnDecks } from "./decks.ts";
 import { bicycleParkingQuery, parseBicycleParking } from "./bicycleParking.ts";
 import type { Logger } from "./builder.ts";
@@ -49,9 +48,10 @@ import { dropStepsInParts, setStaircaseDecks } from "./stairs.ts";
 import { placeStreetNodes } from "./streets.ts";
 import { setTrackBeds } from "./trackbeds.ts";
 import { fetchTreeRegister, type RegisterTree, type TreeRegisterSource } from "./treeRegister.ts";
-import { solveFloors, type KnownFloor } from "./floors.ts";
+import type { KnownFloor } from "./floors.ts";
+import { solveHeights } from "./heights.ts";
 import type { SolveLp } from "./lp.ts";
-import { fitRoomsUnderDecks, openPortals, portalWallsAt, raiseToWalls, rampsOut, setTunnelRooms, tunnelNetwork, uncoverAtGrade } from "./tunnels.ts";
+import { fitRoomsUnderDecks, openPortals, portalWallsAt, raiseToWalls, setTunnelRooms, uncoverAtGrade } from "./tunnels.ts";
 import { parseWaterways, setWaterLevels, waterwayQuery, type WaterLevels } from "./waterways.ts";
 import { GRADE, isRoad, userOf, type Way } from "./ways.ts";
 import { assignWindows } from "./windows.ts";
@@ -146,10 +146,6 @@ export interface Tunnelled {
   ground: Ground;
 }
 
-/**
- * The tunnels' rooms and floors, those in cuts under lids first (the ways over them become bridges), and their
- * portals into basements; the floors deep enough under the bridges' decks as those will be set
- */
 /** The tunnels' rooms, those in cuts with lids (the ways over them bridges), and those at the ground under buildings */
 export interface Covered {
   ground: Ground;
@@ -166,46 +162,29 @@ export function coverStage(world: OsmWorld, stepped: SteppedGround, logger: Logg
   return { ground };
 }
 
-/** The bridges with their decks set */
-export interface Spanned {
-  ground: Ground;
-}
-
 /**
- * The bridges' decks, from end to end before the ways are cut into tiles, and the approaches raised to them: after
- * the lids (the ways over them are bridges) and before the tunnels' floors, which go under the decks, on the ground
- * before the portals' walls raise it, as the bare ground under the bridges has no hump to lift a tunnel's end into a
- * deck
+ * The heights of the ways leaving the ground, in one program (heights.ts): the bridges' decks from end to end before
+ * the ways are cut into tiles, their approaches, the cuts under them, the bored tunnels' floors and the ramps out of
+ * their portals; after the lids (the ways over them are bridges), on the ground before the portals' walls raise it,
+ * as the bare ground under the bridges has no hump to lift a tunnel's end into a deck. Then the portals into
+ * basements, and from here on the ground over the tunnels' ends raised to their portals' walls.
  */
-export function spanStage(world: OsmWorld, covered: Covered, lp: SolveLp, logger: Logger): Spanned {
-  const { features, indoors, throughBuildings } = world;
+export function heightStage(world: OsmWorld, covered: Covered, knownFloors: KnownFloor[], lp: SolveLp, logger: Logger): Tunnelled {
+  const { features, indoors, throughBuildings, levels, bridgeOutlines } = world;
   const { ground } = covered;
-  const solved = solveDecks(features.roads, features.rails, ground.at("flights"), lp, indoors, throughBuildings);
-  for (const { way, bound, at, by } of solved.conflicts) {
-    logger.warn(`deck heights miss their ${bound} at (${at[0].toFixed(1)}, ${at[1].toFixed(1)}): ${way} by up to ${by.toFixed(1)} m`);
-  }
-  logger.log(`${solved.approaches} bridge approaches raised, ${solved.cuts} ways lowered into cuts under bridges, ${solved.told} decks' heights told by steps`);
-  return { ground };
-}
-
-export function tunnelStage(world: OsmWorld, spanned: Spanned, knownFloors: KnownFloor[], lp: SolveLp, logger: Logger): Tunnelled {
-  const { features, bridgeOutlines, levels } = world;
-  const { ground } = spanned;
   const heightAt = ground.at("flights");
-  const decks = new DeckIndex([...features.roads, ...features.rails], bridgeOutlines);
-  const network = tunnelNetwork(features, heightAt, levels);
-  const solved = solveFloors(features, network, lp, (p) => decks.under(p), knownFloors, (p, layer) => decks.over(p, layer));
+  const solved = solveHeights(features, heightAt, lp, { indoors, through: throughBuildings, levels, known: knownFloors, outlines: bridgeOutlines });
   for (const { way, bound, at, by } of solved.conflicts) {
-    logger.warn(`tunnel floor misses its ${bound} at (${at[0].toFixed(1)}, ${at[1].toFixed(1)}): ${way} by up to ${by.toFixed(1)} m`);
+    logger.warn(`heights miss their ${bound} at (${at[0].toFixed(1)}, ${at[1].toFixed(1)}): ${way} by up to ${by.toFixed(1)} m`);
   }
-  const ramps = rampsOut(features.roads, network) + rampsOut(features.rails, network);
-  logger.log(`${solved.floors} tunnel ways under hills and lakes get floors, ${ramps} ways out of their portals ramps, ${network.walls.length} stretches of ground raised over portals`);
+  const { network } = solved;
+  logger.log(`${solved.approaches} bridge approaches raised, ${solved.cuts} ways lowered into cuts and ramps, ${solved.told} decks' heights told by steps`);
+  logger.log(`${solved.floors} tunnel ways under hills and lakes get floors, ${network.walls.length} stretches of ground raised over portals`);
   if (knownFloors.length > 0) {
     logger.log(`${solved.known} of ${knownFloors.length} known tunnel floors on a tunnel`);
   }
   const opened = openPortals(features.buildings, solved.basements, features.roads, heightAt);
   logger.log(`${solved.basements.length} tunnel ways go down into basements from portals in buildings, opening ${opened} walls`);
-  // from here on, and in the tiles' heights, the ground over the tunnels' ends is raised to their portals' walls
   const wallsAt = portalWallsAt(network.walls);
   ground.lay("portals", (below) => raiseToWalls(below, wallsAt));
   return { ground };
@@ -217,7 +196,7 @@ export interface Decked {
 }
 
 /**
- * Over the bridges' decks (spanStage): the outlines' decks and the ramps to them, the lids fitted to the decks over
+ * Over the bridges' decks (heightStage): the outlines' decks and the ramps to them, the lids fitted to the decks over
  * them, the ways carried through buildings on spans, the staircases' decks, and the tunnels' rooms under the decks
  */
 export function deckStage(world: OsmWorld, tunnelled: Tunnelled, logger: Logger): Decked {

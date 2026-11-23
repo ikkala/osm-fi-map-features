@@ -172,12 +172,14 @@ export class DeckIndex {
   }
 
   /**
-   * The bridge way whose deck is over a point of a way on a layer, as `over` finds it, whether its heights are set or
-   * not: its line's nearest segment and how far along it the point is (0 to 1)
+   * The bridge way whose deck is over a point of a way on a layer, as `over` finds it before the outlines are built,
+   * whether its heights are set or not (in an outline only where `outlined`): its line's nearest segment and how far
+   * along it the point is (0 to 1)
    */
-  spanOver(p: Point, layer: number, margin = UNDER_SIDE_M): { way: Way; segment: number; t: number } | undefined {
+  spanOver(p: Point, layer: number, margin = UNDER_SIDE_M, outlined = false): { way: Way; segment: number; t: number } | undefined {
     const near = this.#nearest(p, layer, margin, false);
-    return near && near.d <= 0 && !near.past ? { way: near.span.way, segment: near.segment, t: near.t } : undefined;
+    const inOutline = outlined && near !== undefined && near.d <= OUTLINE_REACH_M && this.#outlines.some(({ polygon, box }) => inside(box, p) && pointInPolygon(p, polygon));
+    return near && ((near.d <= 0 && !near.past) || inOutline) ? { way: near.span.way, segment: near.segment, t: near.t } : undefined;
   }
 
   /** The bridge way's segment nearest a point, on a higher layer and (`decked`) with heights, and how far past its deck's edge (and margin) the point is */

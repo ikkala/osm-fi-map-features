@@ -129,13 +129,13 @@ Where to look:
   `src/profile.ts`.
 - Ways' users and dimensions (widths, clearances, the decks', lids' and roofs' thickness and reach, grades), which
   the modules building around them share: `src/ways.ts`, exported as data in `WAY_DIMENSIONS`.
-- Tunnels: `src/tunnels.ts` (the tunnels' points and portals, rooms, ramps at the portals), `src/floors.ts` (the
-  floors, a linear program for each group of tunnels that touch, solved by `src/lp.ts` with [HiGHS](https://highs.dev),
-  and floors known at points: `tunnelFloors`) and `src/cuts.ts` (a shallow tunnel the model has as an open cut, under a
-  lid).
-- Bridges: `src/bridges.ts` (the decks of spans with their approaches and the cuts under them, a linear program as
-  the floors are, and boardwalks), `src/decks.ts` (bridge outlines as decks), `src/deckIndex.ts` (the decks' heights,
-  and what is under or on one), `src/stairs.ts` (staircases' landings).
+- Heights of the ways leaving the ground: `src/heights.ts`, one linear program for each group of them that touch
+  (decks, approaches, cuts, tunnels' floors and the ramps out of their portals), solved by `src/lp.ts` with
+  [HiGHS](https://highs.dev).
+- Tunnels: `src/tunnels.ts` (the tunnels' points and portals, rooms), `src/floors.ts` (the floors' bounds, and floors
+  known at points: `tunnelFloors`) and `src/cuts.ts` (a shallow tunnel the model has as an open cut, under a lid).
+- Bridges: `src/bridges.ts` (spans, their landings, and boardwalks), `src/decks.ts` (bridge outlines as decks),
+  `src/deckIndex.ts` (the decks' heights, and what is under or on one), `src/stairs.ts` (staircases' landings).
 - Railways and tramways: `src/trackbeds.ts`; platforms `src/platforms.ts`; pitches and level paved areas
   `src/pitches.ts`.
 - Trees `src/forests.ts` and `src/treeRegister.ts`, street lamps `src/lamps.ts`, crossings, traffic signals and
