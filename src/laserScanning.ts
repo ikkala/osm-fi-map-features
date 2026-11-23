@@ -6,7 +6,7 @@
 // can change without fetching the sheets again.
 import type { CacheOptions } from "./cache.ts";
 import { distanceToRing, pointInPolygon, pushTo, type Point, type Polygon } from "./geometry.ts";
-import { field, isObject, items, optionalNumber, optionalString } from "./json.ts";
+import { field, isObject, items, messageOf, optionalNumber, optionalString } from "./json.ts";
 import { fitGambrel, GAMBREL_REACH_M, type GambrelFit } from "./gambrelRoofs.ts";
 import { chooseRoofShape, fitRoofShapes, type LaserRoofShape, type RoofFit } from "./laserRoofShapes.ts";
 import type { RoofShape } from "./osm.ts";
@@ -247,7 +247,7 @@ export async function download(url: string, headers: Record<string, string>, wha
       }
       res = await againOnNetworkError(() => fetch(url, { headers: { ...headers, range: `bytes=${received}-` } }));
       if (res.status !== 206) {
-        throw new Error(`${what} was cut off at ${received} bytes and cannot go on (${res.status}): ${err instanceof Error ? err.message : String(err)}`);
+        throw new Error(`${what} was cut off at ${received} bytes and cannot go on (${res.status}): ${messageOf(err)}`);
       }
     }
   }
@@ -349,7 +349,7 @@ export async function fetchLaserRoofs(
       bytes = await fetchSheet(sheet, options.apiKey);
     } catch (err) {
       failed.add(sheet);
-      options.log?.(`the laser scanning of sheet ${sheet} failed, its roofs left out: ${err instanceof Error ? err.message : String(err)}`);
+      options.log?.(`the laser scanning of sheet ${sheet} failed, its roofs left out: ${messageOf(err)}`);
       for (const group of pending.filter(({ needs }) => needs.has(sheet))) {
         group.missing.forEach((index) => {
           above.delete(index);
@@ -401,7 +401,7 @@ export async function fetchLaserRoofs(
           gambrel = roof === undefined ? undefined : fitGambrel(near.get(index) ?? [], outlines[index]);
         } catch (err) {
           // one outline's shapes failing leaves out only its shape
-          options.log?.(`the roof shapes of an outline in sheet ${group.sheet} failed: ${err instanceof Error ? err.message : String(err)}`);
+          options.log?.(`the roof shapes of an outline in sheet ${group.sheet} failed: ${messageOf(err)}`);
         }
         const shape = chooseRoofShape(fits, gambrel);
         group.known.set(keys[index], roof === undefined ? null : { roof, fits, ...(gambrel && { gambrel }) });

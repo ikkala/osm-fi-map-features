@@ -2,13 +2,13 @@
 // The first tile asked for builds the whole area: bridges, tunnels and multipolygons reach over tile edges.
 import type { SourceCache } from "./cache.ts";
 import { elevationAt, ELEVATION_ATTRIBUTION, fetchElevation, toTm35fin, type ElevationGrid } from "./elevation.ts";
-import type { Point, Rect } from "./geometry.ts";
+import { grownRect, pushTo, type Point, type Rect } from "./geometry.ts";
 import { bounds, elementsWithin, fetchOverpass, mergeOverpass, overpassQuery, type GeoBox, type OsmElement } from "./osm.ts";
 import { inGeoBox, LocalProjection, type GeoPoint } from "./projection.ts";
 import { cutGroundSteps, Ground, latticed, stepLines } from "./ground.ts";
 import { loadLp } from "./lp.ts";
 import { ROOF_TOP_SOURCES, type RoofTopSource } from "./roofTops.ts";
-import { cutIntoTiles, tileHeights, tileName, tilePieces, tilesCoveringAny, type Tile, type TileKey } from "./tiles.ts";
+import { cutIntoTiles, tileHeights, tileName, tilePieces, tilesCoveringAny, tilesRect, type Tile, type TileKey } from "./tiles.ts";
 import { overlaps, TREE_REGISTERS, type TreeRegisterSource } from "./treeRegister.ts";
 import { applyOsmEdits, type OsmEdit } from "./edits.ts";
 import { cutWaterways } from "./waterways.ts";
@@ -239,13 +239,10 @@ export class MapBuilder {
     const xs = keys.map((key) => key.x);
     const ys = keys.map((key) => key.y);
     const pieceTiles = this.#options.fetchPieceTiles;
+    const geoCorners = ({ minX, minY, maxX, maxY }: Rect) => [toGeo([minX, minY]), toGeo([minX, maxY]), toGeo([maxX, minY]), toGeo([maxX, maxY])];
     // each piece's corners around its tiles, and its box
     const pieces = (pieceTiles === undefined ? [keys] : tilePieces(keys, pieceTiles)).map((piece) => {
-      const minX = Math.min(...piece.map((key) => key.x)) * size - FETCH_MARGIN_M;
-      const maxX = (Math.max(...piece.map((key) => key.x)) + 1) * size + FETCH_MARGIN_M;
-      const minY = Math.min(...piece.map((key) => key.y)) * size - FETCH_MARGIN_M;
-      const maxY = (Math.max(...piece.map((key) => key.y)) + 1) * size + FETCH_MARGIN_M;
-      const corners = [toGeo([minX, minY]), toGeo([minX, maxY]), toGeo([maxX, minY]), toGeo([maxX, maxY])];
+      const corners = geoCorners(grownRect(tilesRect(piece, size), FETCH_MARGIN_M));
       return { corners, box: geoBoxOf(corners) };
     });
     const covering = (covers?: GeoBox) => pieces.filter(({ box }) => !covers || overlaps(covers, box));
@@ -267,17 +264,11 @@ export class MapBuilder {
     if (built.length === 0) {
       throw new Error("none of the tiles to build is in the map");
     }
-    const builtRect = {
-      minX: Math.min(...built.map((key) => key.x)) * size,
-      minY: Math.min(...built.map((key) => key.y)) * size,
-      maxX: (Math.max(...built.map((key) => key.x)) + 1) * size,
-      maxY: (Math.max(...built.map((key) => key.y)) + 1) * size,
-    };
+    const builtRect = tilesRect(built, size);
     // the features reaching near the part's tiles, from the whole area's responses
     let within: GeoBox | undefined;
     if (part) {
-      const [w, s, e, n] = [builtRect.minX - part.marginM, builtRect.minY - part.marginM, builtRect.maxX + part.marginM, builtRect.maxY + part.marginM];
-      within = geoBoxOf([toGeo([w, s]), toGeo([w, n]), toGeo([e, s]), toGeo([e, n])]);
+      within = geoBoxOf(geoCorners(grownRect(builtRect, part.marginM)));
       logger.log(`building ${built.length} of the tiles, with the features within ${part.marginM} m of them`);
     }
     const near = <T extends GeoPoint>(points: T[]) => (within ? inGeoBox(points, within) : points);
@@ -423,13 +414,7 @@ function uniques<T>(pieces: T[][]): T[] {
   for (const piece of pieces) {
     const alike = new Map<string, T[]>();
     for (const item of piece) {
-      const key = JSON.stringify(item);
-      const items = alike.get(key);
-      if (items) {
-        items.push(item);
-      } else {
-        alike.set(key, [item]);
-      }
+      pushTo(alike, JSON.stringify(item), item);
     }
     for (const [key, items] of alike) {
       if (items.length > (most.get(key)?.length ?? 0)) {

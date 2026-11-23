@@ -41,3 +41,8 @@ export function pointFeatures(response: unknown): { properties: unknown; longitu
     return point ? [{ properties: field(feature, "properties"), longitude, latitude }] : [];
   });
 }
+
+/** A caught error's message */
+export function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
