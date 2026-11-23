@@ -2,11 +2,11 @@
 // and buoys (seamarks.ts), masts, flagpoles, boulders, fountains, artworks and memorials, power lines with their
 // towers and poles, piers, dams and weirs, amusement rides (rides.ts) and ski and skating tracks.
 import { dedupe, distanceToSegment, grownRect, halfwayAlong, nearestPlace, ringArea, ringCentroid, segmentGrid, type Point, type Ring } from "./geometry.ts";
-import { bounds, meters, type GeoBox, type OverpassResponse, type Rail, type Road } from "./osm.ts";
+import { bounds, meters, truthy, type GeoBox, type OverpassResponse, type Rail, type Road } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { COURSE_KINDS, RIDE_KINDS, setCourseHeights, type Ride } from "./rides.ts";
 import { outOfTunnelsAndSpans } from "./profile.ts";
-import { parseSeamark, type Seamark } from "./seamarks.ts";
+import { lower, parseSeamark, type Seamark } from "./seamarks.ts";
 import { RAIL_WIDTH_M, WALKWAYS } from "./ways.ts";
 
 export type LandmarkKind = "flagpole" | "mast" | "tower" | "stone" | "fountain" | "artwork" | "memorial" | "power_tower" | "power_pole";
@@ -239,8 +239,7 @@ function addElement(result: Landmarks, tags: Record<string, string>, shape: Shap
       kind: attraction && RIDE_KINDS.has(attraction) ? attraction : "track",
       ...(name && { name }),
       point,
-      ...(outline && { outline }),
-      ...(line && { line }),
+      ...truthy({ outline, line }),
       ...(Number.isInteger(layer) && layer !== 0 && { layer }),
       ...(tags.tunnel === "yes" && { tunnel: true }),
       ...(height !== undefined && { height }),
@@ -270,8 +269,7 @@ function addElement(result: Landmarks, tags: Record<string, string>, shape: Shap
         kind: waterway,
         ...(name && { name }),
         ...(line && { line, width: width ?? DAM_WIDTH_M }),
-        ...(outline && { outline }),
-        ...(material && { material }),
+        ...truthy({ outline, material }),
       });
     }
     return;
@@ -297,8 +295,7 @@ function addElement(result: Landmarks, tags: Record<string, string>, shape: Shap
         kind: piste,
         ...(lower(tags["piste:grooming"]) && { grooming: lower(tags["piste:grooming"]) }),
         ...(pisteName && { name: pisteName }),
-        ...(line && { line }),
-        ...(outline && { outline }),
+        ...truthy({ line, outline }),
         ...(width !== undefined && { width }),
       });
     }
@@ -317,11 +314,9 @@ function addElement(result: Landmarks, tags: Record<string, string>, shape: Shap
       kind: landmark.kind,
       ...(landmark.type && { type: landmark.type }),
       point,
-      ...(outline && { outline }),
-      ...(name && { name }),
+      ...truthy({ outline, name }),
       ...(height !== undefined && { height }),
-      ...(material && { material }),
-      ...(construction && { construction }),
+      ...truthy({ material, construction }),
       ...(facing !== undefined && { facing }),
       ...(tags.support === "wall_mounted" && { wallMounted: true as const }),
     });
@@ -367,11 +362,6 @@ function landmarkKind(tags: Record<string, string>): { kind: LandmarkKind; type?
     return { kind: "memorial", type: tags.historic === "monument" ? "monument" : lower(tags.memorial) };
   }
   return undefined;
-}
-
-function lower(value: string | undefined): string | undefined {
-  const trimmed = value?.trim().toLowerCase();
-  return trimmed || undefined;
 }
 
 function positive(value: number | undefined): number | undefined {

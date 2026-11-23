@@ -227,7 +227,8 @@ function sequencePhases(sequence: string, period: number | undefined): number[] 
   return phases.length === 2 && phases[1] === 0 ? [] : phases;
 }
 
-function lower(value: string | undefined): string | undefined {
+/** A tag's value trimmed and in lower case, undefined when empty */
+export function lower(value: string | undefined): string | undefined {
   const trimmed = value?.trim().toLowerCase();
   return trimmed || undefined;
 }

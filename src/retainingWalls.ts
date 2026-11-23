@@ -147,9 +147,7 @@ export function groundSteps(barriers: readonly Barrier[], heightAt: (e: number, 
       };
       steps.push(step);
       if (stepped) {
-        const line = rising.get(root(w)) ?? [];
-        line.push({ step, up });
-        rising.set(root(w), line);
+        pushTo(rising, root(w), { step, up });
       }
     }
   }
