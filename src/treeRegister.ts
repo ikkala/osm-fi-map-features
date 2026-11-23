@@ -1,8 +1,7 @@
 // Street and park trees from city tree registers: WFS point layers in the common Finnish parks register
 // format (Kasviryhma, Kasvilaji, Pituusluokka, Rungon_ymparys), fetched only for maps reaching their area.
-import { createHash } from "node:crypto";
-import type { CacheOptions } from "./cache.ts";
-import { field, items, optionalNumber, optionalString } from "./json.ts";
+import { fetchWfs, type CacheOptions } from "./cache.ts";
+import { field, optionalNumber, optionalString, pointFeatures } from "./json.ts";
 import type { GeoBox, TreeKind } from "./osm.ts";
 import { inGeoBox } from "./projection.ts";
 
@@ -80,19 +79,15 @@ export function registerTreeHeight(heightClass: string | undefined, circumferenc
 /** Reads the trees and shrubs of a WFS GeoJSON response of a plant register. */
 export function parseTreeRegister(response: unknown): RegisterTree[] {
   const result: RegisterTree[] = [];
-  for (const feature of items(field(response, "features"))) {
-    const [longitude, latitude] = items(field(feature, "geometry", "coordinates")).map(optionalNumber);
-    if (field(feature, "geometry", "type") !== "Point" || longitude === undefined || latitude === undefined) {
-      continue;
-    }
-    const group = optionalString(field(feature, "properties", "Kasviryhma")) ?? "";
+  for (const { properties, longitude, latitude } of pointFeatures(response)) {
+    const group = optionalString(field(properties, "Kasviryhma")) ?? "";
     // other groups are trees converted from an older register, of no known kind
     const kind = TREE_GROUPS[group] ?? "broadleaved";
     // "BETULA PENDULA (RAUDUSKOIVU)", or only the Finnish name ("LEHTIPUU") when the species is not known
-    const species = optionalString(field(feature, "properties", "Kasvilaji"));
+    const species = optionalString(field(properties, "Kasvilaji"));
     const genus = species?.includes("(") ? species.split(/\s+/)[0].toLowerCase() : undefined;
-    const heightClass = optionalString(field(feature, "properties", "Pituusluokka"));
-    const circumference = optionalNumber(field(feature, "properties", "Rungon_ymparys"));
+    const heightClass = optionalString(field(properties, "Pituusluokka"));
+    const circumference = optionalNumber(field(properties, "Rungon_ymparys"));
     result.push({
       longitude,
       latitude,
@@ -120,34 +115,6 @@ export async function fetchTreeRegister(
   box: GeoBox,
   options: CacheOptions,
 ): Promise<{ trees: RegisterTree[]; cached: boolean }> {
-  const query = new URLSearchParams({
-    service: "WFS",
-    version: "2.0.0",
-    request: "GetFeature",
-    typeNames: source.layer,
-    outputFormat: "application/json",
-    srsName: "EPSG:4326",
-    // EPSG:4326 in WFS 2.0 is latitude first
-    bbox: `${box.south},${box.west},${box.north},${box.east},urn:ogc:def:crs:EPSG::4326`,
-    ...(source.count !== undefined && { count: String(source.count) }),
-  });
-  const url = `${source.url}?${query}`;
-  const cacheKey = `${source.name}-${createHash("sha256").update(url).digest("hex").slice(0, 16)}.json`;
-  const cachedText = options.refresh ? undefined : await options.cache.get(cacheKey);
-  if (cachedText !== undefined) {
-    return { trees: inGeoBox(parseTreeRegister(JSON.parse(cachedText)), box), cached: true };
-  }
-  const res = await fetch(url);
-  const text = await res.text();
-  if (!res.ok || !text.startsWith("{")) {
-    throw new Error(`${source.title} request failed (${res.status}): ${text.slice(0, 500)}`);
-  }
-  const json: unknown = JSON.parse(text);
-  // count the features returned, not numberMatched, which includes ones without a geometry
-  const returned = items(field(json, "features")).length;
-  if (source.count !== undefined && returned >= source.count) {
-    throw new Error(`${source.title}: the server returned the ${source.count} features asked for, there may be more`);
-  }
-  await options.cache.put(cacheKey, text);
-  return { trees: inGeoBox(parseTreeRegister(json), box), cached: false };
+  const { json, cached } = await fetchWfs(source, box, options);
+  return { trees: inGeoBox(parseTreeRegister(json), box), cached };
 }

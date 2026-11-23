@@ -1,8 +1,7 @@
 // Terrain heights from the National Land Survey's 2 m elevation model (bare ground, meters above sea
 // level, N2000), fetched from its WCS as an ASCII grid in ETRS-TM35FIN. CC BY 4.0.
-import { createHash } from "node:crypto";
 import proj4 from "proj4";
-import type { CacheOptions } from "./cache.ts";
+import { requestKey, type CacheOptions } from "./cache.ts";
 import type { GeoPoint } from "./projection.ts";
 
 export const ELEVATION_ATTRIBUTION = "Elevation model © Maanmittauslaitos (CC BY 4.0)";
@@ -242,7 +241,7 @@ async function fetchPiece(snapped: TmBox, options: ElevationFetchOptions): Promi
   });
   const url = `${WCS_URL}?${query}&SUBSET=E(${snapped.minE},${snapped.maxE})&SUBSET=N(${snapped.minN},${snapped.maxN})`;
   // the key is not part of the cache name
-  const cacheKey = `mml-elevation-${createHash("sha256").update(url).digest("hex").slice(0, 16)}.asc`;
+  const cacheKey = requestKey("mml-elevation", url, "asc");
   const cachedText = options.refresh ? undefined : await options.cache.get(cacheKey);
   if (cachedText !== undefined) {
     return { grid: parseAsciiGrid(cachedText), cached: true };

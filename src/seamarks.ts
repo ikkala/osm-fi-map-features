@@ -2,6 +2,7 @@
 // rhythms. A light's rhythm is its seamark:light:sequence when tagged, else worked out from its character (Fl, Q,
 // Iso, Oc, ...), group and period as the IALA abbreviations describe them.
 import type { Point } from "./geometry.ts";
+import { number } from "./osm.ts";
 
 export type SeamarkKind = "lighthouse" | "light" | "beacon" | "buoy";
 
@@ -229,14 +230,6 @@ function sequencePhases(sequence: string, period: number | undefined): number[] 
 function lower(value: string | undefined): string | undefined {
   const trimmed = value?.trim().toLowerCase();
   return trimmed || undefined;
-}
-
-function number(value: string | undefined): number | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  const n = Number(value.split(";")[0].trim().replace(",", "."));
-  return Number.isFinite(n) ? n : undefined;
 }
 
 function positive(value: string | undefined): number | undefined {

@@ -2,7 +2,7 @@
 // building or part): a ridge running across the outline from side to side, or ending inside it in a hip, splits it
 // into the roof's slopes, which rise from the eaves at the outline to the ridge. A ridge may bend, as one along a
 // curving wing does, which the shapes from roof:shape and roof:orientation cannot draw.
-import { distanceToRing, distanceToSegment, nearestOnSegment, pointInRing, pushTo, ringArea, type Point } from "./geometry.ts";
+import { distanceToRing, distanceToSegment, halfwayAlong, nearestOnSegment, pointInRing, pushTo, ringArea, type Point } from "./geometry.ts";
 import type { Building } from "./osm.ts";
 
 /** A ridge's end within this (m) of the outline is on it */
@@ -226,7 +226,7 @@ export function ridgeRoofs(buildings: Building[], ridges: Point[][]): number {
     let best: { building: Building; area: number } | undefined;
     for (const building of roofed) {
       const outer = building.polygon.outer;
-      const at = middle(ridge);
+      const at = halfwayAlong(ridge);
       if (pointInRing(at, outer) && distanceToRing(at, outer) > SNAP_M && ridge.every((p) => pointInRing(p, outer) || distanceToRing(p, outer) <= SNAP_M)) {
         const area = Math.abs(ringArea(outer));
         if (!best || area < best.area) {
@@ -244,7 +244,7 @@ export function ridgeRoofs(buildings: Building[], ridges: Point[][]): number {
     let slopes: Slope[] = [];
     let rings: Ring[] = [outer.map((point) => ({ point, share: 0 }))];
     for (const ridge of mine) {
-      const at = middle(ridge);
+      const at = halfwayAlong(ridge);
       const index = rings.findIndex((ring) => pointInRing(at, ring.map(({ point }) => point)));
       const halves = index >= 0 ? split(rings[index], ridge) : undefined;
       if (halves) {
@@ -267,18 +267,4 @@ export function ridgeRoofs(buildings: Building[], ridges: Point[][]): number {
     count++;
   }
   return count;
-}
-
-/** The point halfway along a line */
-function middle(line: Point[]): Point {
-  const lengths = line.slice(1).map((p, i) => Math.hypot(p[0] - line[i][0], p[1] - line[i][1]));
-  let left = lengths.reduce((sum, length) => sum + length, 0) / 2;
-  for (let i = 0; i < lengths.length; i++) {
-    if (left <= lengths[i] && lengths[i] > 0) {
-      const t = left / lengths[i];
-      return [line[i][0] + (line[i + 1][0] - line[i][0]) * t, line[i][1] + (line[i + 1][1] - line[i][1]) * t];
-    }
-    left -= lengths[i];
-  }
-  return line[line.length - 1];
 }
