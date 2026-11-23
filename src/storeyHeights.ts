@@ -4,7 +4,7 @@
 // map's cached sources (see the README's measured defaults).
 import { partOutlines } from "./buildingParts.ts";
 import { bounds, type Building } from "./osm.ts";
-import { pointInPolygon, pushTo, ringCentroid, type Point, type Polygon } from "./geometry.ts";
+import { inRect, pointInPolygon, pushTo, RectGrid, ringCentroid, type Point, type Polygon } from "./geometry.ts";
 
 /** A building measured: its storeys, the year it was built, and its height over the ground to its roof's top */
 export interface StoreySample {
@@ -137,17 +137,12 @@ export function storeySamples(buildings: Building[], register: RegisterPoint[], 
       return { b, box: bounds(b.polygon.outer), points, top: -Infinity };
     });
   // the buildings by the cells of a grid their boxes reach into
-  const cells = new Map<string, typeof whole>();
-  const cell = (x: number, y: number) => `${Math.floor(x / CELL_M)},${Math.floor(y / CELL_M)}`;
+  const cells = new RectGrid<(typeof whole)[number]>(CELL_M);
   for (const w of whole) {
-    for (let x = Math.floor(w.box.minX / CELL_M); x <= Math.floor(w.box.maxX / CELL_M); x++) {
-      for (let y = Math.floor(w.box.minY / CELL_M); y <= Math.floor(w.box.maxY / CELL_M); y++) {
-        pushTo(cells, `${x},${y}`, w);
-      }
-    }
+    cells.add(w.box, w);
   }
   const containing = (p: Point) =>
-    (cells.get(cell(p[0], p[1])) ?? []).filter(({ b, box }) => p[0] >= box.minX && p[0] <= box.maxX && p[1] >= box.minY && p[1] <= box.maxY && pointInPolygon(p, b.polygon));
+    cells.at(p).filter(({ b, box }) => inRect(p, box) && pointInPolygon(p, b.polygon));
   for (const r of register) {
     for (const w of containing(r.point)) {
       w.points.push(r);

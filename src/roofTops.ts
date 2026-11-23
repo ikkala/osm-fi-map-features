@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { storeyHeight } from "./ages.ts";
 import { builtBefore } from "./startDates.ts";
 import type { CacheOptions } from "./cache.ts";
-import { orientedBox, pointInPolygon, ringArea, type Point, type Polygon } from "./geometry.ts";
+import { inRect, orientedBox, pointInPolygon, RectGrid, ringArea, type Point, type Polygon, type Rect } from "./geometry.ts";
 import { field, items, optionalNumber, optionalString } from "./json.ts";
 import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
 import { bounds, GUESS_MIN_FILL, roofDegrees, type Building, type GeoBox } from "./osm.ts";
@@ -231,22 +231,15 @@ export function applyRoofTops(buildings: Building[], parts: MeasuredPart[], lase
 
 /** The highest measured top over a point, if any part is over it */
 function partIndex(parts: MeasuredPart[]): (p: Point) => number | undefined {
-  const cells = new Map<string, { part: MeasuredPart; box: ReturnType<typeof bounds> }[]>();
+  const cells = new RectGrid<{ part: MeasuredPart; box: Rect }>(CELL_M);
   for (const part of parts) {
     const box = bounds(part.polygon.outer);
-    for (let x = Math.floor(box.minX / CELL_M); x <= Math.floor(box.maxX / CELL_M); x++) {
-      for (let y = Math.floor(box.minY / CELL_M); y <= Math.floor(box.maxY / CELL_M); y++) {
-        const key = `${x},${y}`;
-        const cell = cells.get(key) ?? [];
-        cell.push({ part, box });
-        cells.set(key, cell);
-      }
-    }
+    cells.add(box, { part, box });
   }
   return (p) => {
     let highest: number | undefined;
-    for (const { part, box } of cells.get(`${Math.floor(p[0] / CELL_M)},${Math.floor(p[1] / CELL_M)}`) ?? []) {
-      const inBox = p[0] >= box.minX && p[0] <= box.maxX && p[1] >= box.minY && p[1] <= box.maxY;
+    for (const { part, box } of cells.at(p)) {
+      const inBox = inRect(p, box);
       if (inBox && (highest === undefined || part.top > highest) && pointInPolygon(p, part.polygon)) {
         highest = part.top;
       }

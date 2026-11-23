@@ -1,7 +1,7 @@
 // Playground equipment (playground=*), and where it faces. OSM seldom tells a piece's direction or size: a way
 // tells them by its line or outline, a swing lines up with the next swing in its row, and other nodes with the
 // nearest edge of the playground they stand in.
-import { dedupe, distanceToSegment, orientedBox, pointInPolygon, ringArea, type Point, type Polygon, type Ring } from "./geometry.ts";
+import { dedupe, distanceToSegment, inRect, orientedBox, pointInPolygon, ringArea, type Point, type Polygon, type Ring } from "./geometry.ts";
 import { bounds, meters, type GeoBox, type OverpassResponse, type PlayEquipment } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 
@@ -109,7 +109,7 @@ export function placePlayEquipment(
         continue;
       }
     }
-    const playground = outlines.find(({ polygon, box }) => e >= box.minX && e <= box.maxX && n >= box.minY && n <= box.maxY && pointInPolygon(piece.point, polygon));
+    const playground = outlines.find(({ polygon, box }) => inRect(piece.point, box) && pointInPolygon(piece.point, polygon));
     if (playground) {
       piece.along = nearestEdge(piece.point, playground.polygon);
       counts.edges++;

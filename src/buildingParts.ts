@@ -1,6 +1,6 @@
 // Buildings and their parts: the outlines drawn by their parts, what a part takes from its outline, the filling under
 // parts raised off the ground, buildings floating over nothing, and open roofs over roads.
-import { indexBoxes, pointInPolygon, pushTo, ringArea, ringCentroid, type Point, type Polygon } from "./geometry.ts";
+import { indexBoxes, inRect, pointInPolygon, pushTo, ringArea, ringCentroid, type Point, type Polygon } from "./geometry.ts";
 import { bounds, LEVEL_HEIGHT_M, type Building, type MapFeatures } from "./osm.ts";
 import { inTunnel } from "./profile.ts";
 import { WALKWAYS } from "./ways.ts";
@@ -22,7 +22,7 @@ export function raiseRoofsOverRoads(features: MapFeatures): void {
         const steps = Math.max(1, Math.ceil(Math.hypot(next[0] - p[0], next[1] - p[1])));
         for (let k = 0; k < steps; k++) {
           const q: Point = [p[0] + ((next[0] - p[0]) * k) / steps, p[1] + ((next[1] - p[1]) * k) / steps];
-          const inBox = q[0] >= box.minX && q[0] <= box.maxX && q[1] >= box.minY && q[1] <= box.maxY;
+          const inBox = inRect(q, box);
           if (inBox && pointInPolygon(q, roof.polygon)) {
             return true;
           }
@@ -48,8 +48,8 @@ function partHolders(buildings: Building[]): Map<Building, Building[]> {
   const outlines = buildings.filter((b) => !b.part).map((b) => ({ b, box: bounds(b.polygon.outer), area: Math.abs(ringArea(b.polygon.outer)) }));
   const result = new Map<Building, Building[]>();
   for (const part of buildings.filter((b) => b.part)) {
-    const [x, y] = ringCentroid(part.polygon.outer);
-    const around = outlines.filter(({ b, box }) => x >= box.minX && x <= box.maxX && y >= box.minY && y <= box.maxY && pointInPolygon([x, y], b.polygon));
+    const centre = ringCentroid(part.polygon.outer);
+    const around = outlines.filter(({ b, box }) => inRect(centre, box) && pointInPolygon(centre, b.polygon));
     if (around.length === 0) {
       continue;
     }
@@ -144,7 +144,7 @@ function shareCovered(polygon: Polygon, buildings: { b: Building; box: ReturnTyp
         continue;
       }
       points++;
-      if (buildings.some(({ b, box: pb }) => x >= pb.minX && x <= pb.maxX && y >= pb.minY && y <= pb.maxY && pointInPolygon(p, b.polygon))) {
+      if (buildings.some(({ b, box: pb }) => inRect(p, pb) && pointInPolygon(p, b.polygon))) {
         covered++;
       }
     }
@@ -174,7 +174,7 @@ export function fillUnderFloatingParts(features: MapFeatures): Building[] {
     const p = ringCentroid(part.polygon.outer);
     const outline = outlines.find(
       ({ b, box }) =>
-        b.minHeight < part.minHeight && p[0] >= box.minX && p[0] <= box.maxX && p[1] >= box.minY && p[1] <= box.maxY && pointInPolygon(p, b.polygon),
+        b.minHeight < part.minHeight && inRect(p, box) && pointInPolygon(p, b.polygon),
     )?.b;
     const below = parts.some((other) => other !== part && other.minHeight < part.minHeight && pointInPolygon(p, other.polygon));
     if (outline && !below) {

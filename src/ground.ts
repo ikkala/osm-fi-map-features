@@ -3,7 +3,7 @@
 // layer once and asks for the ground as of the layer it needs, so that every stage after it sees the same ground,
 // and the tiles' heights are the ground with all its layers.
 import { bounds } from "./osm.ts";
-import { distanceToSegment, indexBoxes, pushTo, simplifyLine, type Point } from "./geometry.ts";
+import { distanceToSegment, grownRect, indexBoxes, RectGrid, simplifyLine, type Point } from "./geometry.ts";
 import { REACH_M, type GroundStep } from "./retainingWalls.ts";
 import { latticeProjection, tileName, type Heights, type Tile } from "./tiles.ts";
 
@@ -162,7 +162,7 @@ export function tileGroundAt(heights: Heights & { columns?: number; rows?: numbe
   const columns = heights.columns ?? heights.count;
   const rows = heights.rows ?? heights.count;
   const reach = stepReach(step);
-  const cells = new Map<string, { a: Point; ue: number; un: number; length: number }[]>();
+  const cells = new RectGrid<{ a: Point; ue: number; un: number; length: number }>(STEP_CELL_M);
   for (const line of steps) {
     line.slice(1).forEach((b, i) => {
       const a = line[i];
@@ -171,12 +171,7 @@ export function tileGroundAt(heights: Heights & { columns?: number; rows?: numbe
         return;
       }
       const segment = { a, ue: (b[0] - a[0]) / length, un: (b[1] - a[1]) / length, length };
-      const box = bounds([a, b]);
-      for (let x = Math.floor((box.minX - reach) / STEP_CELL_M); x <= Math.floor((box.maxX + reach) / STEP_CELL_M); x++) {
-        for (let y = Math.floor((box.minY - reach) / STEP_CELL_M); y <= Math.floor((box.maxY + reach) / STEP_CELL_M); y++) {
-          pushTo(cells, `${x},${y}`, segment);
-        }
-      }
+      cells.add(grownRect(bounds([a, b]), reach), segment);
     });
   }
   // whether a corner of the grid's cell around a point is on a segment's line, or on its other side than `left`
@@ -194,7 +189,7 @@ export function tileGroundAt(heights: Heights & { columns?: number; rows?: numbe
     // the nearest step within reach
     let nearest = reach;
     let best: { a: Point; ue: number; un: number; t: number; left: boolean } | undefined;
-    for (const { a, ue, un, length } of cells.get(`${Math.floor(e / STEP_CELL_M)},${Math.floor(n / STEP_CELL_M)}`) ?? []) {
+    for (const { a, ue, un, length } of cells.at([e, n])) {
       const t = (e - a[0]) * ue + (n - a[1]) * un;
       const across = (n - a[1]) * ue - (e - a[0]) * un;
       if (t >= 0 && t <= length && Math.abs(across) < nearest) {

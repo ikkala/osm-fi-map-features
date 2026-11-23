@@ -1,7 +1,7 @@
 // Guesses window rows (one per storey) for ordinary buildings by their kind; other kinds are too varied to
 // guess and get none, and neither do walls tagged without windows.
 import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
-import { orientedBox, pointInPolygon, ringArea, ringCentroid } from "./geometry.ts";
+import { inRect, orientedBox, pointInPolygon, ringArea, ringCentroid } from "./geometry.ts";
 import { bounds, type Building, type BuildingUse, type WindowStyle } from "./osm.ts";
 
 /** building=* values and their windows */
@@ -93,8 +93,8 @@ export function assignWindows(buildings: Building[]): number {
     .filter((b) => b.hasParts)
     .map((b) => ({ polygon: b.polygon, box: bounds(b.polygon.outer), tower: tower(b), windows: unusual(b) ? undefined : own(b) }));
   const around = (part: Building) => {
-    const [x, y] = ringCentroid(part.polygon.outer);
-    return outlines.find(({ box, polygon }) => x >= box.minX && x <= box.maxX && y >= box.minY && y <= box.maxY && pointInPolygon([x, y], polygon));
+    const centre = ringCentroid(part.polygon.outer);
+    return outlines.find(({ box, polygon }) => inRect(centre, box) && pointInPolygon(centre, polygon));
   };
   let count = 0;
   for (const b of buildings) {

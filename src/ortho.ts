@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
 import { distanceToRing, pointInPolygon, pushTo, type Point, type Polygon } from "./geometry.ts";
 import { field, isObject } from "./json.ts";
+import type { TmBox } from "./elevation.ts";
 
 export const ORTHO_ATTRIBUTION = "Orthophoto © Maanmittauslaitos (CC BY 4.0)";
 
@@ -153,7 +154,7 @@ export function roofColour(raster: Raster, outline: Polygon, dark: [number, numb
 }
 
 /** Fetches the orthophoto for a TM35FIN box (snapped out to whole pixels). */
-export async function fetchOrtho(box: { minE: number; minN: number; maxE: number; maxN: number }, apiKey: string): Promise<Raster> {
+export async function fetchOrtho(box: TmBox, apiKey: string): Promise<Raster> {
   const minE = Math.floor(box.minE / PIXEL_SIZE_M) * PIXEL_SIZE_M;
   const minN = Math.floor(box.minN / PIXEL_SIZE_M) * PIXEL_SIZE_M;
   const maxE = Math.ceil(box.maxE / PIXEL_SIZE_M) * PIXEL_SIZE_M;
@@ -271,7 +272,8 @@ export function outlineKey(outline: Polygon): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 20);
 }
 
-function ringBox(ring: Point[]): { minE: number; minN: number; maxE: number; maxN: number } {
+/** A ring's box in the projection's meters */
+export function ringBox(ring: Point[]): TmBox {
   const es = ring.map(([e]) => e);
   const ns = ring.map(([, n]) => n);
   return { minE: Math.min(...es), minN: Math.min(...ns), maxE: Math.max(...es), maxN: Math.max(...ns) };

@@ -6,7 +6,7 @@
 // left as it is: its parts would stand in the way's room or block it.
 import clipping from "polygon-clipping";
 import { storeyHeight } from "./ages.ts";
-import { distanceToRing, distanceToSegment, pointInPolygon, ringArea, ringCentroid, type Point, type Polygon, type Ring } from "./geometry.ts";
+import { distanceToRing, distanceToSegment, grownRect, pointInPolygon, RectGrid, ringArea, ringCentroid, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
 import { bounds, type Building, type Road } from "./osm.ts";
 import { measurable, type MeasuredPart } from "./roofTops.ts";
 import { inTunnel } from "./profile.ts";
@@ -55,7 +55,7 @@ function area(polygon: Polygon): number {
   return Math.abs(ringArea(polygon.outer)) - polygon.holes.reduce((sum, hole) => sum + Math.abs(ringArea(hole)), 0);
 }
 
-function overlaps(a: ReturnType<typeof bounds>, b: ReturnType<typeof bounds>): boolean {
+function overlaps(a: Rect, b: Rect): boolean {
   return a.minX <= b.maxX && b.minX <= a.maxX && a.minY <= b.maxY && b.minY <= a.maxY;
 }
 
@@ -161,42 +161,26 @@ function segmentsWithin(a: Point, b: Point, c: Point, d: Point, reach: number): 
 
 /** Whether one of the ways runs into a polygon: a point of it inside, a stretch crossing its rings, or a tunnel within its room of them */
 function waysCrossing(roads: Road[]): (polygon: Polygon) => boolean {
-  const index = new Map<string, { segment: Point[]; reach: number }[]>();
+  const index = new RectGrid<{ segment: Point[]; reach: number }>(CELL_M);
   for (const road of roads) {
     const reach = inTunnel(road) ? road.width / 2 + TUNNEL_ROOM_M : 0;
     for (let i = 0; i + 1 < road.line.length; i++) {
       const segment = [road.line[i], road.line[i + 1]];
-      const box = bounds(segment);
-      box.minX -= reach;
-      box.minY -= reach;
-      box.maxX += reach;
-      box.maxY += reach;
-      for (let x = Math.floor(box.minX / CELL_M); x <= Math.floor(box.maxX / CELL_M); x++) {
-        for (let y = Math.floor(box.minY / CELL_M); y <= Math.floor(box.maxY / CELL_M); y++) {
-          const cell = index.get(`${x},${y}`) ?? [];
-          cell.push({ segment, reach });
-          index.set(`${x},${y}`, cell);
-        }
-      }
+      index.add(grownRect(bounds(segment), reach), { segment, reach });
     }
   }
   return (polygon) => {
-    const box = bounds(polygon.outer);
     const rings = [polygon.outer, ...polygon.holes];
-    for (let x = Math.floor(box.minX / CELL_M); x <= Math.floor(box.maxX / CELL_M); x++) {
-      for (let y = Math.floor(box.minY / CELL_M); y <= Math.floor(box.maxY / CELL_M); y++) {
-        for (const { segment, reach } of index.get(`${x},${y}`) ?? []) {
-          const [a, b] = segment;
-          if (pointInPolygon(a, polygon) || pointInPolygon(b, polygon)) {
+    for (const { segment, reach } of index.within(bounds(polygon.outer))) {
+      const [a, b] = segment;
+      if (pointInPolygon(a, polygon) || pointInPolygon(b, polygon)) {
+        return true;
+      }
+      for (const ring of rings) {
+        for (let i = 0; i < ring.length; i++) {
+          const [c, d] = [ring[i], ring[(i + 1) % ring.length]];
+          if (crossing(a, b, c, d) || (reach > 0 && segmentsWithin(a, b, c, d, reach))) {
             return true;
-          }
-          for (const ring of rings) {
-            for (let i = 0; i < ring.length; i++) {
-              const [c, d] = [ring[i], ring[(i + 1) % ring.length]];
-              if (crossing(a, b, c, d) || (reach > 0 && segmentsWithin(a, b, c, d, reach))) {
-                return true;
-              }
-            }
           }
         }
       }
@@ -206,31 +190,15 @@ function waysCrossing(roads: Road[]): (polygon: Polygon) => boolean {
 }
 
 /** The parts whose boxes overlap a box */
-function partsNear(parts: MeasuredPart[]): (box: ReturnType<typeof bounds>) => MeasuredPart[] {
-  const cells = new Map<string, { part: MeasuredPart; box: ReturnType<typeof bounds> }[]>();
+function partsNear(parts: MeasuredPart[]): (box: Rect) => MeasuredPart[] {
+  const cells = new RectGrid<{ part: MeasuredPart; box: Rect }>(CELL_M);
   for (const part of parts) {
     const box = bounds(part.polygon.outer);
-    for (let x = Math.floor(box.minX / CELL_M); x <= Math.floor(box.maxX / CELL_M); x++) {
-      for (let y = Math.floor(box.minY / CELL_M); y <= Math.floor(box.maxY / CELL_M); y++) {
-        const key = `${x},${y}`;
-        const cell = cells.get(key) ?? [];
-        cell.push({ part, box });
-        cells.set(key, cell);
-      }
-    }
+    cells.add(box, { part, box });
   }
   return (box) => {
-    const found = new Set<MeasuredPart>();
-    for (let x = Math.floor(box.minX / CELL_M); x <= Math.floor(box.maxX / CELL_M); x++) {
-      for (let y = Math.floor(box.minY / CELL_M); y <= Math.floor(box.maxY / CELL_M); y++) {
-        for (const entry of cells.get(`${x},${y}`) ?? []) {
-          if (overlaps(box, entry.box)) {
-            found.add(entry.part);
-          }
-        }
-      }
-    }
-    return [...found];
+    const near = cells.within(box).filter((entry) => overlaps(box, entry.box));
+    return [...new Set(near.map((entry) => entry.part))];
   };
 }
 
