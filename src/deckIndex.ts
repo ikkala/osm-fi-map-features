@@ -5,15 +5,18 @@
 import { deckAt } from "./bridges.ts";
 import { distanceToSegment, indexBoxes, nearestOnLine, pointInPolygon, type Point, type Rect } from "./geometry.ts";
 import { bounds, type BridgeDeck, type BridgeOutline } from "./osm.ts";
-import { DECK_EDGE_M, LID_EDGE_M, widthOf, type Way } from "./ways.ts";
+import { DECK_EDGE_M, DECK_THICKNESS_M, LID_EDGE_M, MIN_CLEARANCE_M, TRAMWAYS, widthOf, type Way } from "./ways.ts";
 import { inTunnel, isBridge } from "./profile.ts";
 
 /** An outline's deck, before it is built, is the nearest bridge way's within this far (m) */
 const OUTLINE_REACH_M = 30;
 /** A point this far (m) past a deck's edge is still under it, as the bottom of a cut under it is */
 export const UNDER_SIDE_M = 1;
+/** A cut under a deck goes no deeper than this (m) */
+export const MAX_DEPTH_M = 3;
 
 interface Span {
+  way: Way;
   osm: string;
   line: Point[];
   deck: number[];
@@ -70,7 +73,7 @@ export class DeckIndex {
   constructor(ways: readonly Way[], outlines: readonly BridgeOutline[] = [], built?: readonly BridgeDeck[]) {
     this.#spans = ways
       .filter((b) => isBridge(b) && b.line.length >= 2)
-      .map((b) => ({ osm: b.osm, line: b.line, deck: b.deck ?? [], box: bounds(b.line), half: widthOf(b) / 2 + DECK_EDGE_M, layer: Math.max(b.layer, 1), ...(b.roomUnder !== undefined && { room: b.roomUnder }) }));
+      .map((b) => ({ way: b, osm: b.osm, line: b.line, deck: b.deck ?? [], box: bounds(b.line), half: widthOf(b) / 2 + DECK_EDGE_M, layer: Math.max(b.layer, 1), ...(b.roomUnder !== undefined && { room: b.roomUnder }) }));
     const reaches = this.#spans.map(({ box }) => grow(box, OUTLINE_REACH_M));
     this.#nearSpans = reaches.length > 0 ? indexBoxes(reaches, around(reaches)) : () => [];
     this.#outlines = outlines.map((o) => ({
@@ -153,25 +156,8 @@ export class DeckIndex {
    * way's in the outline
    */
   over(p: Point, layer: number, margin = UNDER_SIDE_M): DeckOver | undefined {
-    const [e, n] = p;
-    let nearest: { d: number; deck: number; osm: string; past: boolean; room?: number } | undefined;
-    for (const index of this.#nearSpans({ minX: e, minY: n, maxX: e, maxY: n })) {
-      const span = this.#spans[index];
-      if (span.layer <= layer || span.deck.length === 0 || !inside(grow(span.box, OUTLINE_REACH_M), p)) {
-        continue;
-      }
-      const last = span.line.length - 2;
-      for (let i = 0; i <= last; i++) {
-        const [a, b] = [span.line[i], span.line[i + 1]];
-        const d = distanceToSegment(p, a, b) - span.half - margin;
-        // past the deck's ends a point is in front of it, not under it
-        const t = ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / Math.max(1e-12, (b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2);
-        const past = (i === 0 && t < 0) || (i === last && t > 1);
-        if (!nearest || d < nearest.d) {
-          nearest = { d, deck: deckAt(span.line, span.deck, p), osm: span.osm, past, ...(span.room !== undefined && { room: span.room }) };
-        }
-      }
-    }
+    const near = this.#nearest(p, layer, margin, true);
+    const nearest = near && { d: near.d, deck: deckAt(near.span.line, near.span.deck, p), osm: near.span.osm, past: near.past, room: near.span.room };
     const room = nearest?.room !== undefined ? { room: nearest.room } : {};
     const within = nearest && nearest.d <= 0 && !nearest.past ? { deck: nearest.deck, osm: nearest.osm, ...room } : undefined;
     if (this.#built) {
@@ -183,6 +169,37 @@ export class DeckIndex {
       return undefined;
     }
     return within ?? (this.#outlines.some(({ polygon, box }) => inside(box, p) && pointInPolygon(p, polygon)) ? { deck: nearest.deck, osm: nearest.osm } : undefined);
+  }
+
+  /**
+   * The bridge way whose deck is over a point of a way on a layer, as `over` finds it, whether its heights are set or
+   * not: its line's nearest segment and how far along it the point is (0 to 1)
+   */
+  spanOver(p: Point, layer: number, margin = UNDER_SIDE_M): { way: Way; segment: number; t: number } | undefined {
+    const near = this.#nearest(p, layer, margin, false);
+    return near && near.d <= 0 && !near.past ? { way: near.span.way, segment: near.segment, t: near.t } : undefined;
+  }
+
+  /** The bridge way's segment nearest a point, on a higher layer and (`decked`) with heights, and how far past its deck's edge (and margin) the point is */
+  #nearest(p: Point, layer: number, margin: number, decked: boolean): { span: Span; segment: number; t: number; d: number; past: boolean } | undefined {
+    let nearest: { span: Span; segment: number; t: number; d: number; past: boolean } | undefined;
+    for (const index of this.#nearSpans({ minX: p[0], minY: p[1], maxX: p[0], maxY: p[1] })) {
+      const span = this.#spans[index];
+      if (span.layer <= layer || (decked && span.deck.length === 0) || !inside(grow(span.box, OUTLINE_REACH_M), p)) {
+        continue;
+      }
+      const last = span.line.length - 2;
+      for (let i = 0; i <= last; i++) {
+        const [a, b] = [span.line[i], span.line[i + 1]];
+        const d = distanceToSegment(p, a, b) - span.half - margin;
+        // past the deck's ends a point is in front of it, not under it
+        const t = ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / Math.max(1e-12, (b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2);
+        if (!nearest || d < nearest.d) {
+          nearest = { span, segment: i, t: Math.min(Math.max(t, 0), 1), d, past: (i === 0 && t < 0) || (i === last && t > 1) };
+        }
+      }
+    }
+    return nearest;
   }
 
   /** Whether a point is under a bridge: within a bridge way's deck, or in an outline with a bridge way in it */
@@ -221,6 +238,29 @@ export class DeckIndex {
     }
     return lowest;
   }
+}
+
+/**
+ * The highest a tramway's bed may be at a point under a deck, leaving a tram its room: under the decks of the bridges
+ * that are not tramways (a tramway's bridge outline reaches over its own ways beside the bridge) and their outlines,
+ * where the ground is at most MAX_DEPTH_M over that (deeper, the deck is the tramway's own or the data is wrong), else
+ * undefined
+ */
+export function tramBedCeiling(
+  bridges: Way[],
+  outlines: BridgeOutline[],
+  heightAt: (e: number, n: number) => number | undefined,
+): (p: Point, layer: number) => number | undefined {
+  const decks = new DeckIndex(bridges.filter((b) => !TRAMWAYS.has(b.kind)), outlines);
+  return (p, layer) => {
+    const deck = decks.over(p, layer);
+    const ground = heightAt(...p);
+    if (!deck || ground === undefined) {
+      return undefined;
+    }
+    const ceiling = deck.deck - DECK_THICKNESS_M - MIN_CLEARANCE_M.trams;
+    return ground - ceiling <= MAX_DEPTH_M ? ceiling : undefined;
+  };
 }
 
 function grow(box: Rect, by: number): Rect {

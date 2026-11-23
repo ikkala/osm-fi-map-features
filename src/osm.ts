@@ -901,7 +901,7 @@ export interface ParseResult {
   warnings: string[];
   /** The storeys (level=*) of the roads and rails that OSM tells them for, to tell where tunnels come out */
   levels: Map<Road | Rail, number[]>;
-  /** Whether a point is an end of a way indoors left out: a bridge ending there goes into a building (see setBridgeDecks) */
+  /** Whether a point is an end of a way indoors left out: a bridge ending there goes into a building (see solveDecks) */
   indoors: (p: Point) => boolean;
   /** The roof lines along roofs' ridges (roof:ridge=yes), still to shape their roofs (roofRidges.ts) */
   ridges: Point[][];

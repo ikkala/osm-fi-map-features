@@ -1,4 +1,4 @@
-// Passages through buildings on bridges: a way carried through a building on its deck (setBridgeDecks) opens the
+// Passages through buildings on bridges: a way carried through a building on its deck (solveDecks) opens the
 // walls and has its room from the deck up, the wall staying whole under it. A room whose deck or ground slopes along
 // it has a ground for each section, a few metres apart, and its ceiling follows them.
 import { nearestOnLine, pointInRing, type Point } from "./geometry.ts";

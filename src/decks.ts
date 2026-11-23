@@ -470,7 +470,7 @@ function waysAngle(members: DeckLine[], polygon: Polygon): number | undefined {
 
 /**
  * The deck's height by meters along the bridge: the upper hull of its ways' decks, straight where they are and bending
- * one way only where they rise to a crest, rounded there as a bridge's (see setBridgeDecks), and on straight past its ends
+ * one way only where they rise to a crest, rounded there as a bridge's (crests), and on straight past its ends
  */
 function deckProfile(members: DeckLine[], polygon: Polygon, along: (p: Point) => number): (t: number) => number {
   const points: { t: number; h: number }[] = [];

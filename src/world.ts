@@ -10,10 +10,10 @@ import { applyRegister, BUILDING_REGISTER_ATTRIBUTION, fetchBuildingRegister } f
 import { leaveOutOnDecks, openBarriers } from "./barriers.ts";
 import { MAX_PLINTH_M, setBuildingBases } from "./bases.ts";
 import { bareUnderBridges } from "./bareGround.ts";
-import { DeckIndex } from "./deckIndex.ts";
+import { DeckIndex, tramBedCeiling } from "./deckIndex.ts";
 import { inheritFromOutlines } from "./buildingParts.ts";
 import { buildingSteps } from "./buildingSteps.ts";
-import { setBridgeDecks } from "./bridges.ts";
+import { solveDecks } from "./bridges.ts";
 import { setOutlineDecks, standOnDecks } from "./decks.ts";
 import { bicycleParkingQuery, parseBicycleParking } from "./bicycleParking.ts";
 import type { Logger } from "./builder.ts";
@@ -52,7 +52,6 @@ import { fetchTreeRegister, type RegisterTree, type TreeRegisterSource } from ".
 import { solveFloors, type KnownFloor } from "./floors.ts";
 import type { SolveLp } from "./lp.ts";
 import { fitRoomsUnderDecks, openPortals, portalWallsAt, raiseToWalls, rampsOut, setTunnelRooms, tunnelNetwork, uncoverAtGrade } from "./tunnels.ts";
-import { leastDecks, lowerUnderBridges, tramBedCeiling } from "./underbridges.ts";
 import { parseWaterways, setWaterLevels, waterwayQuery, type WaterLevels } from "./waterways.ts";
 import { GRADE, isRoad, userOf, type Way } from "./ways.ts";
 import { assignWindows } from "./windows.ts";
@@ -178,24 +177,14 @@ export interface Spanned {
  * before the portals' walls raise it, as the bare ground under the bridges has no hump to lift a tunnel's end into a
  * deck
  */
-export function spanStage(world: OsmWorld, covered: Covered, logger: Logger): Spanned {
+export function spanStage(world: OsmWorld, covered: Covered, lp: SolveLp, logger: Logger): Spanned {
   const { features, indoors, throughBuildings } = world;
   const { ground } = covered;
-  const heightAt = ground.at("flights");
-  const ramps = (lines: Way[]) => lines.filter((l) => l.deck && !isBridge(l)).length;
-  // the room OSM tells under the decks: they rise for it at their ways' grade
-  const least = leastDecks([...features.roads, ...features.rails], heightAt);
-  const raised = new Set<Way>();
-  const users = new Map<string, Set<string>>();
-  for (const way of [...features.roads, ...features.rails]) {
-    for (const p of way.line) {
-      users.set(pointKey(p), (users.get(pointKey(p)) ?? new Set<string>()).add(userOf(way)));
-    }
+  const solved = solveDecks(features.roads, features.rails, ground.at("flights"), lp, indoors, throughBuildings);
+  for (const { way, bound, at, by } of solved.conflicts) {
+    logger.warn(`deck heights miss their ${bound} at (${at[0].toFixed(1)}, ${at[1].toFixed(1)}): ${way} by up to ${by.toFixed(1)} m`);
   }
-  const crosses = (l: Way, p: Point) => [...(users.get(pointKey(p)) ?? [])].some((user) => user !== userOf(l));
-  const room = { least: (l: Way) => least.get(l) ?? [], grade: (l: Way) => GRADE[userOf(l)], crosses, raised: (l: Way) => raised.add(l) };
-  const stepped = setBridgeDecks(features.roads, heightAt, indoors, throughBuildings, room) + setBridgeDecks(features.rails, heightAt, indoors, undefined, room);
-  logger.log(`${ramps(features.roads) + ramps(features.rails)} bridge approaches raised out of the hollows under bridges, ${stepped} decks' heights told by steps, ${raised.size} bridge ways raised for the room OSM tells under them: ${[...new Set([...raised].map((w) => w.osm))].join(", ")}`);
+  logger.log(`${solved.approaches} bridge approaches raised, ${solved.cuts} ways lowered into cuts under bridges, ${solved.told} decks' heights told by steps`);
   return { ground };
 }
 
@@ -228,8 +217,8 @@ export interface Decked {
 }
 
 /**
- * Over the bridges' decks (spanStage): the outlines' decks and the ramps to them, the lids fitted to the decks over them, the ways carried through buildings on spans, the staircases' decks, and the
- * ways under decks too low over them lowered into cuts
+ * Over the bridges' decks (spanStage): the outlines' decks and the ramps to them, the lids fitted to the decks over
+ * them, the ways carried through buildings on spans, the staircases' decks, and the tunnels' rooms under the decks
  */
 export function deckStage(world: OsmWorld, tunnelled: Tunnelled, logger: Logger): Decked {
   const { features, bridgeOutlines, throughBuildings } = world;
@@ -253,13 +242,7 @@ export function deckStage(world: OsmWorld, tunnelled: Tunnelled, logger: Logger)
   logger.log(`${carried.length} ways through buildings carried on bridges' spans`);
   // a staircase may end on a deck
   logger.log(`${setStaircaseDecks(features.roads, heightAt)} staircases with landings out of line with the ground get decks, one riser all the way`);
-  // the decks stay straight: a way under one with too little room goes down into a cut
   const bridges = [...features.roads, ...features.rails].filter((w) => isBridge(w) && w.deck);
-  const over = new Set<string>();
-  const cuts =
-    lowerUnderBridges(features.roads, bridges, bridgeOutlines, heightAt, over, features.rails, features.bridgeDecks) +
-    lowerUnderBridges(features.rails, bridges, bridgeOutlines, heightAt, over, features.roads, features.bridgeDecks);
-  logger.log(`${cuts} ways lowered into cuts under ${over.size} bridges too low over them (their ends may be too low): ${[...over].join(", ")}`);
   const built = new DeckIndex(bridges, bridgeOutlines, features.bridgeDecks);
   logger.log(`${fitRoomsUnderDecks(features.roads, (p, layer) => built.over(p, layer))} tunnels under bridges' decks get a lower room`);
   return { bridges };

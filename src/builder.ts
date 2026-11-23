@@ -361,8 +361,9 @@ export class MapBuilder {
       bareStage(world, ground, logger);
       const stepped = steppedGround(world, ground, logger);
       const knownFloors = (this.#options.tunnelFloors ?? []).map(({ at, floor, name }) => ({ p: this.#projection.toMeters(at), floor, name }));
-      const spanned = spanStage(world, coverStage(world, stepped, logger), logger);
-      const tunnelled = tunnelStage(world, spanned, knownFloors, await loadLp(), logger);
+      const lp = await loadLp();
+      const spanned = spanStage(world, coverStage(world, stepped, logger), lp, logger);
+      const tunnelled = tunnelStage(world, spanned, knownFloors, lp, logger);
       const decked = deckStage(world, tunnelled, logger);
       bedStage(world, tunnelled, decked, logger);
       shaped = { stepped, tunnelled, decked };

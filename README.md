@@ -133,9 +133,9 @@ Where to look:
   floors, a linear program for each group of tunnels that touch, solved by `src/lp.ts` with [HiGHS](https://highs.dev),
   and floors known at points: `tunnelFloors`) and `src/cuts.ts` (a shallow tunnel the model has as an open cut, under a
   lid).
-- Bridges: `src/bridges.ts` (decks of spans and boardwalks, and steps telling a deck's height), `src/decks.ts`
-  (bridge outlines as decks), `src/deckIndex.ts` (the decks' heights, and what is under or on one),
-  `src/underbridges.ts` (ways under a deck), `src/stairs.ts` (staircases' landings).
+- Bridges: `src/bridges.ts` (the decks of spans with their approaches and the cuts under them, a linear program as
+  the floors are, and boardwalks), `src/decks.ts` (bridge outlines as decks), `src/deckIndex.ts` (the decks' heights,
+  and what is under or on one), `src/stairs.ts` (staircases' landings).
 - Railways and tramways: `src/trackbeds.ts`; platforms `src/platforms.ts`; pitches and level paved areas
   `src/pitches.ts`.
 - Trees `src/forests.ts` and `src/treeRegister.ts`, street lamps `src/lamps.ts`, crossings, traffic signals and

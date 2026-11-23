@@ -36,3 +36,50 @@ export function loadLp(): Promise<SolveLp> {
   });
   return loading;
 }
+
+/** A bound on a sum of columns' values (column → factor), missed at `cost` a unit, its miss told as `tag` */
+export interface SoftRow<T> {
+  cost: number;
+  terms: Iterable<[number, number]>;
+  lower: number;
+  upper: number;
+  tag: T;
+}
+
+/** A linear program whose rows' bounds may be missed, each by a slack of its own at its row's cost */
+export class SoftProgram<T> {
+  readonly #program: LinearProgram = { cost: [], lower: [], upper: [], rows: [] };
+  readonly #slacks: { column: number; tag: T }[] = [];
+
+  /** A column at a cost a unit within its bounds: its index */
+  column(cost: number, lower: number, upper: number): number {
+    this.#program.lower.push(lower);
+    this.#program.upper.push(upper);
+    return this.#program.cost.push(cost) - 1;
+  }
+
+  /** lower <= the terms' sum <= upper, missed by the slack's value at the row's cost */
+  soft({ cost, terms, lower, upper, tag }: SoftRow<T>): void {
+    if (lower === -Infinity && upper === Infinity) {
+      return;
+    }
+    const slack = this.column(cost, 0, Infinity);
+    this.#slacks.push({ column: slack, tag });
+    const sum = new Map<number, number>();
+    for (const [c, v] of terms) {
+      sum.set(c, (sum.get(c) ?? 0) + v);
+    }
+    if (upper < Infinity) {
+      this.#program.rows.push({ terms: new Map([...sum, [slack, -1]]), lower: -Infinity, upper });
+    }
+    if (lower > -Infinity) {
+      this.#program.rows.push({ terms: new Map([...sum, [slack, 1]]), lower, upper: Infinity });
+    }
+  }
+
+  /** The columns' values at the optimum and the rows missed by at least `least`, by how much; undefined where there is none */
+  solve(lp: SolveLp, least: number): { x: Float64Array; missed: { tag: T; by: number }[] } | undefined {
+    const x = lp(this.#program);
+    return x && { x, missed: this.#slacks.filter(({ column }) => x[column] >= least).map(({ column, tag }) => ({ tag, by: x[column] })) };
+  }
+}

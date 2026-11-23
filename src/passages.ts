@@ -563,7 +563,7 @@ export function passagesOnToWalls(tagged: { road: Road; passage: Passage }[], ro
 export interface ThroughBuildings {
   /** Covered ways (covered=yes) that are no passages through buildings: they may come in at a door (see openDoorways) */
   covered: Road[];
-  /** Whether a road runs through buildings: a building passage, or a tunnel or covered way found to (see setBridgeDecks) */
+  /** Whether a road runs through buildings: a building passage, or a tunnel or covered way found to (see solveDecks) */
   throughBuildings: (road: Road) => boolean;
 }
 

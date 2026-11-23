@@ -1,409 +1,869 @@
-// Bridge deck heights. The elevation model is bare ground, so a deck instead runs from the ground at
-// one end of a span (bridge ways joined end to end) to the other, through the heights steps up to it
-// tell, bending one way only. The model smooths the cut under a bridge into a wider hollow, so ends
-// are taken where the approach stops rising steeply. Over a way under it with the room OSM tells, a deck rises to
-// give it, raising its landings and approaches where its grade does not reach down to them. A boardwalk lies on the
-// ground instead: its deck follows it.
-import type { Point } from "./geometry.ts";
-import { inTunnel, isBridge } from "./profile.ts";
+// Bridge deck heights, and the heights of the ways the decks raise or cut under them, as one linear program for each
+// group of them that touch (lp.ts), their bounds missed only by priority, at the least cost (HARD_COST and on), and
+// each miss told with its way and place. The elevation model is bare ground, so a deck runs over the hump under it
+// from its landings, bending one way only; the model smooths the cut under a bridge into a wider hollow, so a landing
+// is taken where its approach stops rising steeply, and steps up to a deck tell its height there (RISER_M a step).
+// Every point of a deck's lines (STEP_M apart), of the ways leading off it within APPROACH_REACH_M along them, and of
+// the ways under the decks within a cut's reach of them is a height (a point the ways share is one):
+// - hard: a cut's and a way's grade between its points, by its users or the ground's where steeper (an approach's as
+//   steep as stairs for people), a deck never dipping, a cut no deeper than MAX_DEPTH_M, and under a deck a railway's
+//   least room (a tramway's over the lowest its bed goes down to there, trackbeds.ts);
+// - the room under the decks, the way's or bridge's that OSM tells, else the users', and over a cut the surfaces of
+//   the ways beside it in its room at its height; the heights steps tell; then the bends, along the lines through the
+//   points (a deck's at a junction through its straightest pair, the others held at junctions), as the ground's or
+//   the curve's that bends MAX_BEND_M over BEND_SPAN_M (a railway's deck's hard); then the users' grade on the
+//   approaches and the decks (a deck's as steep as its landings are between them);
+// - and each meter a deck or an approach is raised or a way cut, by the length it stands for (a train's TRACK_COST
+//   times), so that the decks keep to the line between their landings, the ways to the ground and the cuts shallow.
+// The heights are those of the ways on the ground: past the reach the ways keep to it, as they do where a way of other
+// users meets an approach, where a way of another kind or layer meets a cut, or a way ends in one, and where OSM tells
+// the room over a way (measured from it). A railway's deck keeps to its landings, and a way out of a tunnel to the
+// ramp the tunnel's floor gives it (floors.ts). A way's stretch over the ground becomes an approach with a deck, one
+// under it a cut with a floor. A boardwalk lies on the ground instead: its deck follows it.
+import { BEND_SPAN_M, bends, HARD_COST, MAX_BEND_M, ROOM_COST } from "./floors.ts";
+import { DeckIndex, MAX_DEPTH_M } from "./deckIndex.ts";
+import { densify, distancesAlong, grownRect, indexOwnBoxes, MinHeap, nearestOnLine, pointAt, pointKey, pushTo, RESOLUTION_M, simplifyLine, type Point } from "./geometry.ts";
+import { SoftProgram, type SolveLp } from "./lp.ts";
+import { bounds, type Rail, type Road } from "./osm.ts";
+import { inTunnel, isBridge, offStructures } from "./profile.ts";
+import { DECK_THICKNESS_M, GRADE, isRoad, LEAST_CLEARANCE_M, MIN_CLEARANCE_M, ROOM_SIDE_M, STAIRS_GRADE, TRAM_CUT_CLEARANCE_M, userOf, widthOf, type Way } from "./ways.ts";
 
-export interface BridgeLine {
-  bridge: boolean;
-  /** A boardwalk: planks laid on the ground, no span */
-  boardwalk?: boolean;
-  line: Point[];
-  /** Deck height (meters above sea level) at every point of line; set by setBridgeDecks */
-  deck?: number[];
-  /** Steps: how many, and whether they climb along line or go down it */
-  stepCount?: number;
-  incline?: "up" | "down";
-  /** OSM's layer: over 0, above the ground (a bridge, or a way on a structure that is not tagged one) */
-  layer?: number;
-  tunnel?: boolean;
-  /** A tunnel's or a ramp's floor at every point of line, set before the decks */
-  floor?: number[];
-}
-
-/**
- * What a deck clears: the least heights of its top over the ways under it (underbridges.ts' leastDecks), and the
- * grade its ways ramp at, whether a line meets a way of other users at a point (a level crossing, which an
- * embankment stops short of); told of each bridge line it raises
- */
-export interface DeckRoom<T> {
-  least: (line: T) => { p: Point; h: number }[];
-  grade: (line: T) => number;
-  crosses?: (line: T, p: Point) => boolean;
-  raised?: (line: T) => void;
-}
-/** An embankment raised to a landing is walked this often (m) to where it meets the ground */
-const EMBANKMENT_STEP_M = 1;
-/** The approach is walked this often, and at most this far from the bridge's end (m) */
+/** The approach is walked this often, and at most this far from the bridge's end (m), raised no farther along the ways */
 const APPROACH_STEP_M = 2;
-const APPROACH_REACH_M = 24;
+export const APPROACH_REACH_M = 24;
 /** The ground has stopped rising steeply where it rises less than this in a step (m) */
 const APPROACH_RISE_M = 0.2;
 /** The hollow's bottom may reach on this far from the bridge's end before the ground starts rising (m) */
 const APPROACH_LEVEL_M = 6;
 /** A step's rise (m) */
 const RISER_M = 0.16;
-/** A deck's crest is rounded over a curve of this radius (m), with a point this often (m) */
+/** A deck's crest is rounded over a curve of this radius (m) */
 const CREST_RADIUS_M = 400;
-const CREST_STEP_M = 2;
 /** Steps lift a way above the ground that is no bridge only where they tell it more than this over the ground (m) */
 const LIFT_M = 0.5;
-/** Maximum rounds of junction height averaging */
-const JUNCTION_ROUNDS = 1000;
 /** A boardwalk's deck is this far (m) over the ground, level over a dip narrower than BOARDWALK_SPAN_M */
 const BOARDWALK_OVER_M = 0.3;
 const BOARDWALK_SPAN_M = 6;
 /** The ground under a boardwalk is looked at this often (m), and its deck gets a point where it bends more than BOARDWALK_STRAIGHT_M */
 const BOARDWALK_STEP_M = 2;
 const BOARDWALK_STRAIGHT_M = 0.05;
+/** The ways' heights are solved this often along them (m) */
+const STEP_M = 2;
+/**
+ * The costs after the hard bounds and the room (floors.ts), a meter: a bend past the ground's or the curve's, an
+ * approach steeper than its users' grade, and each meter a deck or an approach is over the ground (or a deck over the
+ * line between its landings) or a way down in a cut, a meter along: raising a deck dearer than a cut under it, and a
+ * railway's TRACK_COST times a road's
+ */
+const BEND_COST = 1e2;
+const GRADE_COST = 10;
+const RAISE_COST = 0.1;
+const CUT_COST = 0.01;
+const TRACK_COST = 10;
+/**
+ * A tram's room under a deck, a meter of it missed: dearer than a cut, cheaper than raising the deck, as its bed goes
+ * down under the deck where no cut gives it the room (trackbeds.ts), as deep as MAX_DEPTH_M
+ */
+const TRAM_ROOM_COST = 0.5;
+
+type HeightAt = (e: number, n: number) => number | undefined;
+/** A way's height this near its ground (m) is the ground's: as near as the solver keeps a bound */
+const ON_GROUND_M = 1e-3;
+
+/** A height's bound missed: on which way, where most and by how much (m) */
+export interface DeckConflict {
+  way: string;
+  bound: "grade" | "dip" | "room" | "steps" | "bend";
+  at: Point;
+  by: number;
+}
+
+/** What the heights' solving did, for the log */
+export interface DecksSolved {
+  /** The points of decks steps told the heights of, the stretches of ways raised as approaches and lowered into cuts */
+  told: number;
+  approaches: number;
+  cuts: number;
+  conflicts: DeckConflict[];
+}
+
+/** A point whose height is solved: a deck's, an approach's, a cut's, or one held at the ground (or at a host deck) */
+interface HeightNode {
+  p: Point;
+  kind: "deck" | "approach" | "cut" | "held";
+  ground: number;
+  /** The lowest it may be: a landing's and an approach's ground with the hollow under the bridge filled */
+  low: number;
+  /** The length of way it stands for (m), and whether a railway's */
+  weight: number;
+  rail: boolean;
+  train: boolean;
+  /** The way told of its misses */
+  osm: string;
+}
+
+interface Edge {
+  a: string;
+  b: string;
+  length: number;
+  kind: HeightNode["kind"];
+  way: Way;
+}
+
+/** A bound on a sum of heights (their points' keys and factors), missed at its cost a meter, told at k */
+interface Bound {
+  cost: number;
+  bound: DeckConflict["bound"];
+  k: string;
+  terms: [string, number][];
+  lower: number;
+  upper: number;
+}
+
+/** Where a way passes under a deck: its point's key and ground, the deck's segment's ends and how far along it, the room */
+interface Under {
+  way: Way;
+  at: number;
+  ground: number;
+  deck: [string, string, number];
+  room: number;
+  told: boolean;
+}
+
+const NODE_RANK = { deck: 3, approach: 2, held: 1, cut: 0 };
 
 /**
- * Sets `deck` on every bridge line: straight along each span between its ends, also over the model's hump under
- * it (the ground under a bridge is the gap spanned from the ground around). Steps with a count and a way they
- * climb, from the ground to a point of the span, tell its height there (RISER_M a step): the deck then runs
- * straight between the heights on the upper hull of them and its ends, rising and falling but never dipping, its
- * crests rounded (CREST_RADIUS_M, the lines getting points over them).
- * Returns how many points of spans steps told the height of.
- * Approaches are split off the lines leading on and get decks too. heightAt takes meters east / north. An end that
- * no line leads on from but ways indoors do (indoors) goes into a building, at whatever floor: it takes no height
- * from the ground, so the deck runs level from the span's other end. A line through a building (through) from one
- * bridge's end to another's carries the span on through it, getting a deck as the bridges do. So does a line above the
- * ground that is no bridge (layer over 0: stairs on a structure, a landing) where steps up to an end of it tell a height
- * more than LIFT_M over the ground there, no line on the ground meets them, and its other end is a dead end or meets a
- * line on the ground no lower than that (stairs down from a street to where a spiral goes on down, a landing at a
- * door): a dead end takes no height from the ground, and the lines meeting such a line are not raised as approaches.
- * A boardwalk is no span: its deck follows the ground BOARDWALK_OVER_M over it, level over dips narrower than
- * BOARDWALK_SPAN_M, its line getting points where the deck bends. A span's end on a boardwalk, or on another bridge
- * line's inner point (a way leaving a bridge mid-span), takes that deck's height there, not the ground's.
- * Where a deck is lower than its least heights over the ways under it (room), it rises to them, running straight
- * from them to its landings as through the heights steps tell; where its ways' grade does not reach down to a
- * landing from them, the landing rises to where it does, and the lines leading on from it are raised as embankments
- * down at that grade to the ground.
+ * Sets the decks of the roads' and railways' bridges, and splits off them, pushed onto them, the ways' stretches
+ * raised as approaches (`deck`) and lowered into cuts under the decks (`floor`, and a road's `room` there), solved by
+ * lp. heightAt takes meters east / north. An end that no line leads on from but ways indoors do (indoors) goes into a
+ * building, at whatever floor: it takes no height from the ground, so the deck runs level from its other landings. A
+ * line through a building (through) from one bridge's end to another's carries the span on through it, getting a deck
+ * as the bridges do. So does a line above the ground that is no bridge (layer over 0: stairs on a structure, a landing)
+ * where steps up to an end of it tell a height more than LIFT_M over the ground there, no line on the ground meets
+ * them, and its other end is a dead end or meets a line on the ground no lower than that (stairs down from a street to
+ * where a spiral goes on down, a landing at a door): a dead end takes no height from the ground, and the lines meeting
+ * such a line are not raised as approaches. A span's end on a boardwalk takes its deck's height there.
  */
-export function setBridgeDecks<T extends BridgeLine>(
-  lines: T[],
-  heightAt: (e: number, n: number) => number | undefined,
+export function solveDecks(
+  roads: Road[],
+  rails: Rail[],
+  heightAt: HeightAt,
+  lp: SolveLp,
   indoors: (p: Point) => boolean = () => false,
-  through: (line: T) => boolean = () => false,
-  room: DeckRoom<T> = { least: () => [], grade: () => 0 },
-): number {
-  const key = (p: Point) => `${p[0]},${p[1]}`;
+  through: (road: Road) => boolean = () => false,
+): DecksSolved {
+  const ways: Way[] = [...roads, ...rails];
+  const boardwalks = roads.filter((l) => isBridge(l) && l.boardwalk === true && !inTunnel(l) && l.floor === undefined && l.line.length >= 2);
   // a boardwalk in a tunnel or ramping down to one goes as a bridge: its line keeps its points
-  const boardwalk = (l: T) => isBridge(l) && l.boardwalk === true && !inTunnel(l) && l.floor === undefined;
-  const boardwalks = lines.filter((l) => boardwalk(l) && l.line.length >= 2);
-  for (const b of boardwalks) {
-    setBoardwalkDeck(b, heightAt);
-  }
-  for (const l of lines) {
-    if (l.boardwalk === true && !boardwalk(l)) {
-      delete l.boardwalk;
+  roads.filter((l) => l.boardwalk === true && !boardwalks.includes(l)).forEach((l) => delete l.boardwalk);
+  boardwalks.forEach((b) => setBoardwalkDeck(b, heightAt));
+  const atPoint = new Map<string, Way[]>();
+  ways.forEach((w) => new Set(w.line.map(pointKey)).forEach((k) => pushTo(atPoint, k, w)));
+  const { spans, toldAt, telling, lifting } = spansOf(ways, atPoint, heightAt, through);
+  const original = new Map(spans.map((w) => [w, new Set(w.line.map(pointKey))]));
+  spans.forEach((s) => (s.line = densify(s.line, STEP_M)));
+  const model = new HeightModel(heightAt);
+  const told = model.addDecks(spans, toldAt, original);
+  const ends = landings(spans, atPoint, heightAt, indoors, lifting, telling, boardwalks);
+  model.addApproaches(ends, atPoint, telling);
+  model.addCuts(underWays(ways, spans, model, atPoint), atPoint);
+  model.build(atPoint);
+  model.addBesides(ways);
+  model.solve(lp);
+  spans.forEach((s) => model.setDeck(s, original.get(s)));
+  const pieces = [...model.regions.keys()].flatMap((way) => model.split(way));
+  for (const piece of pieces) {
+    if (isRoad(piece)) {
+      roads.push(piece);
+    } else {
+      rails.push(piece);
     }
   }
-  const spanning = (l: T) => isBridge(l) && l.boardwalk !== true;
-  const bridgeEnds = new Set(lines.filter((l) => spanning(l) && l.line.length >= 2).flatMap((l) => [key(l.line[0]), key(l.line[l.line.length - 1])]));
-  const carried = new Set(
-    lines.filter((l) => !isBridge(l) && l.line.length >= 2 && through(l) && bridgeEnds.has(key(l.line[0])) && bridgeEnds.has(key(l.line[l.line.length - 1]))),
-  );
-  // the heights steps up to a point tell: from the ground at their other end, a riser a step
-  const stepped = new Map<string, { h: number; by: T }[]>();
-  const telling = (l: T) => !isBridge(l) && l.stepCount !== undefined && l.stepCount > 0 && l.incline !== undefined && l.line.length >= 2;
-  for (const l of lines.filter(telling)) {
-    const [start, end] = [l.line[0], l.line[l.line.length - 1]];
+  return { told, approaches: model.raised, cuts: model.cut, conflicts: model.conflicts };
+}
+
+/**
+ * The lines spanning: the bridges but boardwalks, the lines carried through buildings between bridges' ends, and the
+ * lines above the ground that steps lift; the heights steps up to a point tell (from the ground at their other end, a
+ * riser a step), the steps telling them, and the lifted lines
+ */
+function spansOf(ways: Way[], atPoint: Map<string, Way[]>, heightAt: HeightAt, through: (road: Road) => boolean) {
+  const spanning = (l: Way) => isBridge(l) && !(isRoad(l) && l.boardwalk === true) && l.line.length >= 2;
+  const ends = (l: Way) => [l.line[0], l.line[l.line.length - 1]];
+  const bridgeEnds = new Set(ways.filter(spanning).flatMap((l) => ends(l).map(pointKey)));
+  const carried = ways.filter((l) => isRoad(l) && !isBridge(l) && l.line.length >= 2 && through(l) && ends(l).every((p) => bridgeEnds.has(pointKey(p))));
+  const steps = roads(ways).filter((l) => !isBridge(l) && (l.stepCount ?? 0) > 0 && l.incline !== undefined && l.line.length >= 2);
+  const telling = new Set<Way>(steps);
+  const stepped = new Map<string, { h: number; by: Way }[]>();
+  for (const l of steps) {
+    const [start, end] = ends(l);
     const rise = (l.incline === "up" ? 1 : -1) * (l.stepCount ?? 0) * RISER_M;
     for (const [at, from, up] of [[end, start, rise], [start, end, -rise]] as const) {
       const ground = heightAt(...from);
       if (ground !== undefined) {
-        stepped.set(key(at), [...(stepped.get(key(at)) ?? []), { h: ground + up, by: l }]);
+        pushTo(stepped, pointKey(at), { h: ground + up, by: l });
       }
     }
   }
-  const toldAt = (p: Point, except?: T) => {
-    const heights = (stepped.get(key(p)) ?? []).filter((t) => t.by !== except).map((t) => t.h);
+  const toldAt = (p: Point, except?: Way) => {
+    const heights = (stepped.get(pointKey(p)) ?? []).filter((t) => t.by !== except).map((t) => t.h);
     return heights.length > 0 ? Math.max(...heights) : undefined;
   };
-  // the lines above the ground that steps lift: only steps telling its height and lines above the ground at its end
-  const atPoint = new Map<string, T[]>();
-  for (const l of lines) {
-    for (const p of l.line) {
-      atPoint.set(key(p), [...(atPoint.get(key(p)) ?? []), l]);
-    }
-  }
-  const others = (l: T, p: Point) => (atPoint.get(key(p)) ?? []).filter((o) => o !== l);
-  const onGround = (o: T) => !isBridge(o) && !inTunnel(o) && (o.layer ?? 0) <= 0;
+  const others = (l: Way, p: Point) => (atPoint.get(pointKey(p)) ?? []).filter((o) => o !== l);
+  const onGround = (o: Way) => !isBridge(o) && !inTunnel(o) && o.layer <= 0;
   // whether steps up to p lift l there, its other end at r
-  const lifted = (l: T, p: Point, r: Point) => {
-    const told = toldAt(p, l);
-    const ground = heightAt(...p);
-    if (told === undefined || ground === undefined || told <= ground + LIFT_M || !others(l, p).every((o) => !isBridge(o) && ((o.layer ?? 0) > 0 || telling(o)))) {
-      return false;
-    }
+  const lifted = (l: Way, p: Point, r: Point) => {
+    const [h, ground, below] = [toldAt(p, l), heightAt(...p), heightAt(...r)];
     const beyond = others(l, r);
-    const below = heightAt(...r);
-    return beyond.length === 0 || (beyond.some(onGround) && below !== undefined && told <= below + LIFT_M);
+    return (
+      h !== undefined &&
+      ground !== undefined &&
+      h > ground + LIFT_M &&
+      others(l, p).every((o) => !isBridge(o) && (o.layer > 0 || telling.has(o))) &&
+      (beyond.length === 0 || (beyond.some(onGround) && below !== undefined && h <= below + LIFT_M))
+    );
   };
-  const elevated = new Set(
-    lines.filter((l) => {
-      const [a, b] = [l.line[0], l.line[l.line.length - 1]];
-      return !isBridge(l) && !carried.has(l) && !inTunnel(l) && (l.layer ?? 0) > 0 && l.line.length >= 2 && (lifted(l, a, b) || lifted(l, b, a));
-    }),
+  const lifting = new Set(
+    ways.filter((l) => !isBridge(l) && !carried.includes(l) && !inTunnel(l) && l.layer > 0 && l.line.length >= 2 && (lifted(l, l.line[0], l.line[l.line.length - 1]) || lifted(l, l.line[l.line.length - 1], l.line[0]))),
   );
-  const spanned = (l: T) => spanning(l) || carried.has(l) || elevated.has(l);
-  const bridges = lines.filter((l) => spanned(l) && l.line.length >= 2);
-  // the lines leading on from bridges, by their ends
-  const onward = new Map<string, T[]>();
-  for (const l of lines) {
-    if (!spanned(l) && l.line.length >= 2) {
-      for (const p of [l.line[0], l.line[l.line.length - 1]]) {
-        onward.set(key(p), [...(onward.get(key(p)) ?? []), l]);
-      }
-    }
-  }
-  const byEnd = new Map<string, T[]>();
-  for (const b of bridges) {
-    for (const p of [b.line[0], b.line[b.line.length - 1]]) {
-      const list = byEnd.get(key(p)) ?? [];
-      list.push(b);
-      byEnd.set(key(p), list);
-    }
-  }
-  // where two bridge lines meet a way on the ground (not steps up to them), they land on the ground there
-  const landsOn = (p: Point) => (atPoint.get(key(p)) ?? []).some((o) => !spanned(o) && onGround(o) && !telling(o));
-  // the spans: walk both ways from each bridge line through ends shared by exactly two bridge lines
-  const spans: { span: { bridge: T; reversed: boolean }[]; points: { p: Point; owner: T; index: number }[]; distances: number[] }[] = [];
-  const done = new Set<BridgeLine>();
-  for (const start of bridges) {
-    if (done.has(start)) {
-      continue;
-    }
-    const span: { bridge: T; reversed: boolean }[] = [{ bridge: start, reversed: false }];
-    done.add(start);
-    const extend = (atEnd: boolean) => {
-      for (;;) {
-        const edge = atEnd ? span[span.length - 1] : span[0];
-        const line = edge.bridge.line;
-        // the free end of the edge line in the direction we walk
-        const free = (edge.reversed !== atEnd ? line[line.length - 1] : line[0]);
-        const next = (byEnd.get(key(free)) ?? []).filter((b) => b !== edge.bridge);
-        if (next.length !== 1 || done.has(next[0]) || (byEnd.get(key(free)) ?? []).length !== 2 || landsOn(free)) {
-          return;
-        }
-        const nextLine = next[0].line;
-        const startsHere = key(nextLine[0]) === key(free);
-        // walking forward, the next line should start at `free`; walking backward, end there
-        const item = { bridge: next[0], reversed: atEnd ? !startsHere : startsHere };
-        done.add(next[0]);
-        if (atEnd) {
-          span.push(item);
-        } else {
-          span.unshift(item);
-        }
-      }
-    };
-    extend(true);
-    extend(false);
+  return { spans: [...ways.filter(spanning), ...carried, ...lifting], toldAt, telling, lifting };
+}
 
-    // the span's points in order, and each one's distance along it
-    const points: { p: Point; owner: T; index: number }[] = [];
-    for (const { bridge, reversed } of span) {
-      const indices = bridge.line.map((_, i) => i);
-      if (reversed) {
-        indices.reverse();
-      }
-      for (const i of indices) {
-        points.push({ p: bridge.line[i], owner: bridge, index: i });
-      }
-    }
-    const distances = [0];
-    for (let i = 1; i < points.length; i++) {
-      distances.push(distances[i - 1] + Math.hypot(points[i].p[0] - points[i - 1].p[0], points[i].p[1] - points[i - 1].p[1]));
-    }
-    spans.push({ span, points, distances });
-  }
+function roads(ways: Way[]): Road[] {
+  return ways.filter(isRoad);
+}
 
-  // A junction (three or more bridge lines meet) has no ground of its own: its height is the average of
-  // the spans' other ends, weighted by nearness, like a stretched net
-  const junction = (k: string) => (byEnd.get(k) ?? []).length > 2;
-  const ends = new Map<string, { height: number | undefined; approaches: Approach<T>[] }>();
-  for (const { points } of spans) {
-    for (const end of [points[0].p, points[points.length - 1].p]) {
-      if (ends.has(key(end)) || junction(key(end))) {
+/**
+ * The spans' landings: where a line ends that no other span goes on from, or a way on the ground meets them (not steps
+ * telling a height), each with its height (the ground's, or up the ways leading on where the hollow under the bridge
+ * reaches past it, or the boardwalk's it ends on; none for a free end: into a building, or a lifted line's dead end)
+ * and the ways leading on, which the lifted lines raise none of, with how far each is raised out of the hollow
+ */
+function landings(spans: Way[], atPoint: Map<string, Way[]>, heightAt: HeightAt, indoors: (p: Point) => boolean, lifting: Set<Way>, telling: Set<Way>, boardwalks: Road[]): Landing[] {
+  const spanned = new Set(spans);
+  const found = new Map<string, Landing>();
+  for (const span of spans) {
+    for (const p of [span.line[0], span.line[span.line.length - 1]]) {
+      const there = atPoint.get(pointKey(p)) ?? [];
+      const leading = there.filter((o) => !spanned.has(o));
+      const onwards = there.filter((o) => spanned.has(o) && o !== span);
+      if (found.has(pointKey(p)) || (onwards.length > 0 && leading.every((o) => telling.has(o)))) {
         continue;
       }
-      const leading = onward.get(key(end)) ?? [];
-      const lifting = (byEnd.get(key(end)) ?? []).some((b) => elevated.has(b));
-      const approaches = lifting ? [] : leading.filter((l) => l.deck === undefined).map((l) => approach(l, key(l.line[0]) === key(end), heightAt));
-      // no line on: into a building, or a lifted line's dead end
-      const through = (atPoint.get(key(end)) ?? []).filter((o) => !spanned(o));
-      const free = (indoors(end) && leading.length === 0) || (lifting && through.length === 0);
-      const heights = [free ? undefined : heightAt(...end), ...approaches.map((a) => a.top)].filter((h) => h !== undefined);
-      ends.set(key(end), { height: heights.length > 0 ? Math.max(...heights) : undefined, approaches });
+      const lifts = there.some((o) => lifting.has(o));
+      const free = (indoors(p) && leading.length === 0) || (lifts && leading.length === 0);
+      const host = boardwalks.find((b) => b.deck && leading.includes(b));
+      const approaches = lifts ? [] : leading.filter(approachable(telling)).map((line) => approach(line, p, heightAt));
+      const heights = [free ? undefined : heightAt(...p), ...approaches.map((a) => a.top)].filter((h) => h !== undefined);
+      const height = host?.deck ? deckAt(host.line, host.deck, p) : heights.length > 0 ? Math.max(...heights) : undefined;
+      found.set(pointKey(p), { p, height, approaches, host: host !== undefined, inner: false });
     }
-  }
-  const junctions = new Map<string, number>();
-  const heightOf = (k: string) => (junction(k) ? junctions.get(k) : ends.get(k)?.height);
-  for (let round = 0; round < JUNCTION_ROUNDS; round++) {
-    let moved = 0;
-    const sums = new Map<string, { sum: number; weight: number }>();
-    for (const { points, distances } of spans) {
-      const total = distances[distances.length - 1];
-      const [k0, k1] = [key(points[0].p), key(points[points.length - 1].p)];
-      for (const [k, other] of [[k0, k1], [k1, k0]]) {
-        const h = heightOf(other);
-        if (junction(k) && k !== other && total > 0 && h !== undefined) {
-          const s = sums.get(k) ?? { sum: 0, weight: 0 };
-          sums.set(k, { sum: s.sum + h / total, weight: s.weight + 1 / total });
-        }
+    // the ways leading off a span from its inner points are its approaches too, which hang from its deck there
+    for (const p of span.line.slice(1, -1)) {
+      const leading = (atPoint.get(pointKey(p)) ?? []).filter((o) => !spanned.has(o) && approachable(telling)(o));
+      if (!found.has(pointKey(p)) && leading.length > 0 && !lifting.has(span)) {
+        found.set(pointKey(p), { p, height: undefined, approaches: leading.map((line) => approach(line, p, heightAt)), host: false, inner: true });
       }
     }
-    for (const [k, { sum, weight }] of sums) {
-      const h = sum / weight;
-      moved = Math.max(moved, Math.abs(h - (junctions.get(k) ?? Infinity)));
-      junctions.set(k, h);
+  }
+  return [...found.values()];
+}
+
+interface Landing {
+  p: Point;
+  height: number | undefined;
+  approaches: Approach[];
+  /** On a boardwalk's deck, which it keeps to */
+  host: boolean;
+  /** At a span's inner point: no landing, its deck the span's */
+  inner: boolean;
+}
+
+/** Whether a way may be raised as an approach: on the ground, no steps telling a height */
+function approachable(telling: Set<Way>): (way: Way) => boolean {
+  return (way) => offStructures(way) && !telling.has(way) && way.line.length >= 2;
+}
+
+/**
+ * The points where the ways pass under the decks, every STEP_M along them and at their points (not the ways meeting a
+ * deck, which lead on from it), with the deck's segment over each and the room: the way's or the bridge's OSM tells,
+ * else its users' (a tram's under its overhead line)
+ */
+function underWays(ways: Way[], spans: Way[], model: HeightModel, atPoint: Map<string, Way[]>): Under[] {
+  const index = new DeckIndex(spans);
+  const spanned = new Set(spans);
+  const found: Under[] = [];
+  for (const way of ways.filter((w) => offStructures(w) && !spanned.has(w) && w.line.length >= 2 && !rampOut(w, atPoint))) {
+    const points = new Set(way.line.map(pointKey));
+    const along = distancesAlong(way.line);
+    for (const d of stations(0, along[along.length - 1], along)) {
+      const p = pointAt(way.line, along, d);
+      const deck = index.spanOver(p, way.layer);
+      const ground = model.groundAt(p);
+      // a railway under a railway's deck is beside its own bridge
+      if (!deck || ground === undefined || deck.way.line.some((q) => points.has(pointKey(q))) || (!isRoad(way) && !isRoad(deck.way))) {
+        continue;
+      }
+      const told = way.clearance ?? deck.way.roomUnder;
+      const user = userOf(way);
+      const room = told ?? (user === "trams" ? TRAM_CUT_CLEARANCE_M : MIN_CLEARANCE_M[user]);
+      const [a, b] = [model.deckKey(deck.way, deck.segment), model.deckKey(deck.way, deck.segment + 1)];
+      found.push({ way, at: d, ground, deck: [a, b, deck.t], room, told: told !== undefined });
     }
-    if (moved < 0.001) {
-      break;
+  }
+  return found;
+}
+
+/** Whether a way leads out of a tunnel, which ramps down to its portal (tunnels.ts' rampsOut), under a deck too */
+function rampOut(way: Way, atPoint: Map<string, Way[]>): boolean {
+  return way.line.some((p) => (atPoint.get(pointKey(p)) ?? []).some(inTunnel));
+}
+
+/** The distances from `from` to `to` along a line no more than STEP_M apart, and its points' distances (along) between */
+function stations(from: number, to: number, along: number[]): number[] {
+  const pieces = Math.max(1, Math.ceil((to - from) / STEP_M - 1e-9));
+  // a step's station at a point of the line is the point's
+  const snap = (d: number) => along.find((x) => Math.abs(x - d) < 1e-6) ?? d;
+  const found = [...Array.from({ length: pieces + 1 }, (_, i) => snap(from + ((to - from) * i) / pieces)), ...along.filter((d) => d > from && d < to)];
+  return [...new Set(found)].sort((x, y) => x - y);
+}
+
+/** The heights' program: its points, the ways' stretches in it, and its bounds */
+class HeightModel {
+  readonly nodes = new Map<string, HeightNode>();
+  readonly edges: Edge[] = [];
+  readonly bounds: Bound[] = [];
+  /** Each way's stations in the program: distance along it → its point's key */
+  readonly regions = new Map<Way, Map<number, string>>();
+  readonly heights = new Map<string, number>();
+  readonly conflicts: DeckConflict[] = [];
+  readonly #under: Under[] = [];
+  readonly #underOf = new Map<Way, Under[]>();
+  /** The landings' heights (none: a free end's), those kept to a host's deck, and the approaches' lowest out of the hollows */
+  readonly #landings = new Map<string, number | undefined>();
+  readonly #fixed = new Map<string, number>();
+  readonly #told = new Map<string, number>();
+  readonly #fills = new Map<string, number>();
+  readonly #hollows = new Map<Way, (Approach & { height: number | undefined })[]>();
+  readonly #alongs = new Map<Way, number[]>();
+  readonly #deckKeys = new Map<Way, string[]>();
+  readonly #sorted = new Map<Way, [number, string][]>();
+  readonly #stretches = new Map<Way, { from: number; to: number; kind: "approach" | "cut"; held: (k: string) => boolean; deadEnds: boolean }[]>();
+  readonly #grounds = new Map<string, number | undefined>();
+  readonly #heightAt: HeightAt;
+  raised = 0;
+  cut = 0;
+
+  constructor(heightAt: HeightAt) {
+    this.#heightAt = heightAt;
+  }
+
+  groundAt(p: Point): number | undefined {
+    const k = pointKey(p);
+    return this.#grounds.has(k) ? this.#grounds.get(k) : this.#grounds.set(k, this.#heightAt(...p)).get(k);
+  }
+
+  /** A point of a way, of a kind (the higher of NODE_RANK where several ways' meet), its key: a point added to its line the way's own */
+  node(p: Point, kind: HeightNode["kind"], way: Way, own: boolean, low?: number): string {
+    const k = own ? pointKey(p) : `${pointKey(p)}|${way.osm}`;
+    const ground = this.groundAt(p) ?? low ?? 0;
+    const there = this.nodes.get(k);
+    if (!there || NODE_RANK[kind] > NODE_RANK[there.kind]) {
+      this.nodes.set(k, { p, kind, ground, low: Math.max(low ?? ground, there?.low ?? -Infinity), weight: there?.weight ?? 0, rail: !isRoad(way), train: userOf(way) === "trains", osm: way.osm });
+    } else if (low !== undefined) {
+      there.low = Math.max(there.low, low);
+    }
+    return k;
+  }
+
+  /** A stretch of a way from one point to the next, of a kind */
+  edge(way: Way, a: string, b: string, length: number, kind: HeightNode["kind"]): void {
+    this.edges.push({ a, b, length, kind, way });
+    [a, b].forEach((k) => {
+      const node = this.nodes.get(k);
+      if (node) {
+        node.weight += length / 2;
+      }
+    });
+  }
+
+  /** The spans' points, and the heights steps tell at them (each a riser told): how many */
+  addDecks(spans: Way[], toldAt: (p: Point, except?: Way) => number | undefined, original: Map<Way, Set<string>>): number {
+    let told = 0;
+    for (const span of spans) {
+      const along = distancesAlong(span.line);
+      const keys = span.line.map((p) => this.node(p, "deck", span, original.get(span)?.has(pointKey(p)) ?? true));
+      this.#deckKeys.set(span, keys);
+      keys.slice(1).forEach((k, i) => this.edge(span, keys[i], k, along[i + 1] - along[i], "deck"));
+      span.line.forEach((p, i) => {
+        const h = toldAt(p, span);
+        if (h !== undefined) {
+          told++;
+          this.#told.set(keys[i], Math.max(h, this.#told.get(keys[i]) ?? -Infinity));
+          this.bounds.push({ cost: ROOM_COST, bound: "steps", k: keys[i], terms: [[keys[i], 1]], lower: h, upper: Infinity });
+        }
+      });
+    }
+    return told;
+  }
+
+  /** The landings' heights, and the ways leading on from them within APPROACH_REACH_M (of their users, past a way of other users held at the ground), out of the hollows under the bridges first */
+  addApproaches(landings: Landing[], atPoint: Map<string, Way[]>, telling: Set<Way>): void {
+    for (const { p, height: ground, approaches, host, inner } of landings) {
+      const k = pointKey(p);
+      if (inner) {
+        continue;
+      }
+      // steps up to it tell its height
+      const height = this.#told.get(k) ?? ground;
+      this.#landings.set(k, height);
+      // on a boardwalk, or with no way to raise as an approach, it keeps its height
+      // a railway's deck stays on its landings: its line keeps its gentle grade far past the approaches, and its tracks side by side would part
+      if ((host || approaches.length === 0 || this.nodes.get(k)?.rail) && height !== undefined) {
+        this.#fixed.set(k, height);
+      }
+      approaches.forEach((a) => pushTo(this.#hollows, a.line, { ...a, height }));
+    }
+    const may = approachable(telling);
+    for (const user of new Set(landings.flatMap((l) => l.approaches.map((a) => userOf(a.line))))) {
+      const sources = landings.flatMap((l) => l.approaches.filter((a) => userOf(a.line) === user));
+      const own = (w: Way) => may(w) && userOf(w) === user;
+      this.#region("approach", this.#reach(sources.map((a) => ({ way: a.line, at: a.at })), APPROACH_REACH_M, own, atPoint), (k) => (atPoint.get(k) ?? []).some((o) => !own(o)), false);
     }
   }
 
-  // the decks a span may end on: the boardwalks' points and the other bridge lines' inner points
-  const hostsAt = new Map<string, T[]>();
-  const host = (p: Point, l: T) => hostsAt.set(key(p), [...(hostsAt.get(key(p)) ?? []), l]);
-  for (const b of boardwalks) {
-    b.line.forEach((p) => host(p, b));
-  }
-  for (const b of bridges) {
-    b.line.slice(1, -1).forEach((p) => host(p, b));
-  }
-  const hostsOf = (p: Point, own: Set<T>) => (hostsAt.get(key(p)) ?? []).filter((h) => !own.has(h));
-  const hostedAt = (p: Point, own: Set<T>) => {
-    const heights = hostsOf(p, own).flatMap((h) => (h.deck ? [deckAt(h.line, h.deck, p)] : []));
-    return heights.length > 0 ? Math.max(...heights) : undefined;
-  };
-  let told = 0;
-  // the landings the decks over the ways under them raise, and how high one may: as its embankments may, down at
-  // the grade to the ground by where they first cross a way of other users, or by their ends; a junction's, one on
-  // another deck and one with no line leading on to embank stay as they are
-  const raised = new Map<string, number>();
-  const landingCap = (p: Point, h: number | undefined, grade: number, own: Set<T>) => {
-    const end = ends.get(key(p));
-    if (h === undefined || !end || junction(key(p)) || hostedAt(p, own) !== undefined) {
-      return h ?? -Infinity;
+  /** The ways under the decks, within a cut's reach along those of their kind and layer: the room under the decks over them */
+  addCuts(under: Under[], atPoint: Map<string, Way[]>): void {
+    const group = (w: Way) => `${userOf(w)}|${w.layer}`;
+    const cut = under.filter((u) => !u.told);
+    for (const key of new Set(cut.map((u) => group(u.way)))) {
+      const sources = cut.filter((u) => group(u.way) === key);
+      // a way with the room under it told keeps to the ground
+      const own = (w: Way) => offStructures(w) && group(w) === key && w.clearance === undefined && !rampOut(w, atPoint);
+      const reach = MAX_DEPTH_M / GRADE[userOf(sources[0].way)] + BEND_SPAN_M;
+      this.#region("cut", this.#reach(sources.map((u) => ({ way: u.way, at: u.at })), reach, own, atPoint), (k) => (atPoint.get(k) ?? []).some((o) => !own(o)), true);
     }
-    const caps = end.approaches.map(({ line, atStart }) => {
-      const along = atStart ? line.line : [...line.line].reverse();
-      let d = 0;
-      for (let i = 1; i < along.length; i++) {
-        d += Math.hypot(along[i][0] - along[i - 1][0], along[i][1] - along[i - 1][1]);
-        if (i === along.length - 1 || room.crosses?.(line, along[i]) === true) {
-          return (heightAt(...along[i]) ?? -Infinity) + grade * d;
-        }
+    this.#under.push(...under);
+    under.forEach((u) => pushTo(this.#underOf, u.way, u));
+  }
+
+  /** The stretches of the ways `may` takes within reach of the sources along them: each way's [from, to] (m along it) */
+  #reach(sources: { way: Way; at: number }[], reach: number, may: (way: Way) => boolean, atPoint: Map<string, Way[]>): Map<Way, [number, number][]> {
+    const anchors = new Map<Way, { at: number; d: number }[]>();
+    const best = new Map<string, number>();
+    const heap = new MinHeap<string>();
+    const reachTo = (k: string, d: number) => {
+      if (d < reach && d < (best.get(k) ?? Infinity)) {
+        best.set(k, d);
+        heap.push(k, d);
       }
-      return -Infinity;
-    });
-    return caps.length > 0 ? Math.max(h, Math.min(...caps)) : h;
-  };
-  const deckSpan = ({ span, points, distances }: (typeof spans)[number]) => {
-    const own = new Set(span.map((s) => s.bridge));
-    const total = distances[distances.length - 1];
-    const first = hostedAt(points[0].p, own) ?? heightOf(key(points[0].p));
-    const last = hostedAt(points[points.length - 1].p, own) ?? heightOf(key(points[points.length - 1].p));
-    // the known heights along the span: its ends, and where steps come up to it; an end without one is level
-    const known: { d: number; h: number }[] = points.flatMap(({ p, owner }, i) => {
-      const h = toldAt(p, owner);
-      return h === undefined ? [] : [{ d: distances[i], h }];
-    });
-    told += known.length;
-    // each line's points by their distance along the span
-    const byOwner = new Map<T, Map<number, number>>();
-    points.forEach(({ owner, index }, i) => byOwner.set(owner, (byOwner.get(owner) ?? new Map<number, number>()).set(index, distances[i])));
-    // the deck's least heights over the ways under it, by distance along the span, and how high its grade leaves
-    // the deck from them on (lift): its free ends rise to that, and the deck runs on the hull of them all
-    const grade = room.grade(span[0].bridge);
-    const [a0, b0] = [first ?? known[0]?.h ?? last, last ?? known[known.length - 1]?.h ?? first];
-    // as high as each landing may rise (landingCap)
-    const [capA, capB] = [landingCap(points[0].p, a0, grade, own), landingCap(points[points.length - 1].p, b0, grade, own)];
-    const least = span.flatMap(({ bridge }) =>
-      room.least(bridge).map(({ p, h }) => {
-        const d = alongLine(bridge.line, byOwner.get(bridge) ?? new Map<number, number>(), p);
-        return { d, h: Math.min(h, capA + grade * d, capB + grade * (total - d)) };
+    };
+    for (const { way, at } of sources) {
+      pushTo(anchors, way, { at, d: 0 });
+      this.#along(way).forEach((x, i) => reachTo(pointKey(way.line[i]), Math.abs(x - at)));
+    }
+    for (let top = heap.pop(); top; top = heap.pop()) {
+      if (top.value > (best.get(top.item) ?? Infinity)) {
+        continue;
+      }
+      for (const way of (atPoint.get(top.item) ?? []).filter(may)) {
+        const along = this.#along(way);
+        way.line.forEach((p, i) => {
+          if (pointKey(p) === top.item) {
+            pushTo(anchors, way, { at: along[i], d: top.value });
+            [i - 1, i + 1].filter((j) => j >= 0 && j < along.length).forEach((j) => reachTo(pointKey(way.line[j]), top.value + Math.abs(along[j] - along[i])));
+          }
+        });
+      }
+    }
+    return new Map(
+      [...anchors].map(([way, list]) => {
+        const length = this.#along(way)[way.line.length - 1];
+        return [way, merged(list.map(({ at, d }): [number, number] => [Math.max(0, at - (reach - d)), Math.min(length, at + (reach - d))]))];
       }),
     );
-    const lift = (d: number) => Math.max(-Infinity, ...least.map((k) => k.h - grade * Math.abs(d - k.d)));
-    const landing = (h: number | undefined, d: number, p: Point) => {
-      const up = lift(d);
-      if (h === undefined || up <= h + 1e-9) {
-        return h;
-      }
-      raised.set(key(p), Math.max(up, raised.get(key(p)) ?? -Infinity));
-      return up;
-    };
-    const plain = a0 === undefined || b0 === undefined ? undefined : upperHull([{ d: 0, h: a0 }, ...known, { d: total, h: b0 }]);
-    if (plain && least.some((k) => k.h > along(plain, k.d) + 1e-9)) {
-      span.forEach(({ bridge }) => room.raised?.(bridge));
+  }
+
+  /** Stretches of ways of a kind, held at the ground where `held`, and (deadEnds) at a way's end no other meets */
+  #region(kind: "approach" | "cut", stretches: Map<Way, [number, number][]>, held: (k: string) => boolean, deadEnds: boolean): void {
+    for (const [way, list] of stretches) {
+      list.forEach(([from, to]) => pushTo(this.#stretches, way, { from, to, kind, held, deadEnds }));
     }
-    const a = landing(a0, 0, points[0].p);
-    const b = landing(b0, total, points[points.length - 1].p);
-    const profile = a === undefined || b === undefined ? undefined : upperHull([{ d: 0, h: a }, ...known, ...least, { d: total, h: b }]);
-    const curves = profile ? crests(profile) : [];
-    const base = (d: number) => (profile ? rounded(profile, curves, d) : undefined);
-    // where the crests' curves would round the deck under its least heights, it keeps them, with points there
-    const lifted: number[] = [];
-    if (profile && least.length > 0) {
-      for (let x = 0; x <= total; x += CREST_STEP_M) {
-        if (lift(x) > (base(x) ?? Infinity)) {
-          lifted.push(x);
+  }
+
+  /**
+   * The stations and steps of the ways' stretches, those of several kinds on a way joined (an approach's where they
+   * overlap), held at the ground at their ends inside a way
+   */
+  build(atPoint: Map<string, Way[]>): void {
+    for (const [way, list] of this.#stretches) {
+      const along = this.#along(way);
+      const length = along[along.length - 1];
+      const own = new Map<number, string>();
+      this.regions.set(way, own);
+      const covering = (d: number) => list.filter((s) => s.from <= d + 1e-6 && s.to >= d - 1e-6).sort((x, y) => NODE_RANK[y.kind] - NODE_RANK[x.kind])[0];
+      for (const [from, to] of merged(list.map((s): [number, number] => [s.from, s.to]))) {
+        const ds = stations(from, to, [...along, ...this.#fillEnds(way)]);
+        const keys = ds.map((d, i) => {
+          const p = pointAt(way.line, along, d);
+          const k = pointKey(p);
+          const by = covering(d);
+          const end = (d > 1e-6 && d < length - 1e-6 && (i === 0 || i === ds.length - 1)) || (by?.deadEnds && (atPoint.get(k) ?? []).length === 1 && (d < 1e-6 || d > length - 1e-6));
+          return this.node(p, end || !by || by.held(k) ? "held" : by.kind, way, along.includes(d));
+        });
+        ds.forEach((d, i) => {
+          own.set(d, keys[i]);
+          const fill = this.#fill(way, d);
+          if (fill !== undefined) {
+            this.#fills.set(keys[i], Math.max(fill, this.#fills.get(keys[i]) ?? -Infinity));
+          }
+        });
+        keys.slice(1).forEach((k, i) => this.edge(way, keys[i], k, ds[i + 1] - ds[i], covering((ds[i] + ds[i + 1]) / 2)?.kind ?? "cut"));
+      }
+    }
+  }
+
+  /** How high an approach's point `d` along its way is raised out of the hollow under its bridge: from its landing's height down to the ground where the ground stops rising */
+  #fill(way: Way, d: number): number | undefined {
+    const fills = (this.#hollows.get(way) ?? []).flatMap(({ at, toward, length, height }) => {
+      const off = (d - at) * toward;
+      const end = this.groundAt(pointAt(way.line, this.#along(way), at + toward * length));
+      return height === undefined || end === undefined || length <= 0 || off < 0 || off > length ? [] : [height + ((end - height) * off) / length];
+    });
+    return fills.length > 0 ? Math.max(...fills) : undefined;
+  }
+
+  /** Where along a way its approaches' fills out of the hollows end */
+  #fillEnds(way: Way): number[] {
+    return (this.#hollows.get(way) ?? []).filter((a) => a.length > 0).map(({ at, toward, length }) => at + toward * length);
+  }
+
+  /**
+   * The ways beside the cuts, their surfaces in a cut's room (its width and ROOM_SIDE_M either side), share its height
+   * there: they go down with it, or hold it at theirs
+   */
+  addBesides(ways: Way[]): void {
+    const near = ways.filter((w) => offStructures(w) && w.line.length >= 2);
+    const index = indexOwnBoxes(near.map((w) => grownRect(bounds(w.line), widthOf(w) / 2)));
+    for (const [way, own] of this.regions) {
+      const reach = widthOf(way) / 2 + ROOM_SIDE_M;
+      const keys = new Set(way.line.map(pointKey));
+      for (const k of own.values()) {
+        const node = this.nodes.get(k);
+        if (node?.kind !== "cut") {
+          continue;
         }
-      }
-    }
-    for (const { bridge } of span) {
-      const at = byOwner.get(bridge) ?? new Map<number, number>();
-      const height = (d: number, p: Point) => Math.max(base(d) ?? heightAt(...p) ?? 0, lift(d));
-      const line: Point[] = [];
-      const deck: number[] = [];
-      bridge.line.forEach((p, j) => {
-        const d = at.get(j) ?? 0;
-        if (j > 0) {
-          const [q, d0] = [bridge.line[j - 1], at.get(j - 1) ?? 0];
-          for (const x of over(curves, d0, d, lifted)) {
-            const t = (x - d0) / (d - d0);
-            const r: Point = [q[0] + (p[0] - q[0]) * t, q[1] + (p[1] - q[1]) * t];
-            line.push(r);
-            deck.push(height(x, r));
+        const p = node.p;
+        // not where they meet: a way crossing it, or leading on from it
+        const meets = (other: Way) => other.line.some((q) => keys.has(pointKey(q)) && Math.hypot(q[0] - p[0], q[1] - p[1]) < reach + widthOf(other));
+        for (const other of index(grownRect(bounds([p]), reach)).map((i) => near[i]).filter((o) => o !== way && !meets(o))) {
+          const { point, distance, segment } = nearestOnLine(other.line, p);
+          const terms = this.#terms(other, this.#along(other)[segment] + Math.hypot(point[0] - other.line[segment][0], point[1] - other.line[segment][1]));
+          const ground = this.groundAt(point);
+          if (distance < reach + widthOf(other) / 2 && (terms.length > 0 || ground !== undefined)) {
+            const level = terms.length > 0 ? 0 : (ground ?? 0);
+            this.bounds.push({ cost: ROOM_COST, bound: "room", k, terms: [[k, 1], ...terms.map(([q, v]): [string, number] => [q, -v])], lower: level, upper: level });
           }
         }
-        line.push(p);
-        deck.push(height(d, p));
-      });
-      bridge.line = line;
-      bridge.deck = deck;
-    }
-  };
-  // a span ending on a deck waits for it; spans ending on each other take the heights they have
-  const waits = ({ span, points }: (typeof spans)[number]) => {
-    const own = new Set(span.map((s) => s.bridge));
-    return [points[0].p, points[points.length - 1].p].some((p) => hostsOf(p, own).some((h) => h.deck === undefined && h.boardwalk !== true));
-  };
-  let pending = spans;
-  while (pending.length > 0) {
-    const ready = pending.filter((s) => !waits(s));
-    const now = new Set(ready.length > 0 ? ready : pending);
-    now.forEach(deckSpan);
-    pending = pending.filter((s) => !now.has(s));
-  }
-  for (const [k, end] of ends) {
-    const landing = raised.get(k);
-    for (const a of end.approaches) {
-      const ramp = landing === undefined ? a : embankment(a, landing, room.grade(a.line), heightAt);
-      const height = landing ?? end.height;
-      if (height !== undefined && ramp.length > 0) {
-        raiseApproach(lines, ramp, height, heightAt);
       }
     }
   }
-  return told;
+
+  /** A span's point's key */
+  deckKey(span: Way, i: number): string {
+    return this.#deckKeys.get(span)?.[i] ?? pointKey(span.line[i]);
+  }
+
+  /** A way's stations in the program in order along it, once its stretches are all there */
+  #stations(way: Way): [number, string][] {
+    const found = this.#sorted.get(way) ?? [...(this.regions.get(way) ?? [])].sort((x, y) => x[0] - y[0]);
+    this.#sorted.set(way, found);
+    return found;
+  }
+
+  #along(way: Way): number[] {
+    const found = this.#alongs.get(way) ?? distancesAlong(way.line);
+    this.#alongs.set(way, found);
+    return found;
+  }
+
+  /** Solves the heights, a program for each group of points the bounds join */
+  solve(lp: SolveLp): void {
+    const decks = groupsOf(this.edges.filter((e) => e.kind === "deck").map((e) => [e.a, e.b]));
+    const anchors = new Map<string, number>();
+    for (const [k, h] of [...this.#landings, ...this.#told]) {
+      const root = decks(k);
+      anchors.set(root, Math.max(h ?? -Infinity, anchors.get(root) ?? -Infinity));
+    }
+    const bounds = [...this.bounds, ...this.#grades(decks), ...this.#bends(), ...this.#rooms()];
+    const groups = groupsOf([...this.edges.map((e): [string, string] => [e.a, e.b]), ...bounds.flatMap((b) => b.terms.map(([q]): [string, string] => [b.k, q]))]);
+    const keysOf = new Map<string, string[]>();
+    const rowsOf = new Map<string, Bound[]>();
+    this.nodes.forEach((_, k) => pushTo(keysOf, groups(k), k));
+    bounds.forEach((b) => pushTo(rowsOf, groups(b.k), b));
+    const missed = new Map<string, DeckConflict>();
+    for (const [group, keys] of keysOf) {
+      const rows = rowsOf.get(group) ?? [];
+      const index = new Map(keys.map((k, i) => [k, i]));
+      const program = new SoftProgram<{ k: string; bound: DeckConflict["bound"] }>();
+      for (const k of keys) {
+        const node = this.nodes.get(k);
+        const [low, high] = node ? this.#limits(k, node, anchors.get(decks(k))) : [0, 0];
+        program.column((node?.weight ?? 0) * (node?.train ? TRACK_COST : 1) * (node?.kind === "cut" ? -CUT_COST : node?.kind === "held" ? 0 : RAISE_COST), low, high);
+      }
+      rows.forEach(({ cost, bound, k, terms, lower, upper }) => program.soft({ cost, lower, upper, tag: { k, bound }, terms: terms.map(([q, v]): [number, number] => [index.get(q) ?? -1, v]) }));
+      const solved = program.solve(lp, RESOLUTION_M / 2);
+      keys.forEach((k, i) => solved && this.heights.set(k, solved.x[i]));
+      for (const { tag: { k, bound }, by } of solved?.missed ?? []) {
+        const way = this.nodes.get(k)?.osm ?? k;
+        if (by > (missed.get(`${way} ${bound}`)?.by ?? 0)) {
+          missed.set(`${way} ${bound}`, { way, bound, at: this.nodes.get(k)?.p ?? [0, 0], by });
+        }
+      }
+    }
+    this.conflicts.push(...missed.values());
+  }
+
+  /** How low and high a point may be: a landing at its height (a free end at its deck's highest landing's), an approach over its ground or fill, a cut no deeper than MAX_DEPTH_M */
+  #limits(k: string, node: HeightNode, anchor: number | undefined): [number, number] {
+    const fixed = this.#fixed.get(k);
+    if (node.kind === "deck") {
+      const known = anchor !== undefined && Number.isFinite(anchor);
+      const landing = this.#landings.has(k) ? (this.#landings.get(k) ?? (known ? anchor : node.ground)) : known ? -Infinity : node.ground;
+      return fixed === undefined ? [landing, Infinity] : [fixed, fixed];
+    }
+    if (node.kind === "approach") {
+      return [Math.max(node.ground, this.#fills.get(k) ?? -Infinity), Infinity];
+    }
+    return node.kind === "cut" ? [node.ground - MAX_DEPTH_M, node.ground] : [node.ground, node.ground];
+  }
+
+  /** A point's lowest as its kind lets it: an approach's out of the hollow */
+  #low(k: string): number {
+    const node = this.nodes.get(k);
+    return node?.kind === "approach" ? Math.max(node.ground, this.#fills.get(k) ?? -Infinity) : (node?.ground ?? 0);
+  }
+
+  /**
+   * The grades between the points: a deck's no steeper than its users' or its landings' between them, an approach's
+   * than the ground under it, or stairs for people, and missed past its users' grade only at GRADE_COST, a cut's than
+   * its users' (stairs') or the ground's
+   */
+  #grades(decks: (k: string) => string): Bound[] {
+    const steepest = new Map<string, number>();
+    const landings = [...this.#landings, ...this.#told].flatMap(([k, h]) => (h === undefined ? [] : [{ k, h, p: this.nodes.get(k)?.p ?? [0, 0] }]));
+    for (const a of landings) {
+      for (const b of landings.filter((l) => l.k !== a.k && decks(l.k) === decks(a.k))) {
+        steepest.set(decks(a.k), Math.max(steepest.get(decks(a.k)) ?? 0, Math.abs(a.h - b.h) / (Math.hypot(a.p[0] - b.p[0], a.p[1] - b.p[1]) || 1)));
+      }
+    }
+    return this.edges.flatMap(({ a, b, length, kind, way }) => {
+      const grade = isRoad(way) && way.kind === "steps" && kind === "cut" ? STAIRS_GRADE : GRADE[userOf(way)];
+      const ground = Math.abs(this.#low(a) - this.#low(b));
+      const row = (cost: number, most: number): Bound => ({ cost, bound: "grade", k: a, terms: [[a, 1], [b, -1]], lower: -most, upper: most });
+      if (kind === "deck") {
+        return [row(GRADE_COST, Math.max(grade, steepest.get(decks(a)) ?? 0) * length)];
+      }
+      if (kind === "approach") {
+        return [row(GRADE_COST, Math.max(grade * length, ground)), ...(userOf(way) === "people" ? [row(HARD_COST, Math.max(STAIRS_GRADE * length, ground))] : [])];
+      }
+      return [row(HARD_COST, Math.max(grade * length, ground))];
+    });
+  }
+
+  /**
+   * The bends along the lines through the points: a deck's through its interior's and a junction's straightest pair
+   * of neighbours, never dipping, an approach's and a cut's where two of its kind meet (held at junctions), each as
+   * much as the ground's or MAX_BEND_M over BEND_SPAN_M lets it
+   */
+  #bends(): Bound[] {
+    const next = new Map<string, Edge[]>();
+    this.edges.forEach((e) => [e.a, e.b].forEach((k) => pushTo(next, k, e)));
+    const found: Bound[] = [];
+    for (const [k, node] of this.nodes) {
+      const edges = next.get(k) ?? [];
+      // a deck's through its own steps, the ways leading off it aside
+      const own = edges.filter((e) => e.kind === node.kind);
+      const through = node.kind === "held" || this.#landings.has(k) || (node.kind !== "deck" && own.length < edges.length) ? [] : straightest(node.p, own.map((e) => (e.a === k ? e.b : e.a)), this.nodes);
+      if (through.length !== 2 || (node.kind !== "deck" && edges.length !== 2)) {
+        continue;
+      }
+      const keys = [through[0], k, through[1]];
+      const points = keys.map((q) => this.nodes.get(q)?.p ?? node.p);
+      for (const { terms, allowed } of bends(points, keys)) {
+        const ground = node.kind === "deck" ? 0 : terms.reduce((sum, [q, v]) => sum + v * this.#low(q), 0);
+        const cost = node.kind === "deck" && node.rail ? HARD_COST : BEND_COST;
+        found.push({ cost, bound: "bend", k, terms, lower: node.kind === "deck" ? -Infinity : Math.min(0, ground) - allowed, upper: Math.max(0, ground) + allowed });
+        if (node.kind === "deck") {
+          found.push({ cost: HARD_COST, bound: "dip", k, terms, lower: 0, upper: Infinity });
+        }
+      }
+    }
+    return found;
+  }
+
+  /**
+   * The room under the decks over the ways, and under a railway's its users' least, hard: a tramway's over the
+   * lowest its bed goes down to under a deck, MAX_DEPTH_M under the ground (trackbeds.ts), as it is in no cut
+   */
+  #rooms(): Bound[] {
+    return this.#under.flatMap(({ way, at, ground, deck: [a, b, t], room }) => {
+      const on = this.#terms(way, at);
+      const terms: [string, number][] = [[a, 1 - t], [b, t], ...on.map(([q, v]): [string, number] => [q, -v])];
+      const base = on.length > 0 ? 0 : ground;
+      const row = (cost: number, least: number, under = 0): Bound => ({ cost, bound: "room", k: a, terms, lower: least + DECK_THICKNESS_M + base - under, upper: Infinity });
+      const user = userOf(way);
+      return user === "trams" ? [row(TRAM_ROOM_COST, room), row(HARD_COST, LEAST_CLEARANCE_M.trams, MAX_DEPTH_M)] : [row(ROOM_COST, room), ...(isRoad(way) ? [] : [row(HARD_COST, LEAST_CLEARANCE_M[user])])];
+    });
+  }
+
+  /** A way's height `at` along it as its stations' (the two around it, by how near), none where it has none there */
+  #terms(way: Way, at: number): [string, number][] {
+    const stationsOf = this.#stations(way);
+    const i = stationsOf.findIndex(([d]) => d >= at - 1e-9);
+    if (i < 0 || (i === 0 && stationsOf[0][0] > at + 1e-9)) {
+      return [];
+    }
+    const [[d1, k1], [d0, k0]] = [stationsOf[i], stationsOf[Math.max(0, i - 1)]];
+    const t = d1 > d0 ? (at - d0) / (d1 - d0) : 1;
+    return t >= 1 - 1e-9 ? [[k1, 1]] : [[k0, 1 - t], [k1, t]];
+  }
+
+  /** Sets a span's deck, keeping the points its line had and those its heights' shape needs */
+  setDeck(span: Way, kept: Set<string> = new Set()): void {
+    const keys = this.#deckKeys.get(span) ?? [];
+    const heights = span.line.map((p, i) => this.heights.get(keys[i]) ?? this.groundAt(p) ?? 0);
+    const profile = distancesAlong(span.line).map((d, i): Point => [d, heights[i]]);
+    const keep = new Set(profile.filter((_, i) => kept.has(pointKey(span.line[i]))));
+    const shaped = new Set(simplifyLine(profile, RESOLUTION_M / 2, (q) => keep.has(q)));
+    const indices = profile.flatMap((q, i) => (shaped.has(q) ? [i] : []));
+    span.line = indices.map((i) => span.line[i]);
+    span.deck = indices.map((i) => heights[i]);
+  }
+
+  /**
+   * A way split where its heights leave the ground: its stretches over the ground approaches with decks, those under it
+   * cuts with floors (a road's room there the least its users' and the decks over it leave), each with its line's
+   * points and those its heights' shape needs. Returns the stretches but the first, which the way keeps.
+   */
+  split(way: Way): Way[] {
+    const along = this.#along(way);
+    const stationsOf = this.#stations(way);
+    const level = stationsOf.map(([d, k]) => {
+      const ground = this.groundAt(pointAt(way.line, along, d)) ?? 0;
+      const h = this.heights.get(k) ?? ground;
+      return { d, h, side: h > ground + ON_GROUND_M ? 1 : h < ground - ON_GROUND_M ? -1 : 0 };
+    });
+    // the runs off the ground, each with the stations at the ground on either side
+    const runs: { from: number; to: number; side: number }[] = [];
+    level.forEach(({ side }, i) => {
+      const last = runs[runs.length - 1];
+      if (side !== 0 && last?.side === side && last.to >= i - 1) {
+        last.to = Math.min(i + 1, level.length - 1);
+      } else if (side !== 0) {
+        runs.push({ from: Math.max(0, i - 1), to: Math.min(i + 1, level.length - 1), side });
+      }
+    });
+    if (runs.length === 0) {
+      return [];
+    }
+    const base = { ...way };
+    const pieces: Way[] = [];
+    let from = 0;
+    for (const { from: start, to: j, side } of runs) {
+      const i = level.findIndex(({ d }, x) => x >= start && d >= from);
+      if (i < 0 || i >= j) {
+        continue;
+      }
+      pieces.push({ ...base, line: stretch(way.line, along, from, level[i].d) });
+      const run = level.slice(i, j + 1);
+      const profile = run.map(({ d, h }): Point => [d, h]);
+      const kept = new Set(profile.filter(([d]) => along.some((x) => Math.abs(x - d) < 1e-9)));
+      const shaped = simplifyLine(profile, RESOLUTION_M / 2, (q) => kept.has(q));
+      const line = shaped.map(([d]) => pointAt(way.line, along, d));
+      const heights = shaped.map(([, h]) => h);
+      pieces.push(side > 0 ? { ...base, line, deck: heights } : this.#cutPiece(way, { ...base, line, floor: heights }, [level[i].d, level[j].d]));
+      side > 0 ? this.raised++ : this.cut++;
+      from = level[j].d;
+    }
+    pieces.push({ ...base, line: stretch(way.line, along, from, along[along.length - 1]) });
+    const [head, ...rest] = pieces.filter((p) => p.line.length >= 2);
+    Object.assign(way, head);
+    return rest;
+  }
+
+  /** A stretch in a cut: its floor, and a road's room the least its users' and the decks over it leave */
+  #cutPiece(way: Way, piece: Way, [from, to]: [number, number]): Way {
+    if (!isRoad(piece)) {
+      return piece;
+    }
+    const lows = (this.#underOf.get(way) ?? []).map(({ at, deck: [a, b, t], ground }) => ({ at, left: (1 - t) * (this.heights.get(a) ?? 0) + t * (this.heights.get(b) ?? 0) - DECK_THICKNESS_M - (this.#heightOf(way, at) ?? ground) }));
+    const room = Math.min(MIN_CLEARANCE_M[userOf(way)], ...lows.filter(({ at }) => at >= from - 1e-6 && at <= to + 1e-6).map(({ left }) => left));
+    return { ...piece, room };
+  }
+
+  #heightOf(way: Way, at: number): number | undefined {
+    const terms = this.#terms(way, at);
+    return terms.length > 0 ? terms.reduce((sum, [k, v]) => sum + v * (this.heights.get(k) ?? 0), 0) : undefined;
+  }
+}
+
+/** Intervals joined where they overlap, in order */
+function merged(intervals: [number, number][]): [number, number][] {
+  const found: [number, number][] = [];
+  for (const [from, to] of [...intervals].sort((x, y) => x[0] - y[0])) {
+    const last = found[found.length - 1];
+    if (last && from <= last[1]) {
+      last[1] = Math.max(last[1], to);
+    } else {
+      found.push([from, to]);
+    }
+  }
+  return found;
+}
+
+/** Of the neighbours of a point, the two going on from it the straightest */
+function straightest(p: Point, neighbours: string[], nodes: Map<string, HeightNode>): string[] {
+  if (neighbours.length <= 2) {
+    return neighbours;
+  }
+  const out = neighbours.map((k) => {
+    const q = nodes.get(k)?.p ?? p;
+    const length = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1;
+    return { k, d: [(q[0] - p[0]) / length, (q[1] - p[1]) / length] };
+  });
+  const pairs = out.flatMap((a, i) => out.slice(i + 1).map((b) => ({ pair: [a.k, b.k], turn: a.d[0] * b.d[0] + a.d[1] * b.d[1] })));
+  return pairs.sort((x, y) => x.turn - y.turn)[0].pair;
+}
+
+/** The groups that pairs of keys join: each key's group's first key */
+function groupsOf(pairs: [string, string][]): (k: string) => string {
+  const parent = new Map<string, string>();
+  const find = (k: string): string => {
+    let root = k;
+    for (let up = parent.get(root); up !== undefined && up !== root; up = parent.get(root)) {
+      root = up;
+    }
+    for (let at = k; at !== root; ) {
+      const up = parent.get(at) ?? root;
+      parent.set(at, root);
+      at = up;
+    }
+    return root;
+  };
+  pairs.forEach(([a, b]) => {
+    const [ra, rb] = [find(a), find(b)];
+    if (ra !== rb) {
+      parent.set(ra, rb);
+    }
+  });
+  return find;
+}
+
+/** The part of a line from `from` to `to` meters along it (along: its points' distances) */
+function stretch(line: Point[], along: number[], from: number, to: number): Point[] {
+  const points = [pointAt(line, along, from), ...line.filter((_, i) => along[i] > from + 1e-9 && along[i] < to - 1e-9), pointAt(line, along, to)];
+  return points.filter((p, i) => i === 0 || Math.hypot(p[0] - points[i - 1][0], p[1] - points[i - 1][1]) > 1e-6);
 }
 
 /**
@@ -411,7 +871,7 @@ export function setBridgeDecks<T extends BridgeLine>(
  * BOARDWALK_SPAN_M (the lowest of the highest grounds of the stretches that long around each point), its line
  * getting points where the deck bends. A boardwalk with no ground under it gets none.
  */
-function setBoardwalkDeck(boardwalk: BridgeLine, heightAt: (e: number, n: number) => number | undefined): void {
+function setBoardwalkDeck(boardwalk: { line: Point[]; deck?: number[] }, heightAt: HeightAt): void {
   // the ground every step along the line, its points among them
   const samples: { p: Point; d: number; point: boolean }[] = [];
   let d = 0;
@@ -528,20 +988,6 @@ export function rounded(profile: { d: number; h: number }[], curves: Crest[], d:
   return curve.height + curve.grade * x - (curve.change * x * x) / (2 * curve.length);
 }
 
-/** The distances strictly between d0 and d1, from d0 on, every CREST_STEP_M over the curves, and those of `more` */
-function over(curves: Crest[], d0: number, d1: number, more: number[] = []): number[] {
-  const [low, high] = [Math.min(d0, d1), Math.max(d0, d1)];
-  const found: number[] = [...new Set(more)].filter((x) => x > low + 1e-6 && x < high - 1e-6);
-  for (const c of curves) {
-    for (let x = c.from; x <= c.from + c.length; x += CREST_STEP_M) {
-      if (x > low + 1e-6 && x < high - 1e-6) {
-        found.push(x);
-      }
-    }
-  }
-  return found.sort((x, y) => (d1 >= d0 ? x - y : y - x));
-}
-
 /** The height d along a profile of points by distance, straight between them and level past its ends */
 function along(profile: { d: number; h: number }[], d: number): number {
   if (d <= profile[0].d) {
@@ -556,64 +1002,28 @@ function along(profile: { d: number; h: number }[], d: number): number {
   return profile[profile.length - 1].h;
 }
 
-interface Approach<T> {
-  line: T;
-  /** Whether the approach is at the line's start (else its end) */
-  atStart: boolean;
-  /** Meters from the bridge's end to where the ground stops rising steeply (0: it does not rise) */
+
+interface Approach {
+  line: Way;
+  /** How far along the line its landing is, and which way along it the approach goes from there (0: both, from its middle) */
+  at: number;
+  toward: 1 | -1 | 0;
+  /** Meters from the bridge's end to where the ground stops rising steeply (0: it does not rise), and the ground there */
   length: number;
-  /** The ground there */
   top: number | undefined;
 }
 
-/** The distance along a line (its points' distances `at`, by index) of the nearest point on it to p */
-function alongLine(line: Point[], at: Map<number, number>, p: Point): number {
-  let best = { distance: Infinity, d: 0 };
-  for (let i = 0; i + 1 < line.length; i++) {
-    const [a, c] = [line[i], line[i + 1]];
-    const lengthSq = (c[0] - a[0]) ** 2 + (c[1] - a[1]) ** 2;
-    const t = lengthSq > 0 ? Math.min(Math.max(((p[0] - a[0]) * (c[0] - a[0]) + (p[1] - a[1]) * (c[1] - a[1])) / lengthSq, 0), 1) : 0;
-    const distance = Math.hypot(a[0] + (c[0] - a[0]) * t - p[0], a[1] + (c[1] - a[1]) * t - p[1]);
-    if (distance < best.distance) {
-      const [d0, d1] = [at.get(i) ?? 0, at.get(i + 1) ?? 0];
-      best = { distance, d: d0 + (d1 - d0) * t };
-    }
-  }
-  return best.d;
-}
-
-/** An approach raised to a landing at `height`: as far along its line as a ramp down at `grade` takes to meet the ground */
-function embankment<T extends BridgeLine>(a: Approach<T>, height: number, grade: number, heightAt: (e: number, n: number) => number | undefined): Approach<T> {
-  const points = a.atStart ? a.line.line : [...a.line.line].reverse();
-  let total = 0;
-  for (let i = 1; i < points.length; i++) {
-    total += Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
-  }
-  const above = (d: number) => {
-    const p = pointAlong(points, d);
-    const ground = p && heightAt(...p);
-    return ground === undefined ? 0 : height - grade * d - ground;
-  };
-  let before = above(0);
-  for (let d = EMBANKMENT_STEP_M; d < total; d += EMBANKMENT_STEP_M) {
-    const now = above(d);
-    if (now <= 0) {
-      const meets = d - (EMBANKMENT_STEP_M * now) / (now - before || 1);
-      return { ...a, length: Math.max(a.length, meets) };
-    }
-    before = now;
-  }
-  return { ...a, length: total };
-}
-
-/** Walks a line leading on from a bridge's end up to where the ground stops rising steeply. */
-function approach<T extends BridgeLine>(line: T, atStart: boolean, heightAt: (e: number, n: number) => number | undefined): Approach<T> {
-  const points = atStart ? line.line : [...line.line].reverse();
+/** Walks a line leading on from a bridge's end at p up to where the ground stops rising steeply (not from its middle) */
+function approach(line: Way, p: Point, heightAt: HeightAt): Approach {
+  const along = distancesAlong(line.line);
+  const i = line.line.findIndex((q) => pointKey(q) === pointKey(p));
+  const toward = i === 0 ? 1 : i === line.line.length - 1 ? -1 : 0;
+  const points = toward > 0 ? line.line : [...line.line].reverse();
   let length = 0;
-  let top = heightAt(...points[0]);
-  for (let d = APPROACH_STEP_M; d <= APPROACH_REACH_M; d += APPROACH_STEP_M) {
-    const p = pointAlong(points, d);
-    const h = p && heightAt(...p);
+  let top = heightAt(...p);
+  for (let d = APPROACH_STEP_M; d <= APPROACH_REACH_M && toward !== 0; d += APPROACH_STEP_M) {
+    const q = pointAlong(points, d);
+    const h = q && heightAt(...q);
     if (h === undefined || top === undefined) {
       break;
     }
@@ -626,45 +1036,8 @@ function approach<T extends BridgeLine>(line: T, atStart: boolean, heightAt: (e:
     length = d;
     top = h;
   }
-  return { line, atStart, length, top };
+  return { line, at: along[Math.max(0, i)], toward, length, top };
 }
-
-/** Gives an approach deck heights down from the bridge's end, splitting it off its line unless it is all of it. */
-function raiseApproach<T extends BridgeLine>(lines: T[], a: Approach<T>, height: number, heightAt: (e: number, n: number) => number | undefined): void {
-  const points = a.atStart ? a.line.line : [...a.line.line].reverse();
-  // the approach's points: the line's up to its length, and the point at its length
-  const ramp: Point[] = [points[0]];
-  let travelled = 0;
-  let i = 1;
-  for (; i < points.length; i++) {
-    const step = Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
-    if (travelled + step >= a.length) {
-      break;
-    }
-    travelled += step;
-    ramp.push(points[i]);
-  }
-  const end = pointAlong(points, a.length);
-  const whole = i >= points.length || !end;
-  if (!whole) {
-    ramp.push(end);
-  }
-  const low = heightAt(...ramp[ramp.length - 1]) ?? height;
-  let along = 0;
-  const deck = ramp.map((p, k) => {
-    along += k > 0 ? Math.hypot(p[0] - ramp[k - 1][0], p[1] - ramp[k - 1][1]) : 0;
-    const t = a.length > 0 ? Math.min(along / a.length, 1) : 1;
-    return Math.max(height + (low - height) * t, heightAt(...p) ?? -Infinity);
-  });
-  if (whole) {
-    a.line.deck = a.atStart ? deck : deck.reverse();
-    return;
-  }
-  const rest = [end, ...points.slice(i)];
-  a.line.line = a.atStart ? rest : rest.reverse();
-  lines.push({ ...a.line, line: a.atStart ? ramp : [...ramp].reverse(), deck: a.atStart ? deck : [...deck].reverse() });
-}
-
 /** The point d meters along a line from its start, or undefined past its end */
 export function pointAlong(points: Point[], d: number): Point | undefined {
   let left = d;

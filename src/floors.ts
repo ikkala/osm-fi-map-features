@@ -13,7 +13,7 @@
 // Within the bounds a floor keeps as high as it can, no higher than it hangs between its portals.
 import { deckAt } from "./bridges.ts";
 import { densify, distanceToRing, distanceToSegment, grownRect, indexOwnBoxes, inRect, metersAlong, MinHeap, nearestOnLine, nearestOnSegment, pointInPolygon, pointKey, pushTo, rectsMeet, RESOLUTION_M, type Point, type Rect } from "./geometry.ts";
-import type { LinearProgram, SolveLp } from "./lp.ts";
+import { SoftProgram, type SolveLp } from "./lp.ts";
 import { bounds, type Building, type MapFeatures, type Road } from "./osm.ts";
 import { inTunnel, isBridge } from "./profile.ts";
 import { acrossRoom, BED_M, COVER_M, lowestGround, pointsAround, spread, WALL_FOOTING_M, WATER_DEPTH_M, type TunnelNetwork, type TunnelNode } from "./tunnels.ts";
@@ -28,8 +28,8 @@ const COVERED_SHARE = 0.5;
 /** A tunnel's junctions are averaged this many rounds as it hangs between its portals (they settle in far fewer) */
 const HANG_ROUNDS = 1000;
 /** A floor bends over the line between its heights BEND_SPAN_M before and after it at most MAX_BEND_M (m), so that it does not kink */
-const BEND_SPAN_M = 10;
-const MAX_BEND_M = 0.1;
+export const BEND_SPAN_M = 10;
+export const MAX_BEND_M = 0.1;
 /**
  * The floors' bounds by priority, as the cost (per meter) of missing one at a point: the known floors hold; then the
  * straight floors between them, grades, bends and halls' shared floors (missed only where those leave no room for
@@ -37,8 +37,8 @@ const MAX_BEND_M = 0.1;
  * and lower only for those); then the cover, a shortfall making the roof a lid. Each meter a floor is deeper than it
  * needs costs SHALLOW_COST, so that the floors keep as high as their bounds let them.
  */
-const HARD_COST = 1e5;
-const ROOM_COST = 1e3;
+export const HARD_COST = 1e5;
+export const ROOM_COST = 1e3;
 const PORTAL_COST = 1e2;
 const COVER_COST = 1;
 const SHALLOW_COST = 1e-3;
@@ -137,51 +137,30 @@ function optimize(network: TunnelNetwork, groups: { keys: string[]; ways: Way[] 
   const missed = new Map<string, FloorConflict>();
   for (const { keys, ways } of groups) {
     const index = new Map(keys.map((k, i) => [k, i]));
-    const of = (k: string) => index.get(k) ?? -1;
-    const program: LinearProgram = { cost: [], lower: [], upper: [], rows: [] };
-    const column = (cost: number, lower: number, upper: number) => {
-      program.lower.push(lower);
-      program.upper.push(upper);
-      return program.cost.push(cost) - 1;
-    };
+    const program = new SoftProgram<{ k: string; bound: FloorConflict["bound"] }>();
     keys.forEach((k) => {
       const node = nodes.get(k);
       const f = node?.known ? node.floor : undefined;
-      column(f === undefined ? -SHALLOW_COST : 0, f ?? node?.level ?? -Infinity, node?.known || node?.portal !== undefined ? (node?.floor ?? Infinity) : Infinity);
+      program.column(f === undefined ? -SHALLOW_COST : 0, f ?? node?.level ?? -Infinity, node?.known || node?.portal !== undefined ? (node?.floor ?? Infinity) : Infinity);
     });
-    const slacks: { column: number; k: string; bound: FloorConflict["bound"] }[] = [];
-    // lower <= the terms' sum <= upper, missed by the slack's value at its cost
-    const soft = ({ cost, bound, k, terms, lower, upper }: FloorBound) => {
-      if (lower === -Infinity && upper === Infinity) {
-        return;
-      }
-      const slack = column(cost, 0, Infinity);
-      slacks.push({ column: slack, k, bound });
-      const sum = new Map<number, number>();
-      terms.forEach(([q, v]) => sum.set(of(q), (sum.get(of(q)) ?? 0) + v));
-      if (upper < Infinity) {
-        program.rows.push({ terms: new Map([...sum, [slack, -1]]), lower: -Infinity, upper });
-      }
-      if (lower > -Infinity) {
-        program.rows.push({ terms: new Map([...sum, [slack, 1]]), lower, upper: Infinity });
-      }
-    };
+    const soft = ({ cost, bound, k, terms, lower, upper }: FloorBound) =>
+      program.soft({ cost, lower, upper, tag: { k, bound }, terms: terms.map(([q, v]): [number, number] => [index.get(q) ?? -1, v]) });
     const grades = keys.flatMap((k) =>
       (nodes.get(k)?.next ?? []).filter(({ key }) => k < key).map(({ key, length }): FloorBound => ({ cost: HARD_COST, bound: "grade", k, terms: [[k, 1], [key, -1]], lower: -TUNNEL_GRADE * length, upper: TUNNEL_GRADE * length })),
     );
     const bent = ways.flatMap((way) => bends(way.line).map(({ k, terms, allowed }): FloorBound => ({ cost: HARD_COST, bound: "bend", k, terms, lower: -allowed, upper: allowed })));
     [...grades, ...bent, ...bounds.filter(({ k }) => index.has(k))].forEach(soft);
     // a group of tunnels with no bound gets no floors
-    const x = lp(program);
-    if (!x) {
+    const solved = program.solve(lp, RESOLUTION_M / 2);
+    if (!solved) {
       continue;
     }
-    keys.forEach((k, i) => floors.set(k, x[i]));
+    keys.forEach((k, i) => floors.set(k, solved.x[i]));
     // the most each way misses each bound by
-    for (const { column: c, k, bound } of slacks.filter(({ column: c }) => x[c] >= RESOLUTION_M / 2)) {
+    for (const { tag: { k, bound }, by } of solved.missed) {
       const way = through.get(k)?.[0]?.osm ?? k;
-      if (x[c] > (missed.get(`${way} ${bound}`)?.by ?? 0)) {
-        missed.set(`${way} ${bound}`, { way, bound, at: nodes.get(k)?.p ?? [0, 0], by: x[c] });
+      if (by > (missed.get(`${way} ${bound}`)?.by ?? 0)) {
+        missed.set(`${way} ${bound}`, { way, bound, at: nodes.get(k)?.p ?? [0, 0], by });
       }
     }
   }
@@ -189,11 +168,10 @@ function optimize(network: TunnelNetwork, groups: { keys: string[]; ways: Way[] 
 }
 
 /**
- * A line's bends: at each point its floor less the line between its neighbours' floors, as its key and the terms, and
- * how far that may be either way: as far as a curve bending MAX_BEND_M over BEND_SPAN_M either way does
+ * A line's bends: at each point its floor less the line between its neighbours' floors, as its key (keys: the points')
+ * and the terms, and how far that may be either way: as far as a curve bending MAX_BEND_M over BEND_SPAN_M either way does
  */
-function bends(line: Point[]): { k: string; terms: [string, number][]; allowed: number }[] {
-  const keys = line.map(pointKey);
+export function bends(line: Point[], keys = line.map(pointKey)): { k: string; terms: [string, number][]; allowed: number }[] {
   const length = (i: number) => Math.hypot(line[i + 1][0] - line[i][0], line[i + 1][1] - line[i][1]);
   return keys.slice(1, -1).flatMap((k, i) => {
     const [before, after] = [length(i), length(i + 1)];
