@@ -957,22 +957,19 @@ export function rampsOut<T extends Way>(ways: T[], network: TunnelNetwork): numb
 export function spread(nodes: Map<string, TunnelNode>, starts: [string, number][], cost: (length: number) => number): Map<string, number> {
   const best = new Map<string, number>();
   const heap = new MinHeap<string>();
-  for (const [k, value] of starts) {
+  const reach = (k: string, value: number) => {
     if (value < (best.get(k) ?? Infinity)) {
       best.set(k, value);
       heap.push(k, value);
     }
-  }
+  };
+  starts.forEach(([k, value]) => reach(k, value));
   for (let top = heap.pop(); top; top = heap.pop()) {
     if (top.value > (best.get(top.item) ?? Infinity)) {
       continue;
     }
     for (const { key: k, length } of nodes.get(top.item)?.next ?? []) {
-      const value = top.value + cost(length);
-      if (value < (best.get(k) ?? Infinity)) {
-        best.set(k, value);
-        heap.push(k, value);
-      }
+      reach(k, top.value + cost(length));
     }
   }
   return best;
