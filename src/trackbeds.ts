@@ -3,7 +3,7 @@
 // there, else the ground averaged around it. Tramways meeting end to end, two at a point, are one line for
 // this, their changes of grade are rounded to vertical curves, under a deck their bed leaves a tram its room, and
 // one branching off another's middle ends at that one's bed.
-import { densify, distancesAlong, pushTo, type Point } from "./geometry.ts";
+import { densify, distancesAlong, pointAt, pushTo, type Point } from "./geometry.ts";
 import type { Rail } from "./osm.ts";
 import { profileOf } from "./profile.ts";
 import { TRAMWAYS } from "./ways.ts";
@@ -322,18 +322,6 @@ function averageAround(p: Point, heightAt: (e: number, n: number) => number | un
     }
   }
   return count > 0 ? sum / count : undefined;
-}
-
-/** The point d meters along a line whose points are along[i] meters from its start */
-function pointAt(line: Point[], along: number[], d: number): Point {
-  for (let i = 1; i < line.length; i++) {
-    if (d <= along[i] || i === line.length - 1) {
-      const span = along[i] - along[i - 1];
-      const t = span > 0 ? Math.min(Math.max((d - along[i - 1]) / span, 0), 1) : 0;
-      return [line[i - 1][0] + (line[i][0] - line[i - 1][0]) * t, line[i - 1][1] + (line[i][1] - line[i - 1][1]) * t];
-    }
-  }
-  return line[0];
 }
 
 /** Indices of points to keep so the line and its heights stay within tolerance of straight between them, and the

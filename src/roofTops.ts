@@ -211,8 +211,7 @@ function partIndex(parts: MeasuredPart[]): (p: Point) => number | undefined {
   return (p) => {
     let highest: number | undefined;
     for (const { part, box } of cells.at(p)) {
-      const inBox = inRect(p, box);
-      if (inBox && (highest === undefined || part.top > highest) && pointInPolygon(p, part.polygon)) {
+      if (inRect(p, box) && (highest === undefined || part.top > highest) && pointInPolygon(p, part.polygon)) {
         highest = part.top;
       }
     }

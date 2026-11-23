@@ -4,7 +4,7 @@
 import type { MapFeatures } from "./osm.ts";
 import { openPassages } from "./passages.ts";
 import { deckAt } from "./bridges.ts";
-import { crossing, distancesAlong, type Point } from "./geometry.ts";
+import { crossing, distancesAlong, pointAt, type Point } from "./geometry.ts";
 import { inTunnel, isBridge, profileOf } from "./profile.ts";
 import { LEAST_CLEARANCE_M, LID_EDGE_M, LID_THICKNESS_M, MIN_CLEARANCE_M, userOf, widthOf, type Way } from "./ways.ts";
 
@@ -317,22 +317,12 @@ function bridgeOverLids<T extends Way>(ways: T[], tunnels: { way: Way; width: nu
 
 /** The part of a line from `from` to `to` meters along it; along is each point's distance */
 function slice(line: Point[], along: number[], from: number, to: number): Point[] {
-  const at = (d: number): Point => {
-    for (let i = 1; i < line.length; i++) {
-      if (d <= along[i] || i === line.length - 1) {
-        const span = along[i] - along[i - 1];
-        const k = span > 0 ? Math.min(Math.max((d - along[i - 1]) / span, 0), 1) : 0;
-        return [line[i - 1][0] + (line[i][0] - line[i - 1][0]) * k, line[i - 1][1] + (line[i][1] - line[i - 1][1]) * k];
-      }
-    }
-    return line[0];
-  };
-  const points: Point[] = [at(from)];
+  const points: Point[] = [pointAt(line, along, from)];
   for (let i = 0; i < line.length; i++) {
     if (along[i] > from && along[i] < to) {
       points.push(line[i]);
     }
   }
-  points.push(at(to));
+  points.push(pointAt(line, along, to));
   return points.filter((p, i) => i === 0 || Math.hypot(p[0] - points[i - 1][0], p[1] - points[i - 1][1]) > 1e-6);
 }

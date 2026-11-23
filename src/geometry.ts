@@ -41,6 +41,18 @@ export function densify(line: Point[], step: number): Point[] {
   return out;
 }
 
+/** The point d meters along a line whose points are along[i] meters from its start */
+export function pointAt(line: Point[], along: number[], d: number): Point {
+  for (let i = 1; i < line.length; i++) {
+    if (d <= along[i] || i === line.length - 1) {
+      const span = along[i] - along[i - 1];
+      const t = span > 0 ? Math.min(Math.max((d - along[i - 1]) / span, 0), 1) : 0;
+      return [line[i - 1][0] + (line[i][0] - line[i - 1][0]) * t, line[i - 1][1] + (line[i][1] - line[i - 1][1]) * t];
+    }
+  }
+  return line[0];
+}
+
 /** A line's length */
 export function lineLength(line: Point[]): number {
   let length = 0;
