@@ -56,6 +56,7 @@ import { leastDecks, lowerUnderBridges, tramBedCeiling } from "./underbridges.ts
 import { parseWaterways, setWaterLevels, waterwayQuery, type WaterLevels } from "./waterways.ts";
 import { GRADE, isRoad, userOf, type Way } from "./ways.ts";
 import { assignWindows } from "./windows.ts";
+import { messageOf } from "./json.ts";
 
 /** Roads and rails are simplified to this many meters */
 const LINE_TOLERANCE_M = 0.3;
@@ -311,7 +312,7 @@ export async function registerStage(world: OsmWorld, sources: Sources, logger: L
       attributions.push(BUILDING_REGISTER_ATTRIBUTION);
     }
   } catch (err) {
-    logger.warn(`warning: no building register data: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(`warning: no building register data: ${messageOf(err)}`);
   }
   // the register gives the halls their heights, and the outlines their facades and years
   logger.log(`${openRailHalls(features.buildings, features.rails)} halls opened where railways run in`);
@@ -338,7 +339,7 @@ export async function roofColourStage(world: OsmWorld, sources: Sources, after: 
     logger.log(`orthophoto: ${colours.size} of ${roofs.length} roofs without roof:colour coloured (${cached} cached, ${fetched} squares fetched)`);
     return colours.size > 0 ? [ORTHO_ATTRIBUTION] : [];
   } catch (err) {
-    logger.warn(`warning: no roof colours from the orthophoto: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(`warning: no roof colours from the orthophoto: ${messageOf(err)}`);
     return [];
   }
 }
@@ -377,7 +378,7 @@ export async function detailStage(world: OsmWorld, sources: Sources, after: Wind
     const guessed = guessEntrances(features.buildings, features.roads);
     logger.log(`${entrances.length} OSM entrances (${cached ? "cached" : "fetched"}), ${placed} on a building; doors guessed for ${guessed} buildings`);
   } catch (err) {
-    logger.warn(`warning: no entrances: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(`warning: no entrances: ${messageOf(err)}`);
   }
   // businesses after the entrances they show at
   try {
@@ -389,7 +390,7 @@ export async function detailStage(world: OsmWorld, sources: Sources, after: Wind
         `${placed.fronts} of them showing on a wall (${placed.atDoors} at their door)`,
     );
   } catch (err) {
-    logger.warn(`warning: no businesses: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(`warning: no businesses: ${messageOf(err)}`);
   }
   try {
     const { response, cached } = await sources.overpass("playground equipment", playgroundQuery);
@@ -400,7 +401,7 @@ export async function detailStage(world: OsmWorld, sources: Sources, after: Wind
         `${placed.merged} mapped twice merged, ${placed.rows} swings lined up in rows, ${placed.edges} with their playground's nearest edge`,
     );
   } catch (err) {
-    logger.warn(`warning: no playground equipment: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(`warning: no playground equipment: ${messageOf(err)}`);
   }
   try {
     const { response, cached } = await sources.overpass("landmarks", landmarkQuery, true, false);
@@ -416,7 +417,7 @@ export async function detailStage(world: OsmWorld, sources: Sources, after: Wind
         `${found.powerLines.length} power lines, ${found.pistes.length} pistes`,
     );
   } catch (err) {
-    logger.warn(`warning: no landmarks: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(`warning: no landmarks: ${messageOf(err)}`);
   }
   try {
     const { response, cached } = await sources.overpass("bicycle parkings", bicycleParkingQuery);
@@ -424,7 +425,7 @@ export async function detailStage(world: OsmWorld, sources: Sources, after: Wind
     const capacity = features.bicycleParkings.reduce((sum, p) => sum + (p.capacity ?? 0), 0);
     logger.log(`${features.bicycleParkings.length} bicycle parkings (${cached ? "cached" : "fetched"}), ${capacity} places where OSM tells`);
   } catch (err) {
-    logger.warn(`warning: no bicycle parking: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(`warning: no bicycle parking: ${messageOf(err)}`);
   }
 }
 
@@ -503,7 +504,7 @@ export async function buildingHeightStage(
       laserShape = (b) => shapeByBuilding.get(b);
       logger.log(`laser scanning: ${roofs.size} of ${measured.length} roofs measured (${cached} cached, ${fetched} sheets fetched${failed > 0 ? `, ${failed} failed` : ""})`);
     } catch (err) {
-      logger.warn(`warning: no roofs from the laser scanning: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(`warning: no roofs from the laser scanning: ${messageOf(err)}`);
     }
   }
   let lowered = 0;
@@ -532,7 +533,7 @@ export async function buildingHeightStage(
         attributions.push(source.attribution);
       }
     } catch (err) {
-      logger.warn(`warning: no data from the ${source.title}: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(`warning: no data from the ${source.title}: ${messageOf(err)}`);
     }
   }
   // the shapes after the heights: a roof's rise at most half of its building's
@@ -579,7 +580,7 @@ export async function treeStage(world: OsmWorld, sources: Sources, treeSources: 
         attributions.push(source.attribution);
       }
     } catch (err) {
-      logger.warn(`warning: no data from the ${source.title}: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(`warning: no data from the ${source.title}: ${messageOf(err)}`);
     }
   }
   if (registerTrees.length > 0) {
@@ -641,7 +642,7 @@ export async function waterStage(world: OsmWorld, sources: Sources, after: Build
     );
     return water;
   } catch (err) {
-    logger.warn(`warning: no waterways: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(`warning: no waterways: ${messageOf(err)}`);
     return undefined;
   }
 }

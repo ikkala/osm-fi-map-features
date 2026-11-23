@@ -56,6 +56,16 @@ export function tileName(tile: TileKey): string {
   return `${tile.x}_${tile.y}`;
 }
 
+/** The rectangle around the tiles */
+export function tilesRect(tiles: TileKey[], size: number): Rect {
+  return {
+    minX: Math.min(...tiles.map((key) => key.x)) * size,
+    minY: Math.min(...tiles.map((key) => key.y)) * size,
+    maxX: (Math.max(...tiles.map((key) => key.x)) + 1) * size,
+    maxY: (Math.max(...tiles.map((key) => key.y)) + 1) * size,
+  };
+}
+
 export function tileRect(tile: TileKey, size: number): Rect {
   return { minX: tile.x * size, minY: tile.y * size, maxX: (tile.x + 1) * size, maxY: (tile.y + 1) * size };
 }
