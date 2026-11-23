@@ -2,7 +2,7 @@
 // often runs on over a path with no opening of its own. A wall is cut open at a tunnel's portal in it too. A parapet
 // stands on a bridge's deck, over the ways passing under it, and so does a railing on a layer over the ground: they
 // open at their gates alone.
-import { crossing, distanceToSegment, pointKey, type Point } from "./geometry.ts";
+import { crossing, distancesAlong, distanceToSegment, pointKey, type Point } from "./geometry.ts";
 import { deckAt } from "./bridges.ts";
 import { DeckIndex } from "./deckIndex.ts";
 import { bounds, type Barrier, type Gate, type MapFeatures } from "./osm.ts";
@@ -43,7 +43,7 @@ export function openBarriers(features: MapFeatures): number {
   const pieces: Barrier[] = [];
   for (const barrier of features.barriers) {
     const box = bounds(barrier.line);
-    const lengths = cumulative(barrier.line);
+    const lengths = distancesAlong(barrier.line);
     // [from, to] meters along the barrier
     const cuts: [number, number][] = [];
     for (const way of barrier.parapet || bridgeRailing(barrier) ? [] : ways) {
@@ -84,7 +84,7 @@ function portals(features: MapFeatures): { line: Point[]; width: number }[] {
   for (const way of tunnels) {
     const width = widthOf(way) + ROOM_SIDE_M * 2;
     for (const line of [way.line, [...way.line].reverse()]) {
-      const lengths = cumulative(line);
+      const lengths = distancesAlong(line);
       const [end, next] = [line[0], line[1]];
       const length = Math.hypot(next[0] - end[0], next[1] - end[1]);
       if ((points.get(pointKey(end)) ?? 0) < 2 && length > 0) {
@@ -118,7 +118,7 @@ export function leaveOutOnDecks(features: MapFeatures, heightAt: (e: number, n: 
       pieces.push(barrier);
       continue;
     }
-    const lengths = cumulative(barrier.line);
+    const lengths = distancesAlong(barrier.line);
     const total = lengths[lengths.length - 1];
     const cuts: [number, number][] = [];
     for (let d = 0; d <= total; d += SAMPLE_M) {
@@ -178,14 +178,6 @@ function sine(a: Point, b: Point, c: Point, d: Point): number {
   const [ux, uy, vx, vy] = [b[0] - a[0], b[1] - a[1], d[0] - c[0], d[1] - c[1]];
   const lengths = Math.hypot(ux, uy) * Math.hypot(vx, vy);
   return lengths > 0 ? Math.abs(ux * vy - uy * vx) / lengths : 0;
-}
-
-function cumulative(line: Point[]): number[] {
-  const lengths = [0];
-  for (let i = 1; i < line.length; i++) {
-    lengths.push(lengths[i - 1] + Math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]));
-  }
-  return lengths;
 }
 
 /** Meters along the line to the gate's point, when the gate is in the line */

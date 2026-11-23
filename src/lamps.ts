@@ -1,7 +1,7 @@
 // Guesses street lamps' heights and facing, which OSM rarely has: a lamp faces the nearest street (or else
 // path) and is as tall as lamps by such a way usually are.
 import { DeckIndex } from "./deckIndex.ts";
-import { indexBoxes, nearestOnLine, type Point } from "./geometry.ts";
+import { grownRect, indexBoxes, nearestOnLine, type Point } from "./geometry.ts";
 import { bounds, type Road, type StreetLamp } from "./osm.ts";
 import { WALKWAYS } from "./ways.ts";
 import { inTunnel } from "./profile.ts";
@@ -33,7 +33,7 @@ export function placeLamps(lamps: StreetLamp[], roads: Road[]): { facing: number
   const reach = Math.max(STREET_REACH_M, PATH_REACH_M);
   const candidates = roads.filter((r) => !inTunnel(r) && r.line.length >= 2).map((road) => ({ road, box: bounds(road.line) }));
   const near = indexBoxes(
-    candidates.map(({ box }) => ({ minX: box.minX - reach, minY: box.minY - reach, maxX: box.maxX + reach, maxY: box.maxY + reach })),
+    candidates.map(({ box }) => grownRect(box, reach)),
     bounds(lamps.map((lamp) => lamp.point)),
   );
   const counts = { facing: 0, heights: 0, onDecks: 0 };

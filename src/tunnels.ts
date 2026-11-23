@@ -3,10 +3,10 @@
 // the buildings' walls opened over the tunnels, and the tunnels at the ground under buildings. Tunnels in cuts
 // (cuts.ts) are left to their cut.
 import { pointAlong } from "./bridges.ts";
-import { distanceToRing, distanceToSegment, MinHeap, nearestOnLine, pointInPolygon, pointKey, type Point } from "./geometry.ts";
+import { distancesAlong, distanceToRing, distanceToSegment, MinHeap, nearestOnLine, pointInPolygon, pointKey, pushTo, type Point } from "./geometry.ts";
 import { openPassages } from "./passages.ts";
 import { inTunnel, offStructures, profileOf } from "./profile.ts";
-import { bounds, LANE_WIDTH_M, type Building, type MapFeatures, type Opening, type Rail, type Road } from "./osm.ts";
+import { bounds, LANE_WIDTH_M, type Building, type MapFeatures, type Opening, type Road } from "./osm.ts";
 import { CLEARANCE_M, isRoad, ROOF_M, ROOM_SIDE_M, STAIRS_GRADE, TUNNEL_GRADE, userOf, WALKWAYS, widthOf, type Way } from "./ways.ts";
 
 /** A road's room is as low as its maxheight=*, but no lower than this (m): lower is a mistake in the data */
@@ -126,7 +126,7 @@ export function uncoverAtGrade(features: MapFeatures, heightAt: (e: number, n: n
   const byNetwork = new Map<string, typeof tunnels>();
   for (const tunnel of tunnels) {
     const k = root(pointKey(tunnel.way.line[0]));
-    byNetwork.set(k, [...(byNetwork.get(k) ?? []), tunnel]);
+    pushTo(byNetwork, k, tunnel);
   }
   const passages: { line: Point[]; width: number; height: number; railway: boolean }[] = [];
   for (const network of byNetwork.values()) {
@@ -343,7 +343,7 @@ function linkPoints(tunnels: Way[], levels: ReadonlyMap<Way, number[]>): { nodes
   for (const way of tunnels) {
     way.line = densify(way.line, FLOOR_STEP_M);
     for (const p of way.line) {
-      through.set(key(p), [...(through.get(key(p)) ?? []), way]);
+      pushTo(through, key(p), way);
     }
     const depth = COVER_M + ROOF_M + roomHeight(way);
     const half = widthOf(way) / 2 + ROOM_SIDE_M;
@@ -379,7 +379,7 @@ function findPortals(features: MapFeatures, tunnels: Way[], nodes: Map<string, T
   for (const way of [...features.roads, ...features.rails]) {
     if (!inTunnels.has(way) && way.line.length >= 2) {
       for (const p of [way.line[0], way.line[way.line.length - 1]]) {
-        byEnd.set(key(p), [...(byEnd.get(key(p)) ?? []), way]);
+        pushTo(byEnd, key(p), way);
       }
     }
   }
@@ -707,10 +707,7 @@ function levelWaysOver(roads: Road[], tunnels: Way[], walls: PortalWall[], model
         continue;
       }
       const line = [...stretchOf(road.line, from, first), ...stretchOf(road.line, first, last).slice(1), ...stretchOf(road.line, last, to).slice(1)];
-      const along = [from];
-      for (let i = 1; i < line.length; i++) {
-        along.push(along[i - 1] + Math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]));
-      }
+      const along = distancesAlong(line, from);
       const tops = along.map((d) =>
         d < first ? lowFrom + ((wall.top - lowFrom) * (d - from)) / (first - from) : d > last ? lowTo + ((wall.top - lowTo) * (to - d)) / (to - last) : wall.top,
       );
@@ -756,7 +753,7 @@ export function portalWallsAt(walls: readonly PortalWall[]): (e: number, n: numb
     const box = bounds(wall.line);
     for (let x = cell(box.minX - wall.half); x <= cell(box.maxX + wall.half); x++) {
       for (let y = cell(box.minY - wall.half); y <= cell(box.maxY + wall.half); y++) {
-        cells.set(cellKey(x, y), [...(cells.get(cellKey(x, y)) ?? []), wall]);
+        pushTo(cells, cellKey(x, y), wall);
       }
     }
   }
@@ -899,10 +896,7 @@ export function rampsOut<T extends Way>(ways: T[], network: TunnelNetwork): numb
           continue;
         }
         const floor = start.floor;
-        const along = [0];
-        for (let i = 1; i < outward.length; i++) {
-          along.push(along[i - 1] + Math.hypot(outward[i][0] - outward[i - 1][0], outward[i][1] - outward[i - 1][1]));
-        }
+        const along = distancesAlong(outward);
         const length = along[along.length - 1];
         const reach = Math.min(start.reach, length);
         const grade = isRoad(way) && RISING.has(way.kind) ? STAIRS_GRADE : TUNNEL_GRADE;

@@ -2,8 +2,7 @@
 // and the ways along its foot lean and wobble on it. Beside a retaining wall the ground is taken down to the
 // slope's foot on its low side and up to its top on the high side, as far out as the slope reaches, so the
 // ground steps at the wall.
-import type { Point } from "./geometry.ts";
-import { pointKey } from "./geometry.ts";
+import { distancesAlong, pointKey, pushTo, type Point } from "./geometry.ts";
 import type { Barrier } from "./osm.ts";
 
 /** A wall is looked at in stretches this long at most (m) */
@@ -81,10 +80,7 @@ export function groundSteps(barriers: readonly Barrier[], heightAt: (e: number, 
   const rising = new Map<number, { step: GroundStep; up: number[] }[]>();
   for (const [w, wall] of walls.entries()) {
     const line = wall.line;
-    const lengths = [0];
-    for (let i = 1; i < line.length; i++) {
-      lengths.push(lengths[i - 1] + Math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]));
-    }
+    const lengths = distancesAlong(line);
     const total = lengths[lengths.length - 1];
     const [freeStart, freeEnd] = [free(line[0]), free(line[line.length - 1])];
     const share = (d: number) => Math.min(1, freeStart ? d / EASE_M : 1, freeEnd ? (total - d) / EASE_M : 1);
@@ -290,12 +286,7 @@ function stepCells(steps: readonly GroundStep[]): Map<number, GroundStep[]> {
     const reach = WALL_REACH_M;
     for (let x = cell(Math.min(step.a[0], step.b[0]) - reach); x <= cell(Math.max(step.a[0], step.b[0]) + reach); x++) {
       for (let y = cell(Math.min(step.a[1], step.b[1]) - reach); y <= cell(Math.max(step.a[1], step.b[1]) + reach); y++) {
-        const list = cells.get(cellKey(x, y));
-        if (list) {
-          list.push(step);
-        } else {
-          cells.set(cellKey(x, y), [step]);
-        }
+        pushTo(cells, cellKey(x, y), step);
       }
     }
   }

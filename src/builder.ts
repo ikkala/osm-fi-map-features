@@ -47,8 +47,6 @@ export const DEFAULT_OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 const FETCH_MARGIN_M = 50;
 /** A source's pieces fetched at once: the public Overpass servers give an address two slots */
 const PIECES_AT_ONCE = 2;
-/** Roads and rails are simplified to this many meters */
-const LINE_TOLERANCE_M = 0.3;
 /** Ground height grid spacing; the elevation model has 2 m cells */
 const HEIGHT_STEP_M = 2;
 /** Elevation model coordinates are projected on a lattice this far apart (m) and interpolated: nearly linear over a tile */

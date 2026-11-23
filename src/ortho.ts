@@ -3,7 +3,7 @@
 // square of the photo, so maps of different places keep theirs.
 import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
-import { distanceToRing, pointInPolygon, type Point, type Polygon } from "./geometry.ts";
+import { distanceToRing, pointInPolygon, pushTo, type Point, type Polygon } from "./geometry.ts";
 import { field, isObject } from "./json.ts";
 
 export const ORTHO_ATTRIBUTION = "Orthophoto © Maanmittauslaitos (CC BY 4.0)";
@@ -198,7 +198,7 @@ export async function fetchRoofColours(
   outlines.forEach((outline, index) => {
     const box = ringBox(outline.outer);
     const square = `${Math.floor((box.minE + box.maxE) / 2 / SQUARE_M)}_${Math.floor((box.minN + box.maxN) / 2 / SQUARE_M)}`;
-    squares.set(square, [...(squares.get(square) ?? []), index]);
+    pushTo(squares, square, index);
   });
   const legacy = await readColours(LEGACY_CACHE_KEY, options);
   for (const [square, indices] of squares) {

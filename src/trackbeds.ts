@@ -4,7 +4,7 @@
 // this, their changes of grade are rounded to vertical curves, under a deck their bed leaves a tram its room, and
 // one branching off another's middle ends at that one's bed.
 import { densify } from "./tunnels.ts";
-import type { Point } from "./geometry.ts";
+import { distancesAlong, pushTo, type Point } from "./geometry.ts";
 import type { Rail } from "./osm.ts";
 import { profileOf } from "./profile.ts";
 import { TRAMWAYS } from "./ways.ts";
@@ -137,7 +137,7 @@ function chains(rails: Rail[], deckEnds: Set<string>): Member[][] {
   const byEnd = new Map<string, Rail[]>();
   for (const rail of trams) {
     for (const p of [rail.line[0], rail.line[rail.line.length - 1]]) {
-      byEnd.set(key(p), [...(byEnd.get(key(p)) ?? []), rail]);
+      pushTo(byEnd, key(p), rail);
     }
   }
   // the line going on from rail at its end p, or undefined
@@ -199,10 +199,7 @@ function setChainBed(
     line.push(...(line.length > 0 ? points.slice(1) : points));
     spans.push([from, line.length - 1]);
   }
-  const along = [0];
-  for (let i = 1; i < line.length; i++) {
-    along.push(along[i - 1] + Math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]));
-  }
+  const along = distancesAlong(line);
   const length = along[along.length - 1];
   // the ground every SAMPLE_M along the line
   const samples: { d: number; h: number }[] = [];

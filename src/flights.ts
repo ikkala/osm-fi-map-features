@@ -3,7 +3,7 @@
 // risers do. Where a straight flight with a step count (step_count) climbs much less in the model than its risers, the
 // ground steps along it: behind its top raised to the top found in the model a few meters on, under it straight down
 // to its foot, and past its foot lowered to the foot found a few meters on.
-import type { Point } from "./geometry.ts";
+import { pushTo, type Point } from "./geometry.ts";
 import type { Road } from "./osm.ts";
 import { inTunnel, isBridge } from "./profile.ts";
 
@@ -97,8 +97,7 @@ export function stepAtFlights(
     const [minN, maxN] = [Math.min(flight.top[1], flight.foot[1]) - reach, Math.max(flight.top[1], flight.foot[1]) + reach];
     for (let i = Math.floor(minE / CELL_M); i <= Math.floor(maxE / CELL_M); i++) {
       for (let j = Math.floor(minN / CELL_M); j <= Math.floor(maxN / CELL_M); j++) {
-        const k = `${i},${j}`;
-        cells.set(k, [...(cells.get(k) ?? []), flight]);
+        pushTo(cells, `${i},${j}`, flight);
       }
     }
   }

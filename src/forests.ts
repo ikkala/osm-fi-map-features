@@ -2,7 +2,7 @@
 // deterministically (each plant's place comes from its grid cell alone, and what it is from the cell and the
 // area's leaf type).
 import { bounds, type Area, type MapFeatures, type Rail, type Road, type Tree } from "./osm.ts";
-import { distanceToRing, distanceToSegment, pointInPolygon, polygonTest, RectGrid, type Point, type Rect } from "./geometry.ts";
+import { distanceToRing, distanceToSegment, grownRect, pointInPolygon, polygonTest, pushTo, RectGrid, type Point, type Rect } from "./geometry.ts";
 import { inTunnel, outOfTunnelsAndSpans } from "./profile.ts";
 import { RAIL_WIDTH_M } from "./ways.ts";
 
@@ -83,12 +83,7 @@ class PointGrid {
 
   add(point: Point): void {
     const key = `${Math.floor(point[0] / this.#cell)},${Math.floor(point[1] / this.#cell)}`;
-    const list = this.#cells.get(key);
-    if (list) {
-      list.push(point);
-    } else {
-      this.#cells.set(key, [point]);
-    }
+    pushTo(this.#cells, key, point);
   }
 
   /** Whether a point lies within distance of the point */
@@ -136,7 +131,7 @@ export function moveTreesOffWays(trees: Tree[], roads: Road[], rails: Rail[]): T
   }
   const over = bounds(trees.map((t) => t.point));
   const reach = 20;
-  const grid = new RectGrid<{ a: Point; b: Point; half: number }>(25, { minX: over.minX - reach, minY: over.minY - reach, maxX: over.maxX + reach, maxY: over.maxY + reach });
+  const grid = new RectGrid<{ a: Point; b: Point; half: number }>(25, grownRect(over, reach));
   for (const { line, half } of lines) {
     for (let i = 0; i + 1 < line.length; i++) {
       const [a, b] = [line[i], line[i + 1]];
@@ -205,9 +200,7 @@ export function plantForests(features: MapFeatures, within: Rect): number {
   });
   for (const building of features.buildings) {
     const { outer } = building.polygon;
-    const box = bounds(outer);
-    const rect = { minX: box.minX - BUILDING_CLEARANCE_M, minY: box.minY - BUILDING_CLEARANCE_M, maxX: box.maxX + BUILDING_CLEARANCE_M, maxY: box.maxY + BUILDING_CLEARANCE_M };
-    blockers.add(rect, (p) => pointInPolygon(p, building.polygon) || distanceToRing(p, outer) < BUILDING_CLEARANCE_M);
+    blockers.add(grownRect(bounds(outer), BUILDING_CLEARANCE_M), (p) => pointInPolygon(p, building.polygon) || distanceToRing(p, outer) < BUILDING_CLEARANCE_M);
   }
   for (const area of features.areas) {
     if (BARE_AREAS.has(area.kind)) {
@@ -222,9 +215,7 @@ export function plantForests(features: MapFeatures, within: Rect): number {
     for (let k = 0; k + 1 < line.length; k++) {
       const a = line[k];
       const b = line[k + 1];
-      const box = bounds([a, b]);
-      const rect = { minX: box.minX - clearance, minY: box.minY - clearance, maxX: box.maxX + clearance, maxY: box.maxY + clearance };
-      blockers.add(rect, (p) => distanceToSegment(p, a, b) < clearance);
+      blockers.add(grownRect(bounds([a, b]), clearance), (p) => distanceToSegment(p, a, b) < clearance);
     }
   }
 

@@ -12,7 +12,7 @@
 //   it is missed, the roof is a lid.
 // Within the bounds a floor keeps as high as it can, no higher than it hangs between its portals.
 import { deckAt } from "./bridges.ts";
-import { distanceToRing, distanceToSegment, indexBoxes, MinHeap, nearestOnLine, nearestOnSegment, pointInPolygon, pointKey, RESOLUTION_M, type Point, type Rect } from "./geometry.ts";
+import { distanceToRing, distanceToSegment, grownRect, indexOwnBoxes, MinHeap, nearestOnLine, nearestOnSegment, pointInPolygon, pointKey, pushTo, RESOLUTION_M, type Point } from "./geometry.ts";
 import type { LinearProgram, SolveLp } from "./lp.ts";
 import { bounds, type Building, type MapFeatures, type Road } from "./osm.ts";
 import { inTunnel, isBridge } from "./profile.ts";
@@ -44,20 +44,6 @@ const COVER_COST = 1;
 const SHALLOW_COST = 1e-3;
 /** A point this far (m) past the end of another tunnel's line is on a way going on from it, not beside it */
 const PAST_END_M = 0.5;
-
-function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
-  const list = map.get(key);
-  if (list) {
-    list.push(value);
-  } else {
-    map.set(key, [value]);
-  }
-}
-
-function grown(box: Rect, by: number): Rect {
-  return { minX: box.minX - by, minY: box.minY - by, maxX: box.maxX + by, maxY: box.maxY + by };
-}
-
 
 /**
  * A tunnel's floor known at a point (m), from a plan or a survey rather than from the ground over it: the height of
@@ -313,8 +299,8 @@ function hallEdges(a: Way, b: Way, reach: number, nodes: Map<string, TunnelNode>
 function touching(network: TunnelNetwork, pairs: [string, string][]): { keys: string[]; ways: Way[] }[] {
   const links = new Map([...network.nodes].map(([k, node]) => [k, node.next.map((n) => n.key)]));
   for (const [p, q] of pairs) {
-    push(links, p, q);
-    push(links, q, p);
+    pushTo(links, p, q);
+    pushTo(links, q, p);
   }
   const groupOf = new Map<string, { keys: string[]; ways: Way[] }>();
   for (const start of network.nodes.keys()) {
@@ -426,8 +412,8 @@ function underFootings(buildings: Building[], network: TunnelNetwork, basements:
     return [];
   }
   const boxes = standing.map((b) => bounds(b.polygon.outer));
-  const near = indexBoxes(boxes, bounds(boxes.flatMap((r): Point[] => [[r.minX, r.minY], [r.maxX, r.maxY]])));
-  const under = (node: TunnelNode) => near(grown(bounds([node.p]), node.half)).filter((i) => pointInPolygon(node.p, standing[i].polygon) || distanceToRing(node.p, standing[i].polygon.outer) < node.half);
+  const near = indexOwnBoxes(boxes);
+  const under = (node: TunnelNode) => near(grownRect(bounds([node.p]), node.half)).filter((i) => pointInPolygon(node.p, standing[i].polygon) || distanceToRing(node.p, standing[i].polygon.outer) < node.half);
   // a building a tunnel ends in or at (a portal, stairs up, a dead end), or a car park's aisles are under, is the
   // tunnel's: it goes into it
   const aisles = new Set(network.tunnels.filter((w) => isRoad(w) && w.service === "parking_aisle"));
@@ -465,7 +451,7 @@ function holdKnown(nodes: Map<string, TunnelNode>, through: Map<string, Way[]>, 
       nearest[1].known = true;
       count++;
       if (name !== undefined) {
-        push(knownByName, name, nearest[0]);
+        pushTo(knownByName, name, nearest[0]);
       }
     }
   }
@@ -633,8 +619,8 @@ function hang(nodes: Map<string, TunnelNode>): [string, number][] {
   for (const { keys: s, along } of stretches) {
     const [a, b, length] = [s[0], s[s.length - 1], along[along.length - 1]];
     if (a !== b && length > 0) {
-      ends.set(a, [...(ends.get(a) ?? []), { other: b, length }]);
-      ends.set(b, [...(ends.get(b) ?? []), { other: a, length }]);
+      pushTo(ends, a, { other: b, length });
+      pushTo(ends, b, { other: a, length });
     }
   }
   for (let round = 0; round < HANG_ROUNDS; round++) {

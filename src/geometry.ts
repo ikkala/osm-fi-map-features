@@ -17,6 +17,30 @@ export interface Rect {
   maxY: number;
 }
 
+/** Each point's distance along a line, from `start` at its first */
+export function distancesAlong(line: Point[], start = 0): number[] {
+  const along = [start];
+  for (let i = 1; i < line.length; i++) {
+    along.push(along[i - 1] + Math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]));
+  }
+  return along;
+}
+
+/** A rectangle grown by `by` on every side */
+export function grownRect(box: Rect, by: number): Rect {
+  return { minX: box.minX - by, minY: box.minY - by, maxX: box.maxX + by, maxY: box.maxY + by };
+}
+
+/** Adds a value to the list a map keeps at a key */
+export function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+  const list = map.get(key);
+  if (list) {
+    list.push(value);
+  } else {
+    map.set(key, [value]);
+  }
+}
+
 /** Clips a polyline to a rectangle; a line that leaves and re-enters becomes several lines. */
 export function clipPolyline(line: Point[], rect: Rect): Point[][] {
   const result: Point[][] = [];
@@ -346,13 +370,7 @@ export class RectGrid<T> {
     const maxJ = Math.floor(Math.min(rect.maxY, over.maxY) / this.#cell);
     for (let i = minI; i <= maxI; i++) {
       for (let j = minJ; j <= maxJ; j++) {
-        const key = `${i},${j}`;
-        const list = this.#cells.get(key);
-        if (list) {
-          list.push(item);
-        } else {
-          this.#cells.set(key, [item]);
-        }
+        pushTo(this.#cells, `${i},${j}`, item);
       }
     }
   }
@@ -385,6 +403,21 @@ export function indexBoxes(boxes: readonly Rect[], over: Rect): (rect: Rect) => 
   const grid = new RectGrid<number>(BOX_CELL_M, over);
   boxes.forEach((box, index) => grid.add(box, index));
   return (rect) => [...new Set(grid.within(rect))].sort((a, b) => a - b);
+}
+
+/** indexBoxes over the rectangle around the boxes' corners */
+export function indexOwnBoxes(boxes: readonly Rect[]): (rect: Rect) => number[] {
+  if (boxes.length === 0) {
+    return () => [];
+  }
+  const over = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  for (const { minX, minY, maxX, maxY } of boxes) {
+    over.minX = Math.min(over.minX, minX, maxX);
+    over.minY = Math.min(over.minY, minY, maxY);
+    over.maxX = Math.max(over.maxX, minX, maxX);
+    over.maxY = Math.max(over.maxY, minY, maxY);
+  }
+  return indexBoxes(boxes, over);
 }
 
 /**
@@ -598,6 +631,20 @@ export class MinHeap<T> {
 
 /** A way crossing a wall at a slant opens it at most this much wider than the way */
 const MAX_PASSAGE_SLANT = 3;
+
+/** Where two lines cross */
+export function lineCrossings(a: Point[], b: Point[]): Point[] {
+  const found: Point[] = [];
+  for (let i = 0; i + 1 < a.length; i++) {
+    for (let j = 0; j + 1 < b.length; j++) {
+      const hit = crossing(a[i], a[i + 1], b[j], b[j + 1], 0);
+      if (hit) {
+        found.push([a[i][0] + (a[i + 1][0] - a[i][0]) * hit.at, a[i][1] + (a[i + 1][1] - a[i][1]) * hit.at]);
+      }
+    }
+  }
+  return found;
+}
 
 /**
  * Where the way p -> q crosses the wall a -> c: at (0 .. 1 along the wall) and the half-width in meters

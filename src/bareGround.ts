@@ -12,7 +12,7 @@
 // the deck's width over the sine of the angle between them, so a rule from the span's length is one from the angle;
 // what tells them apart is where the way's cut or valley runs, and that is along the way only where it crosses the
 // bridge (CROSSING_RAD), not where it runs along under the deck.
-import { indexBoxes, pointInPolygon, pointKey, type Point, type Rect } from "./geometry.ts";
+import { grownRect, indexOwnBoxes, pointInPolygon, pointKey, type Point, type Rect } from "./geometry.ts";
 import type { HeightAt } from "./ground.ts";
 import { bounds, type BridgeOutline } from "./osm.ts";
 import { inTunnel, isBridge } from "./profile.ts";
@@ -89,21 +89,16 @@ export function bareUnderBridges(ways: readonly Way[], outlines: readonly Bridge
     return top === undefined ? [] : segments(way, widthOf(way) / 2 + ROOM_SIDE_M + WALLS_M).map((span) => ({ span, top }));
   });
   const boxOf = ({ a, ue, un, length, half }: Span): Rect => {
-    const box = bounds([a, [a[0] + ue * length, a[1] + un * length]]);
-    return { minX: box.minX - half, minY: box.minY - half, maxX: box.maxX + half, maxY: box.maxY + half };
+    return grownRect(bounds([a, [a[0] + ue * length, a[1] + un * length]]), half);
   };
   // an outline's gap goes across its bridge ways
   const decks = outlines
     .map((o) => ({ polygon: o.polygon, box: bounds(o.polygon.outer), spans: spans.filter(({ a }) => pointInPolygon(a, o.polygon)) }))
     .filter((deck) => deck.spans.length > 0);
   const boxes = [...spans.map(boxOf), ...decks.map(({ box }) => box)];
-  const near = indexBoxes(boxes, bounds(boxes.flatMap((r): Point[] => [[r.minX, r.minY], [r.maxX, r.maxY]])));
-  const indexOf = (list: Span[]) => {
-    const found = list.map(boxOf);
-    return found.length > 0 ? indexBoxes(found, bounds(found.flatMap((r): Point[] => [[r.minX, r.minY], [r.maxX, r.maxY]]))) : () => [];
-  };
-  const nearPassing = indexOf(passing);
-  const nearTunnels = indexOf(tunnels.map(({ span }) => span));
+  const near = indexOwnBoxes(boxes);
+  const nearPassing = indexOwnBoxes(passing.map(boxOf));
+  const nearTunnels = indexOwnBoxes(tunnels.map(({ span }) => boxOf(span)));
   const within = (span: Span, p: Point) => {
     const { t, off } = across(span, p);
     return t >= 0 && t <= span.length && Math.abs(off) <= span.half;
