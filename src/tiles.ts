@@ -217,18 +217,12 @@ export function cutIntoTiles(features: MapFeatures, keys: TileKey[], size: numbe
   // trees, lamps and the points on ways have no ids: south to north, then west to east
   const byPlace = (a: { point: Point }, b: { point: Point }) => a.point[1] - b.point[1] || a.point[0] - b.point[0];
   for (const tile of tiles.values()) {
-    tile.roads.sort(byOsmId);
-    tile.rails.sort(byOsmId);
-    tile.buildings.sort(byOsmId);
-    tile.areas.sort(byOsmId);
-    tile.trees.sort(byPlace);
-    tile.lamps.sort(byPlace);
-    tile.crossings.sort(byPlace);
-    tile.signals.sort(byPlace);
-    tile.gates.sort(byPlace);
-    tile.barriers.sort(byOsmId);
-    tile.playEquipment.sort(byOsmId);
-    tile.bridgeDecks.sort(byOsmId);
+    for (const key of ["roads", "rails", "buildings", "areas", "barriers", "playEquipment", "bridgeDecks"] as const) {
+      tile[key].sort(byOsmId);
+    }
+    for (const key of ["trees", "lamps", "crossings", "signals", "gates"] as const) {
+      tile[key].sort(byPlace);
+    }
     for (const key of LANDMARK_SECTIONS) {
       tile[key]?.sort(byOsmId);
     }
