@@ -4,7 +4,7 @@
 // map's cached sources (see the README's measured defaults).
 import { partOutlines } from "./buildingParts.ts";
 import { bounds, type Building } from "./osm.ts";
-import { pointInPolygon, ringCentroid, type Point, type Polygon } from "./geometry.ts";
+import { pointInPolygon, pushTo, ringCentroid, type Point, type Polygon } from "./geometry.ts";
 
 /** A building measured: its storeys, the year it was built, and its height over the ground to its roof's top */
 export interface StoreySample {
@@ -44,7 +44,7 @@ function line(samples: StoreySample[]): { rise: number; storey: number } | undef
   const byStoreys = new Map<number, number[]>();
   for (const s of samples) {
     if (s.storeys >= MIN_STOREYS) {
-      byStoreys.set(s.storeys, [...(byStoreys.get(s.storeys) ?? []), s.height]);
+      pushTo(byStoreys, s.storeys, s.height);
     }
   }
   const points = [...byStoreys].filter(([, heights]) => heights.length >= MIN_BUILDINGS).map(([n, heights]) => ({ n, h: median(heights), w: heights.length }));
@@ -142,8 +142,7 @@ export function storeySamples(buildings: Building[], register: RegisterPoint[], 
   for (const w of whole) {
     for (let x = Math.floor(w.box.minX / CELL_M); x <= Math.floor(w.box.maxX / CELL_M); x++) {
       for (let y = Math.floor(w.box.minY / CELL_M); y <= Math.floor(w.box.maxY / CELL_M); y++) {
-        const key = `${x},${y}`;
-        cells.set(key, [...(cells.get(key) ?? []), w]);
+        pushTo(cells, `${x},${y}`, w);
       }
     }
   }

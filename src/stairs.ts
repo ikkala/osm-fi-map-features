@@ -1,7 +1,7 @@
 // Steps mapped as a building part (building:part=steps under a skillion roof, the slope they climb) show the steps
 // themselves: a way of steps (highway=steps) inside them is left out, so the steps are not in the map twice.
 // A staircase whose landings the elevation model puts out of line climbs one riser all the way instead.
-import { distanceToRing, pointInRing, pointKey, type Point, type Ring } from "./geometry.ts";
+import { distanceToRing, pointInRing, pointKey, pushTo, type Point, type Ring } from "./geometry.ts";
 import type { Building, Road } from "./osm.ts";
 import { offStructures } from "./profile.ts";
 
@@ -60,7 +60,7 @@ export function setStaircaseDecks(roads: Road[], heightAt: (e: number, n: number
   const atPoint = new Map<string, Road[]>();
   for (const r of roads) {
     for (const k of new Set(r.line.map(pointKey))) {
-      atPoint.set(k, [...(atPoint.get(k) ?? []), r]);
+      pushTo(atPoint, k, r);
     }
   }
   const first = (r: Road) => r.line[0];

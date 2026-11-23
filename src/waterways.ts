@@ -3,7 +3,7 @@
 // banks. A still water gets one level, the median of its surface; a flowing one falls along the
 // waterways in it, never rising downstream, and each point of it is as high as the waterway nearest it.
 import { deckAt } from "./bridges.ts";
-import { clipPolyline, distanceToSegment, pointKey, polygonTest, RectGrid, ringArea, type Point, type Polygon, type Rect } from "./geometry.ts";
+import { clipPolyline, distancesAlong, distanceToSegment, pointKey, polygonTest, pushTo, RectGrid, ringArea, type Point, type Polygon, type Rect } from "./geometry.ts";
 import { bounds, type Area, type GeoBox, type OverpassResponse } from "./osm.ts";
 import { inTunnel } from "./profile.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
@@ -316,7 +316,7 @@ function capAtJunctions(lines: WaterwayLine[], levels: Map<WaterwayLine, number[
   const endingAt = new Map<string, WaterwayLine[]>();
   for (const line of lines) {
     const key = pointKey(line.line[line.line.length - 1]);
-    endingAt.set(key, [...(endingAt.get(key) ?? []), line]);
+    pushTo(endingAt, key, line);
   }
   // the level a line leaves its end at: its last one, or what it was capped at when it has none
   const caps = new Map<WaterwayLine, number>();
@@ -426,10 +426,7 @@ function nearestSample(samples: RectGrid<Sample>, point: Point): Sample | undefi
 
 /** The points of a stretch to keep: each left out is within TOLERANCE of the straight line, level and width between those kept */
 function simplifyStretch(points: Point[], levels: number[], widths: number[]): number[] {
-  const along = [0];
-  for (let i = 1; i < points.length; i++) {
-    along.push(along[i - 1] + Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]));
-  }
+  const along = distancesAlong(points);
   const keep = new Set([0, points.length - 1]);
   const split = (a: number, b: number) => {
     let worst = -1;

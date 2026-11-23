@@ -5,7 +5,7 @@
 // Only the roofs and their fits are cached, a file per sheet, so maps of different places keep theirs and the choice
 // can change without fetching the sheets again.
 import type { CacheOptions } from "./cache.ts";
-import { distanceToRing, pointInPolygon, type Point, type Polygon } from "./geometry.ts";
+import { distanceToRing, pointInPolygon, pushTo, type Point, type Polygon } from "./geometry.ts";
 import { field, isObject, items, optionalNumber, optionalString } from "./json.ts";
 import { fitGambrel, GAMBREL_REACH_M, type GambrelFit } from "./gambrelRoofs.ts";
 import { chooseRoofShape, fitRoofShapes, type LaserRoofShape, type RoofFit } from "./laserRoofShapes.ts";
@@ -287,7 +287,7 @@ export async function fetchLaserRoofs(
   const groups = new Map<string, number[]>();
   boxes.forEach((box, index) => {
     const sheet = mapSheet((box.minE + box.maxE) / 2, (box.minN + box.maxN) / 2);
-    groups.set(sheet, [...(groups.get(sheet) ?? []), index]);
+    pushTo(groups, sheet, index);
   });
   const pending: { sheet: string; known: Map<string, Measured | null>; missing: number[]; needs: Set<string> }[] = [];
   for (const [sheet, indices] of groups) {
@@ -329,7 +329,7 @@ export async function fetchLaserRoofs(
       const box = reach(boxes[index]);
       for (let x = Math.floor(box.minE / CELL_M); x <= Math.floor(box.maxE / CELL_M); x++) {
         for (let y = Math.floor(box.minN / CELL_M); y <= Math.floor(box.maxN / CELL_M); y++) {
-          cells.set(`${x}_${y}`, [...(cells.get(`${x}_${y}`) ?? []), index]);
+          pushTo(cells, `${x}_${y}`, index);
         }
       }
     }

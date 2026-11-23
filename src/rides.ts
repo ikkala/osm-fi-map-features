@@ -1,6 +1,6 @@
 // Amusement rides (attraction=*) and roller coasters' tracks (roller_coaster=track). OSM seldom tells how high a
 // track runs, only its layer, so a track runs at a height for its layer and ramps between pieces where they join.
-import { distanceToSegment, pointKey, type Point, type Ring } from "./geometry.ts";
+import { distancesAlong, distanceToSegment, pointKey, pushTo, type Point, type Ring } from "./geometry.ts";
 import type { Area } from "./osm.ts";
 import { inTunnel } from "./profile.ts";
 
@@ -65,7 +65,7 @@ export function setCourseHeights(rides: Ride[]): number {
     const line = course.line ?? [];
     for (const end of [line[0], line[line.length - 1]]) {
       const key = pointKey(end);
-      atEnds.set(key, [...(atEnds.get(key) ?? []), own(course)]);
+      pushTo(atEnds, key, own(course));
     }
   }
   const mean = (p: Point) => {
@@ -76,14 +76,14 @@ export function setCourseHeights(rides: Ride[]): number {
   for (const ride of courses) {
     const line = [...(ride.line ?? [])];
     // a point halfway along, where the course is at its own height
-    let along = alongOf(line);
+    let along = distancesAlong(line);
     const half = along[along.length - 1] / 2;
     const after = along.findIndex((d) => d >= half);
     if (after > 0 && along[after] - half > 0.01 && half - along[after - 1] > 0.01) {
       const t = (half - along[after - 1]) / (along[after] - along[after - 1]);
       const [a, b] = [line[after - 1], line[after]];
       line.splice(after, 0, [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
-      along = alongOf(line);
+      along = distancesAlong(line);
     }
     ride.line = line;
     const anchors = inTunnel(ride)
@@ -118,7 +118,7 @@ export function setCourseHeights(rides: Ride[]): number {
     }
   }
   for (const course of entries) {
-    course.ride.heights = alongOf(course.ride.line ?? []).map((d) => heightAt(course, d));
+    course.ride.heights = distancesAlong(course.ride.line ?? []).map((d) => heightAt(course, d));
   }
   return courses.length;
 }
@@ -145,15 +145,6 @@ function heightAt(course: Course, along: number): number {
   return h0 + ((h1 - h0) * (along - d0)) / (d1 - d0);
 }
 
-/** Meters along a line at each of its points */
-function alongOf(line: Point[]): number[] {
-  const along = [0];
-  for (let i = 1; i < line.length; i++) {
-    along.push(along[i - 1] + Math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]));
-  }
-  return along;
-}
-
 /**
  * Where the courses' lines cross (not where they meet at a point of both, or one ends on the other), a course with
  * itself too. Each crossing becomes a point of both lines.
@@ -163,7 +154,7 @@ function crossCourses(courses: Course[]): { a: OnCourse; b: OnCourse }[] {
   const added = new Map<Course, { segment: number; t: number; point: Point }[]>();
   const add = (course: Course, segment: number, t: number, from: Point, to: Point): Point => {
     const point: Point = [from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t];
-    added.set(course, [...(added.get(course) ?? []), { segment, t, point }]);
+    pushTo(added, course, { segment, t, point });
     return point;
   };
   const boxes = courses.map((c) => boxOf(c.ride.line ?? []));
@@ -194,7 +185,7 @@ function crossCourses(courses: Course[]): { a: OnCourse; b: OnCourse }[] {
     }
     course.ride.line = line;
   }
-  const alongs = new Map(courses.map((c) => [c, alongOf(c.ride.line ?? [])]));
+  const alongs = new Map(courses.map((c) => [c, distancesAlong(c.ride.line ?? [])]));
   const on = (course: Course, point: Point): OnCourse => ({ course, along: alongs.get(course)?.[(course.ride.line ?? []).indexOf(point)] ?? 0 });
   return found.map(({ a, b, pa, pb }) => ({ a: on(a, pa), b: on(b, pb) }));
 }

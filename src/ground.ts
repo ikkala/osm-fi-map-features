@@ -3,7 +3,7 @@
 // layer once and asks for the ground as of the layer it needs, so that every stage after it sees the same ground,
 // and the tiles' heights are the ground with all its layers.
 import { bounds } from "./osm.ts";
-import { distanceToSegment, indexBoxes, simplifyLine, type Point } from "./geometry.ts";
+import { distanceToSegment, indexBoxes, pushTo, simplifyLine, type Point } from "./geometry.ts";
 import { REACH_M, type GroundStep } from "./retainingWalls.ts";
 import { latticeProjection, tileName, type Heights, type Tile } from "./tiles.ts";
 
@@ -174,7 +174,7 @@ export function tileGroundAt(heights: Heights & { columns?: number; rows?: numbe
       const box = bounds([a, b]);
       for (let x = Math.floor((box.minX - reach) / STEP_CELL_M); x <= Math.floor((box.maxX + reach) / STEP_CELL_M); x++) {
         for (let y = Math.floor((box.minY - reach) / STEP_CELL_M); y <= Math.floor((box.maxY + reach) / STEP_CELL_M); y++) {
-          cells.set(`${x},${y}`, [...(cells.get(`${x},${y}`) ?? []), segment]);
+          pushTo(cells, `${x},${y}`, segment);
         }
       }
     });

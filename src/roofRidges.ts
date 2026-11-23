@@ -2,7 +2,7 @@
 // building or part): a ridge running across the outline from side to side, or ending inside it in a hip, splits it
 // into the roof's slopes, which rise from the eaves at the outline to the ridge. A ridge may bend, as one along a
 // curving wing does, which the shapes from roof:shape and roof:orientation cannot draw.
-import { distanceToRing, distanceToSegment, nearestOnSegment, pointInRing, ringArea, type Point } from "./geometry.ts";
+import { distanceToRing, distanceToSegment, nearestOnSegment, pointInRing, pushTo, ringArea, type Point } from "./geometry.ts";
 import type { Building } from "./osm.ts";
 
 /** A ridge's end within this (m) of the outline is on it */
@@ -235,7 +235,7 @@ export function ridgeRoofs(buildings: Building[], ridges: Point[][]): number {
       }
     }
     if (best) {
-      ridgesOf.set(best.building, [...(ridgesOf.get(best.building) ?? []), ridge]);
+      pushTo(ridgesOf, best.building, ridge);
     }
   }
   let count = 0;

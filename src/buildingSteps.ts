@@ -2,7 +2,7 @@
 // the ground around, so where a building is cut into a slope the slope goes on out of its wall, a heap of ground
 // against it. Outside such a wall the ground is taken down to the slope's foot, as far out as the slope reaches, as
 // on a retaining wall's low side (retainingWalls.ts); the ground inside is left as it is.
-import { distanceToSegment, pointInPolygon, polygonTest, type Point, type Polygon, type Rect } from "./geometry.ts";
+import { distanceToSegment, pointInPolygon, polygonTest, pushTo, type Point, type Polygon, type Rect } from "./geometry.ts";
 import { bounds, type Building } from "./osm.ts";
 import { FLAT_M, MIN_STEP_M, REACH_M, slopeEnd, STRETCH_M, type GroundStep } from "./retainingWalls.ts";
 
@@ -206,12 +206,7 @@ function index<T>(entries: { item: T; box: Rect }[], cell = CELL_M): { near: (bo
     const { x0, x1, y0, y1 } = range(entry.box, 0);
     for (let x = x0; x <= x1; x++) {
       for (let y = y0; y <= y1; y++) {
-        const list = cells.get(`${x},${y}`);
-        if (list) {
-          list.push(entry);
-        } else {
-          cells.set(`${x},${y}`, [entry]);
-        }
+        pushTo(cells, `${x},${y}`, entry);
       }
     }
   }

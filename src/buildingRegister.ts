@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import type { CacheOptions } from "./cache.ts";
 import { partOutlines } from "./buildingParts.ts";
 import { bounds, LEVEL_HEIGHT_M, type Building, type BuildingUse, type GeoBox } from "./osm.ts";
-import { indexBoxes, pointInPolygon, pointKey, ringArea, type Point } from "./geometry.ts";
+import { indexBoxes, pointInPolygon, pointKey, pushTo, ringArea, type Point } from "./geometry.ts";
 import { field, items, optionalNumber, optionalString } from "./json.ts";
 import { inGeoBox } from "./projection.ts";
 import { allows } from "./startDates.ts";
@@ -219,7 +219,7 @@ export function applyRegister(buildings: Building[], register: RegisterBuilding[
     let found = false;
     for (const { b, box } of near({ minX: p[0], minY: p[1], maxX: p[0], maxY: p[1] }).map((index) => boxes[index])) {
       if (p[0] >= box.minX && p[0] <= box.maxX && p[1] >= box.minY && p[1] <= box.maxY && pointInPolygon(p, b.polygon)) {
-        inside.set(b, [...(inside.get(b) ?? []), r]);
+        pushTo(inside, b, r);
         found = true;
       }
     }
@@ -305,7 +305,7 @@ function adjoiningArea(outlines: Building[], hasOwn: (b: Building) => boolean): 
   const byPoint = new Map<string, Building[]>();
   for (const b of outlines) {
     for (const p of b.polygon.outer) {
-      byPoint.set(pointKey(p), [...(byPoint.get(pointKey(p)) ?? []), b]);
+      pushTo(byPoint, pointKey(p), b);
     }
   }
   return (start) => {

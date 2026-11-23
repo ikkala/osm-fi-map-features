@@ -6,7 +6,7 @@
 // road (same id or name, or walkways in line with it) and less onto other roads.
 import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
 import { type Road } from "./osm.ts";
-import type { Point } from "./geometry.ts";
+import { pushTo, type Point } from "./geometry.ts";
 import { WALKWAYS } from "./ways.ts";
 import { inTunnel } from "./profile.ts";
 
@@ -119,8 +119,7 @@ function segmentGrid(roads: FlowRoad[], mode: FlowMode): Grid {
       const [[ae, an], [be, bn]] = [road.line[k], road.line[k + 1]];
       for (let i = Math.floor(Math.min(ae, be) / MATCH_M); i <= Math.floor(Math.max(ae, be) / MATCH_M); i++) {
         for (let j = Math.floor(Math.min(an, bn) / MATCH_M); j <= Math.floor(Math.max(an, bn) / MATCH_M); j++) {
-          const key = `${i},${j}`;
-          cells.set(key, [...(cells.get(key) ?? []), { road, values, k }]);
+          pushTo(cells, `${i},${j}`, { road, values, k });
         }
       }
     }

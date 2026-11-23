@@ -2,7 +2,7 @@
 // kind × (base + scale × draw), where draw is the nearby businesses and doors weighed by distance.
 // Counts, where a user has them, can pull the estimate towards them (flows.ts).
 import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
-import { distanceToSegment, nearestOnSegment, type Point } from "./geometry.ts";
+import { distanceToSegment, nearestOnSegment, pushTo, type Point } from "./geometry.ts";
 import { type Building, type Road } from "./osm.ts";
 import { WALKWAYS } from "./ways.ts";
 import { inTunnel } from "./profile.ts";
@@ -207,7 +207,7 @@ function drawField(buildings: Building[]): (p: Point) => number {
   const cells = new Map<string, typeof sources>();
   for (const source of sources) {
     const key = `${Math.floor(source.point[0] / cell)},${Math.floor(source.point[1] / cell)}`;
-    cells.set(key, [...(cells.get(key) ?? []), source]);
+    pushTo(cells, key, source);
   }
   return (p) => {
     const i0 = Math.floor(p[0] / cell);
@@ -243,7 +243,7 @@ class SegmentGrid {
         const key = this.#key([a[0] + ((b[0] - a[0]) * s) / steps, a[1] + ((b[1] - a[1]) * s) / steps]);
         if (!seen.has(key)) {
           seen.add(key);
-          this.#cells.set(key, [...(this.#cells.get(key) ?? []), { road, a, b }]);
+          pushTo(this.#cells, key, { road, a, b });
         }
       }
     }

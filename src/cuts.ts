@@ -4,7 +4,7 @@
 import type { MapFeatures } from "./osm.ts";
 import { openPassages } from "./passages.ts";
 import { deckAt } from "./bridges.ts";
-import { crossing, type Point } from "./geometry.ts";
+import { crossing, distancesAlong, type Point } from "./geometry.ts";
 import { inTunnel, isBridge, profileOf } from "./profile.ts";
 import { LEAST_CLEARANCE_M, LID_EDGE_M, LID_THICKNESS_M, MIN_CLEARANCE_M, userOf, widthOf, type Way } from "./ways.ts";
 
@@ -47,7 +47,7 @@ export function coverCutTunnels(features: MapFeatures, heightAt: (e: number, n: 
   const cuts = [...tunnels];
   for (const { way, width } of ways) {
     if (profileOf(way).kind === "bored" && way.layer >= -1 && way.line.length >= 2) {
-      const beside = besideCut(way.line, width, cuts, heightAt);
+      const beside = besideCut(way.line, width, cuts);
       if (beside) {
         way.lid = beside.lid;
         way.floor = beside.floor;
@@ -144,12 +144,7 @@ export function cutFloor(line: Point[], width: number, heightAt: (e: number, n: 
 }
 
 /** The lid and floor of a tunnel mostly beside cut tunnels, from the nearest one's; undefined when not beside */
-function besideCut(
-  line: Point[],
-  width: number,
-  cuts: { way: Way; width: number }[],
-  heightAt: (e: number, n: number) => number | undefined,
-): { lid: number[]; floor: number[] } | undefined {
+function besideCut(line: Point[], width: number, cuts: { way: Way; width: number }[]): { lid: number[]; floor: number[] } | undefined {
   const nearest = (p: Point) => {
     let best: { d: number; way: Way; at: Point } | undefined;
     for (const cut of cuts) {
@@ -261,10 +256,7 @@ function bridgeOverLids<T extends Way>(ways: T[], tunnels: { way: Way; width: nu
     if (inTunnel(way) || isBridge(way) || way.lid) {
       continue;
     }
-    const along = [0];
-    for (let i = 1; i < way.line.length; i++) {
-      along.push(along[i - 1] + Math.hypot(way.line[i][0] - way.line[i - 1][0], way.line[i][1] - way.line[i - 1][1]));
-    }
+    const along = distancesAlong(way.line);
     const over: [number, number][] = [];
     for (const { way: tunnel, width } of tunnels) {
       for (let i = 0; i + 1 < way.line.length; i++) {

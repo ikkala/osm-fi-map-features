@@ -15,20 +15,14 @@ import type { RoofFaces } from "./roofRidges.ts";
 import { WALKWAYS } from "./ways.ts";
 import {
   dedupe,
-  distanceToRing,
   extent,
-  indexBoxes,
-  nearestOnLine,
   orientedBox,
-  pointInPolygon,
   pointInRing,
   pointKey,
   ringArea,
-  ringCentroid,
   stitchRings,
   type Point,
   type Polygon,
-  type Rect,
   type Ring,
 } from "./geometry.ts";
 

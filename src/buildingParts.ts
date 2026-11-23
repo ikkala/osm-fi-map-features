@@ -1,6 +1,6 @@
 // Buildings and their parts: the outlines drawn by their parts, what a part takes from its outline, the filling under
 // parts raised off the ground, buildings floating over nothing, and open roofs over roads.
-import { indexBoxes, pointInPolygon, ringArea, ringCentroid, type Point, type Polygon } from "./geometry.ts";
+import { indexBoxes, pointInPolygon, pushTo, ringArea, ringCentroid, type Point, type Polygon } from "./geometry.ts";
 import { bounds, LEVEL_HEIGHT_M, type Building, type MapFeatures } from "./osm.ts";
 import { inTunnel } from "./profile.ts";
 import { WALKWAYS } from "./ways.ts";
@@ -123,7 +123,7 @@ export function markBuildingsWithParts(buildings: Building[]): void {
   const inside = new Map<Building, { b: Building; box: ReturnType<typeof bounds> }[]>();
   for (const [part, outlines] of partHolders(buildings)) {
     for (const outline of outlines) {
-      inside.set(outline, [...(inside.get(outline) ?? []), { b: part, box: bounds(part.polygon.outer) }]);
+      pushTo(inside, outline, { b: part, box: bounds(part.polygon.outer) });
     }
   }
   for (const [outline, parts] of inside) {
