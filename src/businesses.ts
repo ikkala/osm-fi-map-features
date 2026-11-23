@@ -2,16 +2,7 @@
 // is at a door of its kind near it, else on the nearest wall facing a street, and none deep inside a large
 // building or a mall.
 import { nearestOnSegment, pointInPolygon, ringArea, type Point, type Ring } from "./geometry.ts";
-import {
-  bounds,
-  type Building,
-  type Business,
-  type BusinessCategory,
-  type BusinessFront,
-  type GeoBox,
-  type OverpassResponse,
-  type Road,
-} from "./osm.ts";
+import { bounds, unionQuery, type Building, type Business, type BusinessCategory, type BusinessFront, type GeoBox, type OverpassResponse, type Road } from "./osm.ts";
 import { inTunnel } from "./profile.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { WALKWAYS } from "./ways.ts";
@@ -57,8 +48,7 @@ const CELL_M = 50;
 
 export function businessQuery(box: GeoBox): string {
   const selectors = CATEGORIES.map(([key, values]) => (values ? `nwr["${key}"~"^(${values.join("|")})$"]` : `nwr["${key}"]`));
-  const bbox = [box.south, box.west, box.north, box.east].join(",");
-  return `[out:json][timeout:90][bbox:${bbox}];\n(\n${selectors.map((s) => `  ${s};`).join("\n")}\n);\nout tags center;`;
+  return unionQuery(box, 90, selectors, "tags center");
 }
 
 /** The businesses of an Overpass response ("out center"), in meters around origin */
