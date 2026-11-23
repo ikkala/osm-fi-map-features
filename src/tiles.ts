@@ -142,6 +142,7 @@ export function cutIntoTiles(features: MapFeatures, keys: TileKey[], size: numbe
     tiles.set(tileName(key), { ...key, roads: [], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], playEquipment: [], bridgeDecks: [] });
   }
   const touched = (points: Point[]) => tilesCovering(bounds(points), size).flatMap((key) => tiles.get(tileName(key)) ?? []);
+  const tileAt = ([e, n]: Point) => tiles.get(tileName({ x: Math.floor(e / size), y: Math.floor(n / size) }));
 
   for (const road of features.roads) {
     for (const tile of touched(road.line)) {
@@ -166,8 +167,7 @@ export function cutIntoTiles(features: MapFeatures, keys: TileKey[], size: numbe
     }
   }
   for (const building of features.buildings) {
-    const [cx, cy] = ringCentroid(building.polygon.outer);
-    tiles.get(tileName({ x: Math.floor(cx / size), y: Math.floor(cy / size) }))?.buildings.push(building satisfies Building);
+    tileAt(ringCentroid(building.polygon.outer))?.buildings.push(building satisfies Building);
   }
   for (const area of features.areas) {
     const simplified: Polygon = {
@@ -182,10 +182,8 @@ export function cutIntoTiles(features: MapFeatures, keys: TileKey[], size: numbe
     }
   }
   for (const tree of features.trees) {
-    const [e, n] = tree.point;
-    tiles.get(tileName({ x: Math.floor(e / size), y: Math.floor(n / size) }))?.trees.push(tree satisfies Tree);
+    tileAt(tree.point)?.trees.push(tree satisfies Tree);
   }
-  const tileAt = ([e, n]: Point) => tiles.get(tileName({ x: Math.floor(e / size), y: Math.floor(n / size) }));
   for (const lamp of features.lamps) {
     tileAt(lamp.point)?.lamps.push(lamp satisfies StreetLamp);
   }
