@@ -169,6 +169,8 @@ export function setBridgeDecks<T extends BridgeLine>(
       byEnd.set(key(p), list);
     }
   }
+  // where two bridge lines meet a way on the ground (not steps up to them), they land on the ground there
+  const landsOn = (p: Point) => (atPoint.get(key(p)) ?? []).some((o) => !spanned(o) && onGround(o) && !telling(o));
   // the spans: walk both ways from each bridge line through ends shared by exactly two bridge lines
   const spans: { span: { bridge: T; reversed: boolean }[]; points: { p: Point; owner: T; index: number }[]; distances: number[] }[] = [];
   const done = new Set<BridgeLine>();
@@ -185,7 +187,7 @@ export function setBridgeDecks<T extends BridgeLine>(
         // the free end of the edge line in the direction we walk
         const free = (edge.reversed !== atEnd ? line[line.length - 1] : line[0]);
         const next = (byEnd.get(key(free)) ?? []).filter((b) => b !== edge.bridge);
-        if (next.length !== 1 || done.has(next[0]) || (byEnd.get(key(free)) ?? []).length !== 2) {
+        if (next.length !== 1 || done.has(next[0]) || (byEnd.get(key(free)) ?? []).length !== 2 || landsOn(free)) {
           return;
         }
         const nextLine = next[0].line;

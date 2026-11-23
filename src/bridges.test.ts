@@ -326,3 +326,16 @@ test("a landing rises no more than its embankment can come down at the grade by 
   assert.ok(Math.abs(at(48) - 105.3) < 1e-9 && at(50) < 106);
   assert.deepEqual(street.deck, undefined);
 });
+
+test("bridge lines meeting end to end where a way on the ground leads on land there: two decks, not one over it", () => {
+  // two ramps down from the banks to a path in the hollow between them
+  const valley = (e: number) => 100 + Math.abs(e - 20) / 5;
+  const a: BridgeLine = { bridge: true, line: [[0, 0], [10, 0], [20, 0]] };
+  const b: BridgeLine = { bridge: true, line: [[20, 0], [30, 0], [40, 0]] };
+  const path: BridgeLine = { bridge: false, line: [[20, 0], [20, -30]] };
+  const lines = [{ bridge: false, line: [[-20, 0], [0, 0]] satisfies Point[] }, a, b, { bridge: false, line: [[40, 0], [60, 0]] satisfies Point[] }, path];
+  setBridgeDecks(lines, valley);
+  // both land on the ground at the path, not over it
+  assert.ok(Math.abs(defined(a.deck)[2] - 100) < 1e-9 && Math.abs(defined(b.deck)[0] - 100) < 1e-9);
+  assert.equal(path.deck, undefined);
+});
