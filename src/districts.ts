@@ -2,8 +2,8 @@
 // the municipality and its places of a suburb's kind, each with its name and the kind it is mapped as, as cities
 // map them differently. A user's points matched to them (districtOf) are a Derivative Database under the ODbL (see
 // the README's Licences); the user's own data stays a database of its own.
-import { dedupe, orientRings, pointInPolygon, polygonArea, ringCentroid, stitchRings, type Point, type Polygon } from "./geometry.ts";
-import { fetchOverpass, isClosed, sameLatLon, type FetchOptions, type GeoBox, type LatLon, type OsmElement } from "./osm.ts";
+import { dedupe, orientRings, pointInPolygon, polygonArea, ringCentroid, type Point, type Polygon } from "./geometry.ts";
+import { fetchOverpass, isClosed, multipolygonRings, type FetchOptions, type GeoBox, type LatLon, type OsmElement } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 
 /** The kinds a district can be mapped as, from the largest commonly: "admin_level=<n>" or "place=<value>" */
@@ -65,21 +65,15 @@ export function parseDistricts(elements: OsmElement[], origin: GeoPoint): { dist
     let label: Point | undefined;
     if (element.type === "way") {
       const ring = dedupe((element.geometry ?? []).map(toPoint));
-      const geometry = element.geometry ?? [];
-      const closed = isClosed(geometry);
-      if (closed && ring.length >= 3) {
+      if (isClosed(element.geometry ?? []) && ring.length >= 3) {
         polygons = [orientRings({ outer: ring, holes: [] })];
       }
     } else {
       const members = element.members ?? [];
-      const ways = members.flatMap((m) => (m.type === "way" && m.geometry && m.geometry.length >= 2 ? [{ role: m.role, geometry: m.geometry }] : []));
-      const outer = stitchRings(ways.filter((m) => m.role !== "inner").map((m) => m.geometry), sameLatLon);
-      const inner = stitchRings(ways.filter((m) => m.role === "inner").map((m) => m.geometry), sameLatLon);
-      if (outer.unclosed + inner.unclosed > 0) {
-        warnings.push(`r${element.id} (${name}): ${outer.unclosed + inner.unclosed} unclosed ring(s) dropped`);
+      const { outers, holes, unclosed } = multipolygonRings(members, toPoint);
+      if (unclosed > 0) {
+        warnings.push(`r${element.id} (${name}): ${unclosed} unclosed ring(s) dropped`);
       }
-      const outers = outer.rings.map((ring) => dedupe(ring.map(toPoint))).filter((ring) => ring.length >= 3);
-      const holes = inner.rings.map((ring) => dedupe(ring.map(toPoint))).filter((ring) => ring.length >= 3);
       polygons = outers.map((ring) => orientRings({ outer: ring, holes: holes.filter((hole) => pointInPolygon(hole[0], { outer: ring, holes: [] })) }));
       const labelNode = members.find((m) => m.type === "node" && m.role === "label");
       if (labelNode && labelNode.lat !== undefined && labelNode.lon !== undefined) {

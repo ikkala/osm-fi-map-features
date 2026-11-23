@@ -716,7 +716,24 @@ type Tags = Record<string, string>;
 export type OsmElement =
   | { type: "node"; id: number; tags?: Tags; lat?: number; lon?: number }
   | { type: "way"; id: number; tags?: Tags; geometry?: LatLon[]; center?: LatLon }
-  | { type: "relation"; id: number; tags?: Tags; members?: { type: string; role: string; geometry?: LatLon[]; lat?: number; lon?: number }[]; center?: LatLon };
+  | { type: "relation"; id: number; tags?: Tags; members?: RelationMember[]; center?: LatLon };
+
+export interface RelationMember {
+  type: string;
+  role: string;
+  geometry?: LatLon[];
+  lat?: number;
+  lon?: number;
+}
+
+/** A multipolygon's outer and inner ways stitched into rings in meters (those of under three points left out), and how many did not close */
+export function multipolygonRings(members: RelationMember[], toPoint: (p: LatLon) => Point): { outers: Ring[]; holes: Ring[]; unclosed: number } {
+  const ways = members.flatMap((m) => (m.type === "way" && m.geometry && m.geometry.length >= 2 ? [{ role: m.role, geometry: m.geometry }] : []));
+  const stitch = (inner: boolean) => stitchRings(ways.filter((m) => inner === (m.role === "inner")).map((m) => m.geometry), sameLatLon);
+  const [outer, inner] = [stitch(false), stitch(true)];
+  const rings = (stitched: { rings: LatLon[][] }) => stitched.rings.map((ring) => dedupe(ring.map(toPoint))).filter((ring) => ring.length >= 3);
+  return { outers: rings(outer), holes: rings(inner), unclosed: outer.unclosed + inner.unclosed };
+}
 
 export interface FetchOptions extends CacheOptions {
   url: string;
@@ -1029,18 +1046,10 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
       }
     } else if (element.type === "relation" && tags.type === "multipolygon") {
       const osm = `r${element.id}`;
-      const ways = (element.members ?? []).flatMap((m) =>
-        m.type === "way" && m.geometry && m.geometry.length >= 2 ? [{ role: m.role, geometry: m.geometry }] : [],
-      );
-      const stitch = (role: string) =>
-        stitchRings(ways.filter((m) => (role === "inner") === (m.role === "inner")).map((m) => m.geometry), sameLatLon);
-      const outer = stitch("outer");
-      const inner = stitch("inner");
-      if (outer.unclosed + inner.unclosed > 0) {
-        warnings.push(`${osm} (${tags.name ?? "unnamed"}): ${outer.unclosed + inner.unclosed} unclosed ring(s) dropped`);
+      const { outers, holes, unclosed } = multipolygonRings(element.members ?? [], toPoint);
+      if (unclosed > 0) {
+        warnings.push(`${osm} (${tags.name ?? "unnamed"}): ${unclosed} unclosed ring(s) dropped`);
       }
-      const outers = outer.rings.map((ring) => dedupe(ring.map(toPoint))).filter((ring) => ring.length >= 3);
-      const holes = inner.rings.map((ring) => dedupe(ring.map(toPoint))).filter((ring) => ring.length >= 3);
       for (const ring of outers) {
         const polygon = orientRings({ outer: ring, holes: holes.filter((hole) => pointInRing(hole[0], ring)) });
         addPolygonFeature(features, bridgeOutlines, playgrounds, pitches, osm, tags, polygon);
@@ -1791,6 +1800,6 @@ export function isClosed(geometry: LatLon[]): boolean {
   return geometry.length >= 4 && sameLatLon(geometry[0], geometry[geometry.length - 1]);
 }
 
-export function sameLatLon(a: LatLon, b: LatLon): boolean {
+function sameLatLon(a: LatLon, b: LatLon): boolean {
   return a.lat === b.lat && a.lon === b.lon;
 }
