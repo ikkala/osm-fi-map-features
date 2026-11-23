@@ -9,7 +9,7 @@ import { inTunnel, type AsBuilt, type ProfileKind } from "./profile.ts";
 import type { Ride } from "./rides.ts";
 import type { Seamark } from "./seamarks.ts";
 import { field, isObject, items, optionalNumber, optionalString } from "./json.ts";
-import { LocalProjection, type GeoPoint } from "./projection.ts";
+import { latLonMeters, type GeoPoint } from "./projection.ts";
 import { exactYear } from "./startDates.ts";
 import type { RoofFaces } from "./roofRidges.ts";
 import { WALKWAYS } from "./ways.ts";
@@ -683,6 +683,12 @@ export function estimatedLevels(kind: string, area: number): number {
   return 3;
 }
 
+/** An Overpass query of the union of the selectors in the box, `out` (with the geometry by default) */
+export function unionQuery(box: GeoBox, timeout: number, selectors: string[], out = "geom"): string {
+  const bbox = [box.south, box.west, box.north, box.east].join(",");
+  return `[out:json][timeout:${timeout}][bbox:${bbox}];\n(\n${selectors.map((s) => `  ${s};`).join("\n")}\n);\nout ${out};`;
+}
+
 export function overpassQuery(box: GeoBox): string {
   const selectors = ["way[highway]", "way[railway]", "way[building]", "way[\"building:part\"]", "way[amenity=shelter][shelter_type=public_transport]", "node[natural~\"^(tree|shrub)$\"]", "way[natural=tree_row]", "node[highway=street_lamp]",
     "node[highway~\"^(crossing|traffic_signals)$\"]", "node[barrier=gate]", "way[barrier~\"^(fence|wall|retaining_wall|hedge)$\"]", "way[man_made=bridge]", `way[man_made~"^(${[...STRUCTURES].join("|")})$"]`, "way[\"roof:ridge\"=yes]"];
@@ -696,8 +702,7 @@ export function overpassQuery(box: GeoBox): string {
     selectors.push(`way${filter}`);
     relations.push(`relation${filter}[type=multipolygon]`);
   }
-  const bbox = [box.south, box.west, box.north, box.east].join(",");
-  return `[out:json][timeout:180][bbox:${bbox}];\n(\n${[...selectors, ...relations].map((s) => `  ${s};`).join("\n")}\n);\nout geom;`;
+  return unionQuery(box, 180, [...selectors, ...relations]);
 }
 
 export interface OverpassResponse {
@@ -706,7 +711,7 @@ export interface OverpassResponse {
   elements: OsmElement[];
 }
 
-export interface LatLon {
+interface LatLon {
   lat: number;
   lon: number;
 }
@@ -931,8 +936,7 @@ function stepping(tags: Record<string, string>): { stepCount?: number; incline?:
 /** Turns Overpass elements into features in meters east / north of origin. */
 export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult {
   const warnings: string[] = [];
-  const projection = new LocalProjection(origin);
-  const toPoint = (p: LatLon): Point => projection.toMeters({ latitude: p.lat, longitude: p.lon });
+  const toPoint = latLonMeters(origin);
   const features: MapFeatures = { roads: [], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], playEquipment: [], bridgeDecks: [] };
   const streetNodes: StreetNode[] = [];
   const bridgeOutlines: BridgeOutline[] = [];

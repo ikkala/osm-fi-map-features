@@ -1,8 +1,8 @@
 // Bicycle parking (amenity=bicycle_parking): a stand or rack at a node, or an area of them, with how many bicycles
 // it takes, what kind it is and whether it is covered, as far as OSM tells.
 import { dedupe, ringArea, ringCentroid, type Point, type Ring } from "./geometry.ts";
-import { isClosed, type GeoBox, type OverpassResponse } from "./osm.ts";
-import { LocalProjection, type GeoPoint } from "./projection.ts";
+import { isClosed, unionQuery, type GeoBox, type OverpassResponse } from "./osm.ts";
+import { latLonMeters, type GeoPoint } from "./projection.ts";
 
 /** Bicycle parking: at a point, or an area with its outline */
 export interface BicycleParking {
@@ -25,8 +25,7 @@ export interface BicycleParking {
 }
 
 export function bicycleParkingQuery(box: GeoBox): string {
-  const bbox = [box.south, box.west, box.north, box.east].join(",");
-  return `[out:json][timeout:60][bbox:${bbox}];\n(\n  node[amenity=bicycle_parking];\n  way[amenity=bicycle_parking];\n);\nout geom;`;
+  return unionQuery(box, 60, ["node[amenity=bicycle_parking]", "way[amenity=bicycle_parking]"]);
 }
 
 const PUBLIC_ACCESS = new Set(["yes", "public", "permissive"]);
@@ -34,8 +33,7 @@ const ROOFED = new Set(["shed", "building", "lockers"]);
 
 /** The bicycle parking of an Overpass response ("out geom") in meters around origin */
 export function parseBicycleParking(elements: OverpassResponse["elements"], origin: GeoPoint): BicycleParking[] {
-  const projection = new LocalProjection(origin);
-  const toPoint = (p: { lat: number; lon: number }): Point => projection.toMeters({ latitude: p.lat, longitude: p.lon });
+  const toPoint = latLonMeters(origin);
   const result: BicycleParking[] = [];
   for (const element of elements) {
     const tags = element.tags ?? {};

@@ -3,8 +3,8 @@
 // map them differently. A user's points matched to them (districtOf) are a Derivative Database under the ODbL (see
 // the README's Licences); the user's own data stays a database of its own.
 import { dedupe, orientRings, pointInPolygon, polygonArea, ringCentroid, type Point, type Polygon } from "./geometry.ts";
-import { fetchOverpass, isClosed, multipolygonRings, type FetchOptions, type GeoBox, type LatLon, type OsmElement } from "./osm.ts";
-import { LocalProjection, type GeoPoint } from "./projection.ts";
+import { fetchOverpass, isClosed, multipolygonRings, unionQuery, type FetchOptions, type GeoBox, type OsmElement } from "./osm.ts";
+import { latLonMeters, type GeoPoint } from "./projection.ts";
 
 /** The kinds a district can be mapped as, from the largest commonly: "admin_level=<n>" or "place=<value>" */
 export const DISTRICT_KINDS = ["admin_level=9", "admin_level=10", "place=suburb", "place=quarter", "place=neighbourhood"] as const;
@@ -25,7 +25,6 @@ export interface District {
 
 /** The Overpass query of the districts in the box, with their geometry */
 export function districtsQuery(box: GeoBox): string {
-  const bbox = [box.south, box.west, box.north, box.east].join(",");
   const levels = DISTRICT_KINDS.flatMap((kind) => (kind.startsWith("admin_level=") ? [kind.slice("admin_level=".length)] : []));
   const places = DISTRICT_KINDS.flatMap((kind) => (kind.startsWith("place=") ? [kind.slice("place=".length)] : []));
   const selectors = [
@@ -33,7 +32,7 @@ export function districtsQuery(box: GeoBox): string {
     `relation[place~"^(${places.join("|")})$"][name]`,
     `way[place~"^(${places.join("|")})$"][name]`,
   ];
-  return `[out:json][timeout:180][bbox:${bbox}];\n(\n${selectors.map((s) => `  ${s};`).join("\n")}\n);\nout geom;`;
+  return unionQuery(box, 180, selectors);
 }
 
 /** The kind a district's tags map it as, or undefined for any other element */
@@ -50,8 +49,7 @@ export function districtKind(tags: Record<string, string>): string | undefined {
  * members stitched into rings, a closed way a ring of its own; with warnings of the rings that do not close.
  */
 export function parseDistricts(elements: OsmElement[], origin: GeoPoint): { districts: District[]; warnings: string[] } {
-  const projection = new LocalProjection(origin);
-  const toPoint = (p: LatLon): Point => projection.toMeters({ latitude: p.lat, longitude: p.lon });
+  const toPoint = latLonMeters(origin);
   const districts: District[] = [];
   const warnings: string[] = [];
   for (const element of elements) {

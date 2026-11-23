@@ -2,8 +2,8 @@
 // tells them by its line or outline, a swing lines up with the next swing in its row, and other nodes with the
 // nearest edge of the playground they stand in.
 import { boxCentre, dedupe, distanceToSegment, inRect, orientedBox, pointInPolygon, ringArea, type Point, type Polygon, type Ring } from "./geometry.ts";
-import { bounds, isClosed, meters, type GeoBox, type OverpassResponse, type PlayEquipment } from "./osm.ts";
-import { LocalProjection, type GeoPoint } from "./projection.ts";
+import { bounds, isClosed, meters, unionQuery, type GeoBox, type OverpassResponse, type PlayEquipment } from "./osm.ts";
+import { latLonMeters, type GeoPoint } from "./projection.ts";
 
 /** Nodes of a kind this close (m) are one piece mapped twice */
 const SAME_M = 1.5;
@@ -14,14 +14,12 @@ const IN_ROWS = new Set(["swing", "basketswing"]);
 const MIN_EDGE_M = 2;
 
 export function playgroundQuery(box: GeoBox): string {
-  const bbox = [box.south, box.west, box.north, box.east].join(",");
-  return `[out:json][timeout:60][bbox:${bbox}];\n(\n  node[playground];\n  way[playground];\n);\nout geom;`;
+  return unionQuery(box, 60, ["node[playground]", "way[playground]"]);
 }
 
 /** The playground equipment of an Overpass response ("out geom") in meters around origin (playground=no left out) */
 export function parsePlayEquipment(elements: OverpassResponse["elements"], origin: GeoPoint): PlayEquipment[] {
-  const projection = new LocalProjection(origin);
-  const toPoint = (p: { lat: number; lon: number }): Point => projection.toMeters({ latitude: p.lat, longitude: p.lon });
+  const toPoint = latLonMeters(origin);
   const result: PlayEquipment[] = [];
   for (const element of elements) {
     const tags = element.tags ?? {};

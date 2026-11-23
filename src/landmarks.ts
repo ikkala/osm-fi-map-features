@@ -2,8 +2,8 @@
 // and buoys (seamarks.ts), masts, flagpoles, boulders, fountains, artworks and memorials, power lines with their
 // towers and poles, piers, dams and weirs, amusement rides (rides.ts) and ski and skating tracks.
 import { dedupe, distanceToSegment, grownRect, halfwayAlong, nearestPlace, ringArea, ringCentroid, segmentGrid, type Point, type Ring } from "./geometry.ts";
-import { bounds, COMPASS, meters, truthy, type GeoBox, type OverpassResponse, type Rail, type Road } from "./osm.ts";
-import { LocalProjection, type GeoPoint } from "./projection.ts";
+import { bounds, COMPASS, meters, truthy, unionQuery, type GeoBox, type OverpassResponse, type Rail, type Road } from "./osm.ts";
+import { latLonMeters, type GeoPoint } from "./projection.ts";
 import { COURSE_KINDS, RIDE_KINDS, setCourseHeights, type Ride } from "./rides.ts";
 import { outOfTunnelsAndSpans } from "./profile.ts";
 import { lower, parseSeamark, type Seamark } from "./seamarks.ts";
@@ -132,14 +132,12 @@ export function landmarkQuery(box: GeoBox): string {
     "way[roller_coaster=track]",
     'nwr["piste:type"]',
   ];
-  const bbox = [box.south, box.west, box.north, box.east].join(",");
-  return `[out:json][timeout:120][bbox:${bbox}];\n(\n${selectors.map((s) => `  ${s};`).join("\n")}\n);\nout geom;`;
+  return unionQuery(box, 120, selectors);
 }
 
 /** The landmarks of an Overpass response ("out geom") in meters around origin; relations are left out */
 export function parseLandmarks(elements: OverpassResponse["elements"], origin: GeoPoint): Landmarks {
-  const projection = new LocalProjection(origin);
-  const toPoint = (p: { lat: number; lon: number }): Point => projection.toMeters({ latitude: p.lat, longitude: p.lon });
+  const toPoint = latLonMeters(origin);
   const result: Landmarks = { seamarks: [], landmarks: [], piers: [], dams: [], rides: [], powerLines: [], pistes: [] };
   for (const element of elements) {
     const tags = element.tags ?? {};

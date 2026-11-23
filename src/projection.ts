@@ -67,3 +67,9 @@ function toRadians(degrees: number): number {
 function wrapDegrees(degrees: number): number {
   return ((((degrees + 180) % 360) + 360) % 360) - 180;
 }
+
+/** OSM's points (lat, lon) in meters around origin */
+export function latLonMeters(origin: GeoPoint): (p: { lat: number; lon: number }) => Point {
+  const projection = new LocalProjection(origin);
+  return (p) => projection.toMeters({ latitude: p.lat, longitude: p.lon });
+}
