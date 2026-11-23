@@ -2,7 +2,7 @@
 // deterministically (each plant's place comes from its grid cell alone, and what it is from the cell and the
 // area's leaf type).
 import { bounds, type Area, type MapFeatures, type Rail, type Road, type Tree } from "./osm.ts";
-import { distanceToRing, distanceToSegment, grownRect, pointInPolygon, polygonTest, pushTo, RectGrid, type Point, type Rect } from "./geometry.ts";
+import { distanceToRing, distanceToSegment, grownRect, pointInPolygon, polygonTest, pushTo, RectGrid, segmentGrid, type Point, type Rect } from "./geometry.ts";
 import { inTunnel, outOfTunnelsAndSpans } from "./profile.ts";
 import { RAIL_WIDTH_M } from "./ways.ts";
 
@@ -131,14 +131,7 @@ export function moveTreesOffWays(trees: Tree[], roads: Road[], rails: Rail[]): T
   }
   const over = bounds(trees.map((t) => t.point));
   const reach = 20;
-  const grid = new RectGrid<{ a: Point; b: Point; half: number }>(25, grownRect(over, reach));
-  for (const { line, half } of lines) {
-    for (let i = 0; i + 1 < line.length; i++) {
-      const [a, b] = [line[i], line[i + 1]];
-      const r = half + TRUNK_M;
-      grid.add({ minX: Math.min(a[0], b[0]) - r, minY: Math.min(a[1], b[1]) - r, maxX: Math.max(a[0], b[0]) + r, maxY: Math.max(a[1], b[1]) + r }, { a, b, half });
-    }
-  }
+  const grid = segmentGrid(lines, 25, grownRect(over, reach), TRUNK_M);
   // the segment the point is on (within its half width), the nearest such
   const on = (p: Point) => {
     let best: { a: Point; b: Point; half: number; d: number } | undefined;

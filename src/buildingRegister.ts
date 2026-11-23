@@ -1,11 +1,10 @@
 // Storeys, facade and frame materials, uses and completion years from SYKE's Ryhti building register (OGC API
 // Features, one point per building, CC BY 4.0), applied to the OSM outlines the points fall in.
-import { createHash } from "node:crypto";
-import type { CacheOptions } from "./cache.ts";
+import { requestKey, type CacheOptions } from "./cache.ts";
 import { partOutlines } from "./buildingParts.ts";
 import { bounds, LEVEL_HEIGHT_M, type Building, type BuildingUse, type GeoBox } from "./osm.ts";
 import { indexBoxes, inRect, pointInPolygon, pointKey, pushTo, ringArea, type Point } from "./geometry.ts";
-import { field, items, optionalNumber, optionalString } from "./json.ts";
+import { field, items, optionalNumber, optionalString, pointFeatures } from "./json.ts";
 import { inGeoBox } from "./projection.ts";
 import { allows } from "./startDates.ts";
 
@@ -73,22 +72,18 @@ const FIRST_YEAR = 1700;
 /** Reads the standing buildings of a GeoJSON page of the register. */
 export function parseBuildingRegister(response: unknown): RegisterBuilding[] {
   const result: RegisterBuilding[] = [];
-  for (const feature of items(field(response, "features"))) {
-    const [longitude, latitude] = items(field(feature, "geometry", "coordinates")).map(optionalNumber);
-    if (field(feature, "geometry", "type") !== "Point" || longitude === undefined || latitude === undefined) {
-      continue;
-    }
+  for (const { properties, longitude, latitude } of pointFeatures(response)) {
     // "Purettu ..." (demolished); some demolished ones have only the date
-    const inUse = optionalString(field(feature, "properties", "kaytossaolo"));
-    if (optionalString(field(feature, "properties", "purkamispaivamaara")) !== undefined || inUse?.startsWith("Purettu")) {
+    const inUse = optionalString(field(properties, "kaytossaolo"));
+    if (optionalString(field(properties, "purkamispaivamaara")) !== undefined || inUse?.startsWith("Purettu")) {
       continue;
     }
-    const floors = optionalNumber(field(feature, "properties", "kerrosluku"));
-    const area = optionalNumber(field(feature, "properties", "kokonaisala"));
-    const facade = FACADES[optionalString(field(feature, "properties", "julkisivumateriaali")) ?? ""];
-    const frame = FRAMES[optionalString(field(feature, "properties", "kantavien_rakenteiden_rakennusaine")) ?? ""];
-    const use = USES[optionalString(field(feature, "properties", "paaasiallinen_kayttotarkoitus")) ?? ""];
-    const year = completionYear(optionalString(field(feature, "properties", "valmistumispaivamaara")));
+    const floors = optionalNumber(field(properties, "kerrosluku"));
+    const area = optionalNumber(field(properties, "kokonaisala"));
+    const facade = FACADES[optionalString(field(properties, "julkisivumateriaali")) ?? ""];
+    const frame = FRAMES[optionalString(field(properties, "kantavien_rakenteiden_rakennusaine")) ?? ""];
+    const use = USES[optionalString(field(properties, "paaasiallinen_kayttotarkoitus")) ?? ""];
+    const year = completionYear(optionalString(field(properties, "valmistumispaivamaara")));
     result.push({
       longitude,
       latitude,
@@ -127,7 +122,7 @@ export async function fetchBuildingRegister(box: GeoBox, options: CacheOptions):
     if (page === MAX_PAGES) {
       throw new Error(`building register: more than ${MAX_PAGES * PAGE_SIZE} buildings in the box`);
     }
-    const cacheKey = `ryhti-buildings-${createHash("sha256").update(url).digest("hex").slice(0, 16)}.json`;
+    const cacheKey = requestKey("ryhti-buildings", url, "json");
     let text = options.refresh ? undefined : await options.cache.get(cacheKey);
     if (text === undefined) {
       cached = false;

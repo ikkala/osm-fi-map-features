@@ -32,3 +32,12 @@ export function optionalString(value: unknown): string | undefined {
 export function optionalNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
+
+/** The point features of a GeoJSON response: their properties, longitude and latitude */
+export function pointFeatures(response: unknown): { properties: unknown; longitude: number; latitude: number }[] {
+  return items(field(response, "features")).flatMap((feature) => {
+    const [longitude, latitude] = items(field(feature, "geometry", "coordinates")).map(optionalNumber);
+    const point = field(feature, "geometry", "type") === "Point" && longitude !== undefined && latitude !== undefined;
+    return point ? [{ properties: field(feature, "properties"), longitude, latitude }] : [];
+  });
+}

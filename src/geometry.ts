@@ -30,6 +30,33 @@ export function inRect([x, y]: Point, box: Rect): boolean {
   return x >= box.minX && x <= box.maxX && y >= box.minY && y <= box.maxY;
 }
 
+/** The point halfway along a line (where it has no length, its first) */
+export function halfwayAlong(line: Point[]): Point {
+  const lengths = line.slice(1).map((p, i) => Math.hypot(p[0] - line[i][0], p[1] - line[i][1]));
+  let left = lengths.reduce((sum, length) => sum + length, 0) / 2;
+  for (let i = 0; i < lengths.length; i++) {
+    if (left <= lengths[i] && lengths[i] > 0) {
+      const t = left / lengths[i];
+      return [line[i][0] + (line[i + 1][0] - line[i][0]) * t, line[i][1] + (line[i + 1][1] - line[i][1]) * t];
+    }
+    left -= lengths[i];
+  }
+  return line[0];
+}
+
+/** The segments of lines in a grid of `cell`, each by its box grown by the line's half width and `margin` */
+export function segmentGrid(lines: { line: Point[]; half: number }[], cell: number, over: Rect, margin: number): RectGrid<{ a: Point; b: Point; half: number }> {
+  const grid = new RectGrid<{ a: Point; b: Point; half: number }>(cell, over);
+  for (const { line, half } of lines) {
+    for (let i = 0; i + 1 < line.length; i++) {
+      const [a, b] = [line[i], line[i + 1]];
+      const r = half + margin;
+      grid.add({ minX: Math.min(a[0], b[0]) - r, minY: Math.min(a[1], b[1]) - r, maxX: Math.max(a[0], b[0]) + r, maxY: Math.max(a[1], b[1]) + r }, { a, b, half });
+    }
+  }
+  return grid;
+}
+
 /** A rectangle grown by `by` on every side */
 export function grownRect(box: Rect, by: number): Rect {
   return { minX: box.minX - by, minY: box.minY - by, maxX: box.maxX + by, maxY: box.maxY + by };

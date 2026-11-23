@@ -1,10 +1,9 @@
 // Measured roof tops from cities' 3D building parts: WFS polygon layers with the height above sea level of
 // each part's highest roof point, fetched only for maps reaching their area. They give the buildings under
 // them their heights, and old ones a hipped roof up to the top.
-import { createHash } from "node:crypto";
 import { storeyHeight } from "./ages.ts";
 import { builtBefore } from "./startDates.ts";
-import type { CacheOptions } from "./cache.ts";
+import { fetchWfs, type CacheOptions } from "./cache.ts";
 import { inRect, orientedBox, pointInPolygon, RectGrid, ringArea, type Point, type Polygon, type Rect } from "./geometry.ts";
 import { field, items, optionalNumber, optionalString } from "./json.ts";
 import { FINNISH_DEFAULTS_MEASURED_IN_TAMPERE } from "./measuredDefaults.ts";
@@ -89,35 +88,8 @@ export function parseRoofTops(response: unknown): RoofTopPart[] {
 
 /** Fetches a layer's parts in a box, cached by request. */
 export async function fetchRoofTops(source: RoofTopSource, box: GeoBox, options: CacheOptions): Promise<{ parts: RoofTopPart[]; cached: boolean }> {
-  const query = new URLSearchParams({
-    service: "WFS",
-    version: "2.0.0",
-    request: "GetFeature",
-    typeNames: source.layer,
-    outputFormat: "application/json",
-    srsName: "EPSG:4326",
-    propertyName: `${source.geometry},kattokorkeus,suhdemaanpintaan`,
-    // EPSG:4326 in WFS 2.0 is latitude first
-    bbox: `${box.south},${box.west},${box.north},${box.east},urn:ogc:def:crs:EPSG::4326`,
-    ...(source.count !== undefined && { count: String(source.count) }),
-  });
-  const url = `${source.url}?${query}`;
-  const cacheKey = `${source.name}-${createHash("sha256").update(url).digest("hex").slice(0, 16)}.json`;
-  const cachedText = options.refresh ? undefined : await options.cache.get(cacheKey);
-  if (cachedText !== undefined) {
-    return { parts: parseRoofTops(JSON.parse(cachedText)), cached: true };
-  }
-  const res = await fetch(url);
-  const text = await res.text();
-  if (!res.ok || !text.startsWith("{")) {
-    throw new Error(`${source.title} request failed (${res.status}): ${text.slice(0, 500)}`);
-  }
-  const json: unknown = JSON.parse(text);
-  if (source.count !== undefined && items(field(json, "features")).length >= source.count) {
-    throw new Error(`${source.title}: the server returned the ${source.count} features asked for, there may be more`);
-  }
-  await options.cache.put(cacheKey, text);
-  return { parts: parseRoofTops(json), cached: false };
+  const { json, cached } = await fetchWfs(source, box, options, `${source.geometry},kattokorkeus,suhdemaanpintaan`);
+  return { parts: parseRoofTops(json), cached };
 }
 
 /** An outline is sampled at most this far apart (m), and at least MIN_SAMPLES times */

@@ -1,7 +1,7 @@
 // What stands in the landscape apart from buildings and ways, from a query of its own: lighthouses, lights, beacons
 // and buoys (seamarks.ts), masts, flagpoles, boulders, fountains, artworks and memorials, power lines with their
 // towers and poles, piers, dams and weirs, amusement rides (rides.ts) and ski and skating tracks.
-import { dedupe, distanceToSegment, grownRect, nearestPlace, RectGrid, ringArea, ringCentroid, type Point, type Ring } from "./geometry.ts";
+import { dedupe, distanceToSegment, grownRect, halfwayAlong, nearestPlace, ringArea, ringCentroid, segmentGrid, type Point, type Ring } from "./geometry.ts";
 import { bounds, meters, type GeoBox, type OverpassResponse, type Rail, type Road } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 import { COURSE_KINDS, RIDE_KINDS, setCourseHeights, type Ride } from "./rides.ts";
@@ -175,14 +175,7 @@ export function moveLandmarksOffWays(landmarks: Landmark[], roads: Road[], rails
   }
   const over = bounds([...free].map((l) => l.point));
   const reach = OFF_WAY_M + ROOM_M;
-  const grid = new RectGrid<{ a: Point; b: Point; half: number }>(25, grownRect(over, reach));
-  for (const { line, half } of ways) {
-    for (let i = 0; i + 1 < line.length; i++) {
-      const [a, b] = [line[i], line[i + 1]];
-      const r = half + ROOM_M;
-      grid.add({ minX: Math.min(a[0], b[0]) - r, minY: Math.min(a[1], b[1]) - r, maxX: Math.max(a[0], b[0]) + r, maxY: Math.max(a[1], b[1]) + r }, { a, b, half });
-    }
-  }
+  const grid = segmentGrid(ways, 25, grownRect(over, reach), ROOM_M);
   const clear = (p: Point) => (grid.at(p).every((s) => distanceToSegment(p, s.a, s.b) >= s.half + ROOM_M) ? p : undefined);
   let [moved, aside] = [0, 0];
   const kept = landmarks.filter((landmark) => {
@@ -224,21 +217,7 @@ function wayShape(osm: string, raw: Point[], tags: Record<string, string>): Shap
   if (line.length < 2) {
     return undefined;
   }
-  return { osm, point: middleOf(line), line };
-}
-
-/** The point halfway along a line */
-function middleOf(line: Point[]): Point {
-  const lengths = line.slice(1).map((p, i) => Math.hypot(p[0] - line[i][0], p[1] - line[i][1]));
-  let left = lengths.reduce((sum, l) => sum + l, 0) / 2;
-  for (let i = 0; i < lengths.length; i++) {
-    if (left <= lengths[i] && lengths[i] > 0) {
-      const t = left / lengths[i];
-      return [line[i][0] + (line[i + 1][0] - line[i][0]) * t, line[i][1] + (line[i + 1][1] - line[i][1]) * t];
-    }
-    left -= lengths[i];
-  }
-  return line[0];
+  return { osm, point: halfwayAlong(line), line };
 }
 
 function addElement(result: Landmarks, tags: Record<string, string>, shape: Shape): void {
