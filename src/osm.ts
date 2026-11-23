@@ -1191,12 +1191,7 @@ function addArea(features: MapFeatures, osm: string, kind: AreaKind, polygon: Po
   features.areas.push({
     osm,
     kind,
-    ...(cover && { cover }),
-    ...(leafType && { leafType }),
-    ...(surface && { surface }),
-    ...(flowing && { flowing }),
-    ...(parking && { parking }),
-    ...(carriageway && { carriageway }),
+    ...truthy({ cover, leafType, surface, flowing, parking, carriageway }),
     polygon,
   });
 }
@@ -1299,10 +1294,7 @@ function lamp(tags: Tags, point: Point): StreetLamp {
     ...(mount && { mount }),
     // direction is clockwise from north
     ...(direction !== undefined && { toward: (((90 - direction) % 360) + 360) % 360 }),
-    ...(lampType && { lampType }),
-    ...(shape && { shape }),
-    ...(structure && { structure }),
-    ...(colour && { colour }),
+    ...truthy({ lampType, shape, structure, colour }),
   };
 }
 
@@ -1361,9 +1353,7 @@ function barrier(osm: string, kind: BarrierKind, tags: Tags, line: Point[]): Bar
     osm,
     kind,
     ...(height !== undefined && height > 0 ? { height } : { height: guess, heightEstimated: true }),
-    ...(material && { material }),
-    ...(madeOf && { madeOf }),
-    ...(colour && { colour }),
+    ...truthy({ material, madeOf, colour }),
     ...(tags.wall?.trim().toLowerCase() === "parapet" && { parapet: true }),
     ...(Number.isFinite(layer) && layer > 0 && { layer }),
     ...(design && { design }),
@@ -1679,6 +1669,22 @@ function layering(tags: Tags): { layer: number; bridge: boolean; tunnel: boolean
     // a passage through a building is on the ground
     tunnel: tags.tunnel !== undefined && tags.tunnel !== "no" && tags.tunnel !== "building_passage",
   };
+}
+
+/** The fields whose values are truthy, in their order: as `...(x && { x })` of each */
+export function truthy<T extends object>(fields: T): { [K in keyof T]?: Exclude<T[K], false | "" | 0 | null | undefined> } {
+  const kept: { [K in keyof T]?: Exclude<T[K], false | "" | 0 | null | undefined> } = {};
+  for (const key in fields) {
+    const value = fields[key];
+    if (isTruthy(value)) {
+      kept[key] = value;
+    }
+  }
+  return kept;
+}
+
+function isTruthy<V>(value: V): value is Exclude<V, false | "" | 0 | null | undefined> {
+  return Boolean(value);
 }
 
 function optionalName(tags: Tags): { name?: string } {

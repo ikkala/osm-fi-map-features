@@ -1,7 +1,7 @@
 // Ways through buildings: the walls opened where a way passes through a building (a building passage, a tunnel or
 // covered way found to run through one, a railway into a hall, a covered way at a door) and the rooms through it.
 import { fillUnderFloatingParts, markBuildingsWithParts, groundFloatingBuildings, raiseRoofsOverRoads } from "./buildingParts.ts";
-import { crossing, dedupe, distanceToRing, indexBoxes, nearestOnLine, pointInPolygon, pointInRing, pointKey, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
+import { crossing, dedupe, distanceToRing, indexBoxes, nearestOnLine, pointInPolygon, pointInRing, pointKey, pushTo, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
 import { bounds, PASSAGE_HEIGHT_M, WALKWAY_PASSAGE_HEIGHT_M, type Building, type ParseResult, type Passage, type PassageRoom, type Rail, type Road } from "./osm.ts";
 import { inTunnel, isBridge } from "./profile.ts";
 import { ridgeRoofs } from "./roofRidges.ts";
@@ -511,9 +511,7 @@ export function passagesOnToWalls(tagged: { road: Road; passage: Passage }[], ro
   const at = new Map<string, Road[]>();
   for (const road of roads) {
     for (const p of road.line) {
-      const list = at.get(pointKey(p)) ?? [];
-      list.push(road);
-      at.set(pointKey(p), list);
+      pushTo(at, pointKey(p), road);
     }
   }
   const boxes = buildings.map((b) => bounds(b.polygon.outer));

@@ -2,7 +2,7 @@
 // Features, one point per building, CC BY 4.0), applied to the OSM outlines the points fall in.
 import { requestKey, type CacheOptions } from "./cache.ts";
 import { partOutlines } from "./buildingParts.ts";
-import { bounds, LEVEL_HEIGHT_M, type Building, type BuildingUse, type GeoBox } from "./osm.ts";
+import { bounds, LEVEL_HEIGHT_M, truthy, type Building, type BuildingUse, type GeoBox } from "./osm.ts";
 import { indexBoxes, inRect, pointInPolygon, pointKey, pushTo, ringArea, type Point } from "./geometry.ts";
 import { field, items, optionalNumber, optionalString, pointFeatures } from "./json.ts";
 import { inGeoBox } from "./projection.ts";
@@ -89,9 +89,7 @@ export function parseBuildingRegister(response: unknown): RegisterBuilding[] {
       latitude,
       ...(floors !== undefined && floors > 0 && { floors }),
       ...(area !== undefined && area > 0 && { area }),
-      ...(facade && { facade }),
-      ...(frame && { frame }),
-      ...(use && { use }),
+      ...truthy({ facade, frame, use }),
       ...(year !== undefined && { year }),
     });
   }
