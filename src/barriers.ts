@@ -2,7 +2,7 @@
 // often runs on over a path with no opening of its own. A wall is cut open at a tunnel's portal in it too. A parapet
 // stands on a bridge's deck, over the ways passing under it, and so does a railing on a layer over the ground: they
 // open at their gates alone.
-import { crossing, distancesAlong, distanceToSegment, pointKey, type Point } from "./geometry.ts";
+import { crossing, distancesAlong, distanceToSegment, pointKey, rectsMeet, type Point } from "./geometry.ts";
 import { deckAt } from "./bridges.ts";
 import { DeckIndex } from "./deckIndex.ts";
 import { bounds, type Barrier, type Gate, type MapFeatures } from "./osm.ts";
@@ -47,7 +47,7 @@ export function openBarriers(features: MapFeatures): number {
     // [from, to] meters along the barrier
     const cuts: [number, number][] = [];
     for (const way of barrier.parapet || bridgeRailing(barrier) ? [] : ways) {
-      if (way.box.maxX < box.minX || way.box.minX > box.maxX || way.box.maxY < box.minY || way.box.minY > box.maxY) {
+      if (!rectsMeet(way.box, box)) {
         continue;
       }
       for (let i = 0; i + 1 < barrier.line.length; i++) {

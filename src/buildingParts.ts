@@ -1,6 +1,6 @@
 // Buildings and their parts: the outlines drawn by their parts, what a part takes from its outline, the filling under
 // parts raised off the ground, buildings floating over nothing, and open roofs over roads.
-import { indexBoxes, inRect, pointInPolygon, pushTo, ringArea, ringCentroid, type Point, type Polygon } from "./geometry.ts";
+import { indexBoxes, inRect, pointInPolygon, pushTo, rectsMeet, ringArea, ringCentroid, type Point, type Polygon } from "./geometry.ts";
 import { bounds, LEVEL_HEIGHT_M, type Building, type MapFeatures } from "./osm.ts";
 import { inTunnel } from "./profile.ts";
 import { WALKWAYS } from "./ways.ts";
@@ -167,7 +167,7 @@ export function fillUnderFloatingParts(features: MapFeatures): Building[] {
       continue;
     }
     const partBox = bounds(part.polygon.outer);
-    const nearby = ways.filter(({ box }) => box.maxX >= partBox.minX && box.minX <= partBox.maxX && box.maxY >= partBox.minY && box.minY <= partBox.maxY);
+    const nearby = ways.filter(({ box }) => rectsMeet(box, partBox));
     if (nearby.some(({ line }) => lineEntersPolygon(line, part.polygon))) {
       continue;
     }
@@ -210,16 +210,14 @@ const MIN_OVER_BUILDINGS = 0.5;
 export function groundFloatingBuildings(features: MapFeatures): void {
   const all = features.buildings.map((b) => ({ b, box: bounds(b.polygon.outer) }));
   const ways = [...features.roads, ...features.rails].filter((w) => !inTunnel(w)).map((w) => ({ line: w.line, box: bounds(w.line) }));
-  type Box = ReturnType<typeof bounds>;
-  const meet = (a: Box, b: Box) => a.maxX >= b.minX && a.minX <= b.maxX && a.maxY >= b.minY && a.minY <= b.maxY;
   for (const { b, box } of all) {
     if (b.part || b.hasParts || b.shelter !== undefined || b.minHeight <= 0 || OVERHANGING_PARTS.has(b.kind)) {
       continue;
     }
-    if (ways.some((w) => meet(box, w.box) && lineEntersPolygon(w.line, b.polygon))) {
+    if (ways.some((w) => rectsMeet(box, w.box) && lineEntersPolygon(w.line, b.polygon))) {
       continue;
     }
-    const lower = all.filter((o) => o.b !== b && o.b.minHeight < b.minHeight && meet(box, o.box));
+    const lower = all.filter((o) => o.b !== b && o.b.minHeight < b.minHeight && rectsMeet(box, o.box));
     if (lower.length > 0 && shareCovered(b.polygon, lower) >= MIN_OVER_BUILDINGS) {
       continue;
     }

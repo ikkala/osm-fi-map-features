@@ -6,7 +6,7 @@
 // left as it is: its parts would stand in the way's room or block it.
 import clipping from "polygon-clipping";
 import { storeyHeight } from "./ages.ts";
-import { distanceToRing, distanceToSegment, grownRect, pointInPolygon, RectGrid, ringArea, ringCentroid, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
+import { distanceToRing, distanceToSegment, grownRect, pointInPolygon, RectGrid, rectsMeet, ringArea, ringCentroid, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
 import { bounds, type Building, type Road } from "./osm.ts";
 import { measurable, type MeasuredPart } from "./roofTops.ts";
 import { inTunnel } from "./profile.ts";
@@ -53,10 +53,6 @@ function open(ring: Ring): Ring {
 
 function area(polygon: Polygon): number {
   return Math.abs(ringArea(polygon.outer)) - polygon.holes.reduce((sum, hole) => sum + Math.abs(ringArea(hole)), 0);
-}
-
-function overlaps(a: Rect, b: Rect): boolean {
-  return a.minX <= b.maxX && b.minX <= a.maxX && a.minY <= b.maxY && b.minY <= a.maxY;
 }
 
 /** The polygon and what is within reach of it: a rectangle round each of its edges, reaching past its ends */
@@ -197,7 +193,7 @@ function partsNear(parts: MeasuredPart[]): (box: Rect) => MeasuredPart[] {
     cells.add(box, { part, box });
   }
   return (box) => {
-    const near = cells.within(box).filter((entry) => overlaps(box, entry.box));
+    const near = cells.within(box).filter((entry) => rectsMeet(box, entry.box));
     return [...new Set(near.map((entry) => entry.part))];
   };
 }
