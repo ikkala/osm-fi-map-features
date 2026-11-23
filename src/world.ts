@@ -27,7 +27,7 @@ import { estimateCycling, estimateFootfall } from "./footfall.ts";
 import { mergeTrees, moveTreesOffWays, plantForests } from "./forests.ts";
 import type { Ground, HeightAt } from "./ground.ts";
 import { taggedGambrels } from "./gambrelRoofs.ts";
-import { pointKey, simplifyLine, type Point, type Rect } from "./geometry.ts";
+import { pointKey, simplifyLine, type Point, type Polygon, type Rect } from "./geometry.ts";
 import { placeLamps } from "./lamps.ts";
 import { landmarkQuery, moveLandmarksOffWays, parseLandmarks } from "./landmarks.ts";
 import { applyLaserShapes, type LaserRoofShape } from "./laserRoofShapes.ts";
@@ -60,7 +60,6 @@ import { messageOf } from "./json.ts";
 
 /** Roads and rails are simplified to this many meters */
 const LINE_TOLERANCE_M = 0.3;
-
 
 /** How the stages that fetch reach the sources: in the map's pieces, cached */
 export interface Sources {
@@ -299,7 +298,7 @@ export async function registerStage(world: OsmWorld, sources: Sources, logger: L
   const { features } = world;
   const attributions: string[] = [];
   try {
-    const asked = await sources.inPieces("building register", (box) => fetchBuildingRegister(box, { cache: sources.cache, refresh: sources.refresh }));
+    const asked = await sources.inPieces("building register", (box) => fetchBuildingRegister(box, sources));
     const register = sources.uniques(asked.pieces.map((p) => p.buildings));
     const match = applyRegister(features.buildings, sources.near(register), (r) => sources.toMeters(r.latitude, r.longitude));
     logger.log(
@@ -320,6 +319,13 @@ export async function registerStage(world: OsmWorld, sources: Sources, logger: L
   return { attributions };
 }
 
+/** The buildings' outlines in TM35FIN, and the options, of a request to the National Land Survey's sources */
+function mmlRequest(buildings: Building[], apiKey: string, sources: Sources, logger: Logger): [Polygon[], { apiKey: string; cache: SourceCache; refresh: boolean; log: (message: string) => void }] {
+  const toTm = (ring: Point[]) => ring.map((p) => toTm35fin(sources.toGeo(p)));
+  const outlines = buildings.map((b) => ({ outer: toTm(b.polygon.outer), holes: b.polygon.holes.map(toTm) }));
+  return [outlines, { apiKey, cache: sources.cache, refresh: sources.refresh, log: (message) => logger.log(message) }];
+}
+
 /** Roof colours from the orthophoto where OSM has none, after the parts take their outlines' (registerStage) */
 export async function roofColourStage(world: OsmWorld, sources: Sources, after: Registered, logger: Logger): Promise<string[]> {
   const { mmlApiKey } = sources;
@@ -327,12 +333,8 @@ export async function roofColourStage(world: OsmWorld, sources: Sources, after: 
     return [];
   }
   const roofs = world.features.buildings.filter((b) => !b.hasParts && !b.roofColour);
-  const toTm = (ring: Point[]) => ring.map((p) => toTm35fin(sources.toGeo(p)));
   try {
-    const { colours, cached, fetched } = await fetchRoofColours(
-      roofs.map((b) => ({ outer: toTm(b.polygon.outer), holes: b.polygon.holes.map(toTm) })),
-      { apiKey: mmlApiKey, cache: sources.cache, refresh: sources.refresh, log: (message) => logger.log(message) },
-    );
+    const { colours, cached, fetched } = await fetchRoofColours(...mmlRequest(roofs, mmlApiKey, sources, logger));
     for (const [index, colour] of colours) {
       roofs[index].roofColour = colour;
     }
@@ -492,12 +494,8 @@ export async function buildingHeightStage(
   if (mmlApiKey) {
     // the parts too, for their roofs' shapes
     const measured = notRaised.filter((b) => measurable(b) || (b.part && b.base !== undefined && !b.special && b.shelter === undefined && !b.lattice));
-    const toTm = (ring: Point[]) => ring.map((p) => toTm35fin(sources.toGeo(p)));
     try {
-      const { roofs, shapes, cached, fetched, failed } = await fetchLaserRoofs(
-        measured.map((b) => ({ outer: toTm(b.polygon.outer), holes: b.polygon.holes.map(toTm) })),
-        { apiKey: mmlApiKey, cache: sources.cache, refresh: sources.refresh, log: (message) => logger.log(message) },
-      );
+      const { roofs, shapes, cached, fetched, failed } = await fetchLaserRoofs(...mmlRequest(measured, mmlApiKey, sources, logger));
       const byBuilding = new Map<Building, number | undefined>(measured.map((b, index) => [b, roofs.get(index)]));
       laserRoof = (b) => byBuilding.get(b);
       const shapeByBuilding = new Map<Building, LaserRoofShape | undefined>(measured.map((b, index) => [b, shapes.get(index)]));
@@ -510,7 +508,7 @@ export async function buildingHeightStage(
   let lowered = 0;
   for (const source of roofTopSources) {
     try {
-      const asked = await sources.inPieces(source.title, (box) => fetchRoofTops(source, box, { cache: sources.cache, refresh: sources.refresh }), source.covers);
+      const asked = await sources.inPieces(source.title, (box) => fetchRoofTops(source, box, sources), source.covers);
       const parts = sources.uniques(asked.pieces.map((p) => p.parts));
       const ring = (points: GeoPoint[]) => points.map((p) => sources.toMeters(p.latitude, p.longitude));
       const nearParts = parts.filter((p) => sources.near(p.outer).length > 0);
@@ -572,7 +570,7 @@ export async function treeStage(world: OsmWorld, sources: Sources, treeSources: 
   const registerTrees: RegisterTree[] = [];
   for (const source of treeSources) {
     try {
-      const asked = await sources.inPieces(source.title, (box) => fetchTreeRegister(source, box, { cache: sources.cache, refresh: sources.refresh }), source.covers);
+      const asked = await sources.inPieces(source.title, (box) => fetchTreeRegister(source, box, sources), source.covers);
       const trees = sources.uniques(asked.pieces.map((p) => p.trees));
       logger.log(`${source.title}: ${trees.length} trees and shrubs (${asked.cached ? "cached" : "fetched"})`);
       registerTrees.push(...sources.near(trees));
