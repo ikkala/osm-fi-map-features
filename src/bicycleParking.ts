@@ -1,7 +1,7 @@
 // Bicycle parking (amenity=bicycle_parking): a stand or rack at a node, or an area of them, with how many bicycles
 // it takes, what kind it is and whether it is covered, as far as OSM tells.
 import { dedupe, ringArea, ringCentroid, type Point, type Ring } from "./geometry.ts";
-import type { GeoBox, OverpassResponse } from "./osm.ts";
+import { isClosed, type GeoBox, type OverpassResponse } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 
 /** Bicycle parking: at a point, or an area with its outline */
@@ -56,11 +56,8 @@ export function parseBicycleParking(elements: OverpassResponse["elements"], orig
     if (element.type === "node" && element.lat !== undefined && element.lon !== undefined) {
       result.push({ osm: `n${element.id}`, point: toPoint({ lat: element.lat, lon: element.lon }), ...details });
     } else if (element.type === "way" && element.geometry) {
-      const geometry = element.geometry;
-      const points = dedupe(geometry.map(toPoint));
-      const [first, last] = [geometry[0], geometry[geometry.length - 1]];
-      const closed = geometry.length >= 4 && first.lat === last.lat && first.lon === last.lon;
-      if (closed && points.length >= 3) {
+      const points = dedupe(element.geometry.map(toPoint));
+      if (isClosed(element.geometry) && points.length >= 3) {
         const outline = ringArea(points) > 0 ? points : [...points].reverse();
         result.push({ osm: `w${element.id}`, point: ringCentroid(outline), outline, ...details });
       } else if (points.length >= 2) {

@@ -6,7 +6,7 @@
 // left as it is: its parts would stand in the way's room or block it.
 import clipping from "polygon-clipping";
 import { storeyHeight } from "./ages.ts";
-import { distanceToRing, distanceToSegment, grownRect, pointInPolygon, RectGrid, rectsMeet, ringArea, ringCentroid, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
+import { distanceToRing, distanceToSegment, grownRect, pointInPolygon, polygonArea, RectGrid, rectsMeet, ringCentroid, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
 import { bounds, type Building, type Road } from "./osm.ts";
 import { measurable, type MeasuredPart } from "./roofTops.ts";
 import { inTunnel } from "./profile.ts";
@@ -49,10 +49,6 @@ function polygons(multi: ClipPolygon[]): Polygon[] {
 function open(ring: Ring): Ring {
   const [first, last] = [ring[0], ring[ring.length - 1]];
   return ring.length > 1 && first[0] === last[0] && first[1] === last[1] ? ring.slice(0, -1) : ring;
-}
-
-function area(polygon: Polygon): number {
-  return Math.abs(ringArea(polygon.outer)) - polygon.holes.reduce((sum, hole) => sum + Math.abs(ringArea(hole)), 0);
 }
 
 /** The polygon and what is within reach of it: a rectangle round each of its edges, reaching past its ends */
@@ -204,14 +200,14 @@ function partsNear(parts: MeasuredPart[]): (box: Rect) => MeasuredPart[] {
  */
 function split(b: Building, base: number, parts: MeasuredPart[], slivers: boolean): Building[] | undefined {
   const outline = clip(b.polygon);
-  const outlineArea = area(b.polygon);
+  const outlineArea = polygonArea(b.polygon);
   const pieces: { polygon: Polygon; top: number; area: number }[] = [];
   for (const part of parts) {
     if (part.top - base < MIN_TOP_M) {
       continue;
     }
     for (const polygon of polygons(clipping.intersection(outline, clip(part.polygon)))) {
-      const a = area(polygon);
+      const a = polygonArea(polygon);
       if (a >= MIN_PIECE_M2) {
         pieces.push({ polygon, top: part.top - base, area: a });
       }
@@ -281,7 +277,7 @@ function split(b: Building, base: number, parts: MeasuredPart[], slivers: boolea
     const height = weightedMedian(group.tops);
     const [first, ...others] = group.polygons;
     for (const polygon of polygons(clipping.union(first, ...others))) {
-      if (area(polygon) < MIN_PART_M2) {
+      if (polygonArea(polygon) < MIN_PART_M2) {
         continue;
       }
       made.push(partOf(b, polygon, height, made.length + 1));

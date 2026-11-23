@@ -252,6 +252,17 @@ function samePoint(a: Point, b: Point): boolean {
   return a[0] === b[0] && a[1] === b[1];
 }
 
+/** Outer rings counter-clockwise, holes clockwise (seen with east right and north up). */
+export function orientRings(polygon: Polygon): Polygon {
+  const orient = (ring: Ring, ccw: boolean) => (ringArea(ring) > 0 === ccw ? ring : [...ring].reverse());
+  return { outer: orient(polygon.outer, true), holes: polygon.holes.map((hole) => orient(hole, false)) };
+}
+
+/** A polygon's area less its holes' */
+export function polygonArea(polygon: Polygon): number {
+  return Math.abs(ringArea(polygon.outer)) - polygon.holes.reduce((sum, hole) => sum + Math.abs(ringArea(hole)), 0);
+}
+
 /** Signed area (shoelace); positive for counter-clockwise rings. */
 export function ringArea(ring: Ring): number {
   let sum = 0;

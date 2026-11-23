@@ -1,8 +1,8 @@
 // Playground equipment (playground=*), and where it faces. OSM seldom tells a piece's direction or size: a way
 // tells them by its line or outline, a swing lines up with the next swing in its row, and other nodes with the
 // nearest edge of the playground they stand in.
-import { dedupe, distanceToSegment, inRect, orientedBox, pointInPolygon, ringArea, type Point, type Polygon, type Ring } from "./geometry.ts";
-import { bounds, meters, type GeoBox, type OverpassResponse, type PlayEquipment } from "./osm.ts";
+import { boxCentre, dedupe, distanceToSegment, inRect, orientedBox, pointInPolygon, ringArea, type Point, type Polygon, type Ring } from "./geometry.ts";
+import { bounds, isClosed, meters, type GeoBox, type OverpassResponse, type PlayEquipment } from "./osm.ts";
 import { LocalProjection, type GeoPoint } from "./projection.ts";
 
 /** Nodes of a kind this close (m) are one piece mapped twice */
@@ -43,12 +43,8 @@ export function parsePlayEquipment(elements: OverpassResponse["elements"], origi
     if (element.type === "node" && element.lat !== undefined && element.lon !== undefined) {
       result.push({ osm: `n${element.id}`, kind, point: toPoint({ lat: element.lat, lon: element.lon }), ...details });
     } else if (element.type === "way" && element.geometry) {
-      const geometry = element.geometry;
-      const points = dedupe(geometry.map(toPoint));
-      const first = geometry[0];
-      const last = geometry[geometry.length - 1];
-      const closed = geometry.length >= 4 && first.lat === last.lat && first.lon === last.lon;
-      if (closed && points.length >= 3) {
+      const points = dedupe(element.geometry.map(toPoint));
+      if (isClosed(element.geometry) && points.length >= 3) {
         result.push({ osm: `w${element.id}`, kind, ...boxOf(points), outline: ringArea(points) > 0 ? points : [...points].reverse(), ...details });
       } else if (points.length >= 2) {
         const [a, b] = [points[0], points[points.length - 1]];
@@ -65,14 +61,7 @@ export function parsePlayEquipment(elements: OverpassResponse["elements"], origi
 /** An outline's smallest box: its middle, the direction of its long side (0 .. 180) and its sides */
 function boxOf(ring: Ring): { point: Point; along: number; length: number; width: number } {
   const box = orientedBox(ring);
-  const u: Point = [Math.cos(box.angle), Math.sin(box.angle)];
-  const v: Point = [-u[1], u[0]];
-  const range = (axis: Point) => {
-    const values = ring.map(([x, y]) => x * axis[0] + y * axis[1]);
-    return (Math.min(...values) + Math.max(...values)) / 2;
-  };
-  const [mu, mv] = [range(u), range(v)];
-  return { point: [mu * u[0] + mv * v[0], mu * u[1] + mv * v[1]], along: (box.angle * 180) / Math.PI, length: box.length, width: box.width };
+  return { point: boxCentre(ring, box.angle), along: (box.angle * 180) / Math.PI, length: box.length, width: box.width };
 }
 
 /**
