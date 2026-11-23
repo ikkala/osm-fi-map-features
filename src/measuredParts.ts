@@ -8,7 +8,7 @@ import clipping from "polygon-clipping";
 import { storeyHeight } from "./ages.ts";
 import { distanceToRing, distanceToSegment, grownRect, pointInPolygon, polygonArea, RectGrid, rectsMeet, ringCentroid, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
 import { bounds, type Building, type Road } from "./osm.ts";
-import { measurable, type MeasuredPart } from "./roofTops.ts";
+import { measurable, partGrid, type MeasuredPart } from "./roofTops.ts";
 import { inTunnel } from "./profile.ts";
 
 /** A piece of a measured part within an outline smaller than this (m²) is left out, and a part made smaller too */
@@ -183,11 +183,7 @@ function waysCrossing(roads: Road[]): (polygon: Polygon) => boolean {
 
 /** The parts whose boxes overlap a box */
 function partsNear(parts: MeasuredPart[]): (box: Rect) => MeasuredPart[] {
-  const cells = new RectGrid<{ part: MeasuredPart; box: Rect }>(CELL_M);
-  for (const part of parts) {
-    const box = bounds(part.polygon.outer);
-    cells.add(box, { part, box });
-  }
+  const cells = partGrid(parts);
   return (box) => {
     const near = cells.within(box).filter((entry) => rectsMeet(box, entry.box));
     return [...new Set(near.map((entry) => entry.part))];
