@@ -1,7 +1,7 @@
 // Puts crossings, traffic signals and gates (OSM nodes) on their ways. The lines have been simplified by
 // then, so a node is on the way passing nearest to it, if close enough.
 import { deckAt } from "./bridges.ts";
-import { nearestOnLine, type Point } from "./geometry.ts";
+import { grownRect, inRect, nearestOnLine, type Point } from "./geometry.ts";
 import { bounds, type Crossing, type Gate, type MapFeatures, type Road, type StreetNode, type TrafficSignal, type WayPoint } from "./osm.ts";
 import { WALKWAYS } from "./ways.ts";
 import { inTunnel } from "./profile.ts";
@@ -68,7 +68,7 @@ export function placeStreetNodes(nodes: StreetNode[], features: MapFeatures): { 
 function nearest<T>(candidates: Candidate<T>[], p: Point, width?: (item: T) => number): { item: T; segment: number } | undefined {
   let best: { item: T; segment: number; distance: number } | undefined;
   for (const { item, line, box } of candidates) {
-    if (p[0] < box.minX - ON_WAY_M || p[0] > box.maxX + ON_WAY_M || p[1] < box.minY - ON_WAY_M || p[1] > box.maxY + ON_WAY_M) {
+    if (!inRect(p, grownRect(box, ON_WAY_M))) {
       continue;
     }
     const { distance, segment } = nearestOnLine(line, p);

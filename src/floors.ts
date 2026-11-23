@@ -12,11 +12,11 @@
 //   it is missed, the roof is a lid.
 // Within the bounds a floor keeps as high as it can, no higher than it hangs between its portals.
 import { deckAt } from "./bridges.ts";
-import { distanceToRing, distanceToSegment, grownRect, indexOwnBoxes, inRect, metersAlong, MinHeap, nearestOnLine, nearestOnSegment, pointInPolygon, pointKey, pushTo, rectsMeet, RESOLUTION_M, type Point, type Rect } from "./geometry.ts";
+import { densify, distanceToRing, distanceToSegment, grownRect, indexOwnBoxes, inRect, metersAlong, MinHeap, nearestOnLine, nearestOnSegment, pointInPolygon, pointKey, pushTo, rectsMeet, RESOLUTION_M, type Point, type Rect } from "./geometry.ts";
 import type { LinearProgram, SolveLp } from "./lp.ts";
 import { bounds, type Building, type MapFeatures, type Road } from "./osm.ts";
 import { inTunnel, isBridge } from "./profile.ts";
-import { acrossRoom, BED_M, COVER_M, densify, lowestGround, pointsAround, spread, WALL_FOOTING_M, WATER_DEPTH_M, type TunnelNetwork, type TunnelNode } from "./tunnels.ts";
+import { acrossRoom, BED_M, COVER_M, lowestGround, pointsAround, spread, WALL_FOOTING_M, WATER_DEPTH_M, type TunnelNetwork, type TunnelNode } from "./tunnels.ts";
 import { isRoad, ROOM_SIDE_M, TUNNEL_GRADE, widthOf, type Way } from "./ways.ts";
 
 /** A known floor is the floor of the tunnel's point nearest it within this far (m) */

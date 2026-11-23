@@ -6,7 +6,7 @@ import { inTunnel } from "./profile.ts";
 import { defined } from "./testing.ts";
 import { easedDepth, solveFloors, type KnownFloor } from "./floors.ts";
 import { loadLp } from "./lp.ts";
-import { BED_M, CAR_PARK_CLEARANCE_M, COVER_M, WALL_FOOTING_M, densify, fitRoomsUnderDecks, openPortals, portalWallsAt, raiseToWalls, rampsOut, roomHeight, setTunnelRooms, tunnelNetwork, uncoverAtGrade, WATER_DEPTH_M } from "./tunnels.ts";
+import { BED_M, CAR_PARK_CLEARANCE_M, COVER_M, WALL_FOOTING_M, fitRoomsUnderDecks, openPortals, portalWallsAt, raiseToWalls, rampsOut, roomHeight, setTunnelRooms, tunnelNetwork, uncoverAtGrade, WATER_DEPTH_M } from "./tunnels.ts";
 import { CLEARANCE_M, ROOF_M } from "./ways.ts";
 
 function road(osm: string, line: Point[], extra: Partial<Road> = {}): Road {
@@ -35,10 +35,6 @@ function solveTunnels(
 
 const round = (values: number[] | undefined) => values?.map((v) => Math.round(v * 10) / 10);
 const counts = ({ floors, ramps }: { floors: number; ramps: number }) => ({ floors, ramps });
-
-test("densify adds points so none are further apart than the step", () => {
-  assert.deepEqual(densify([[0, 0], [25, 0], [30, 0]], 10), [[0, 0], [25 / 3, 0], [50 / 3, 0], [25, 0], [30, 0]]);
-});
 
 test("a tunnel's floor goes straight from portal to portal when the ground over it is high enough", () => {
   // portals at 100 and 90 at e = 0 and 200, a hill of 130 over the tunnel between
