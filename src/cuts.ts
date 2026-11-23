@@ -93,24 +93,27 @@ function direction(a: Point, c: Point): Point {
   return length > 0 ? [(c[0] - a[0]) / length, (c[1] - a[1]) / length] : [1, 0];
 }
 
-/** The lid's top at each point of a tunnel's line (the lower rim, at least `room` over the floor), or undefined if not in a cut */
-export function cutLid(line: Point[], heightAt: (e: number, n: number) => number | undefined, room: number): number[] | undefined {
-  let samples = 0;
-  let deep = 0;
+/** Points along a line in the middle of steps of at most SAMPLE_M, with the segment each is on */
+function stepMiddles(line: Point[]): { p: Point; segment: number }[] {
+  const middles: { p: Point; segment: number }[] = [];
   for (let i = 0; i + 1 < line.length; i++) {
     const [a, c] = [line[i], line[i + 1]];
-    const along = direction(a, c);
     const steps = Math.max(1, Math.ceil(Math.hypot(c[0] - a[0], c[1] - a[1]) / SAMPLE_M));
     for (let k = 0; k < steps; k++) {
-      const p: Point = [a[0] + ((c[0] - a[0]) * (k + 0.5)) / steps, a[1] + ((c[1] - a[1]) * (k + 0.5)) / steps];
-      const floor = heightAt(...p);
-      samples++;
-      if (floor !== undefined && rims(p, along, heightAt)[0] - floor >= MIN_CUT_M) {
-        deep++;
-      }
+      middles.push({ p: [a[0] + ((c[0] - a[0]) * (k + 0.5)) / steps, a[1] + ((c[1] - a[1]) * (k + 0.5)) / steps], segment: i });
     }
   }
-  if (deep < samples * CUT_SHARE) {
+  return middles;
+}
+
+/** The lid's top at each point of a tunnel's line (the lower rim, at least `room` over the floor), or undefined if not in a cut */
+export function cutLid(line: Point[], heightAt: (e: number, n: number) => number | undefined, room: number): number[] | undefined {
+  const samples = stepMiddles(line);
+  const deep = samples.filter(({ p, segment }) => {
+    const floor = heightAt(...p);
+    return floor !== undefined && rims(p, direction(line[segment], line[segment + 1]), heightAt)[0] - floor >= MIN_CUT_M;
+  }).length;
+  if (deep < samples.length * CUT_SHARE) {
     return undefined;
   }
   return line.map((p, i) => {
@@ -156,20 +159,9 @@ function besideCut(line: Point[], width: number, cuts: { way: Way; width: number
     }
     return best;
   };
-  let samples = 0;
-  let beside = 0;
-  for (let i = 0; i + 1 < line.length; i++) {
-    const [a, c] = [line[i], line[i + 1]];
-    const steps = Math.max(1, Math.ceil(Math.hypot(c[0] - a[0], c[1] - a[1]) / SAMPLE_M));
-    for (let k = 0; k < steps; k++) {
-      const p: Point = [a[0] + ((c[0] - a[0]) * (k + 0.5)) / steps, a[1] + ((c[1] - a[1]) * (k + 0.5)) / steps];
-      samples++;
-      if ((nearest(p)?.d ?? Infinity) <= BESIDE_M) {
-        beside++;
-      }
-    }
-  }
-  if (samples === 0 || beside < samples * CUT_SHARE) {
+  const samples = stepMiddles(line);
+  const beside = samples.filter(({ p }) => (nearest(p)?.d ?? Infinity) <= BESIDE_M).length;
+  if (samples.length === 0 || beside < samples.length * CUT_SHARE) {
     return undefined;
   }
   const lid: number[] = [];

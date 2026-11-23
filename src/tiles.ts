@@ -141,19 +141,7 @@ export function cutIntoTiles(features: MapFeatures, keys: TileKey[], size: numbe
   for (const key of keys) {
     tiles.set(tileName(key), { ...key, roads: [], rails: [], buildings: [], areas: [], trees: [], lamps: [], crossings: [], signals: [], gates: [], barriers: [], playEquipment: [], bridgeDecks: [] });
   }
-  const touched = (points: Point[]) => {
-    const range = tileRange(bounds(points), size);
-    const result: Tile[] = [];
-    for (let y = range.minY; y <= range.maxY; y++) {
-      for (let x = range.minX; x <= range.maxX; x++) {
-        const tile = tiles.get(tileName({ x, y }));
-        if (tile) {
-          result.push(tile);
-        }
-      }
-    }
-    return result;
-  };
+  const touched = (points: Point[]) => tilesCovering(bounds(points), size).flatMap((key) => tiles.get(tileName(key)) ?? []);
 
   for (const road of features.roads) {
     for (const tile of touched(road.line)) {
