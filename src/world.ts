@@ -49,7 +49,9 @@ import { dropStepsInParts, setStaircaseDecks } from "./stairs.ts";
 import { placeStreetNodes } from "./streets.ts";
 import { setTrackBeds } from "./trackbeds.ts";
 import { fetchTreeRegister, type RegisterTree, type TreeRegisterSource } from "./treeRegister.ts";
-import { fitRoomsUnderDecks, openPortals, portalWallsAt, raiseToWalls, setTunnelFloors, setTunnelRooms, uncoverAtGrade } from "./tunnels.ts";
+import { solveFloors, type KnownFloor } from "./floors.ts";
+import type { SolveLp } from "./lp.ts";
+import { fitRoomsUnderDecks, openPortals, portalWallsAt, raiseToWalls, rampsOut, setTunnelRooms, tunnelNetwork, uncoverAtGrade } from "./tunnels.ts";
 import { leastDecks, lowerUnderBridges, tramBedCeiling } from "./underbridges.ts";
 import { parseWaterways, setWaterLevels, waterwayQuery, type WaterLevels } from "./waterways.ts";
 import { GRADE, isRoad, userOf, type Way } from "./ways.ts";
@@ -197,20 +199,25 @@ export function spanStage(world: OsmWorld, covered: Covered, logger: Logger): Sp
   return { ground };
 }
 
-export function tunnelStage(world: OsmWorld, spanned: Spanned, knownFloors: { p: Point; floor: number; name?: string }[], logger: Logger): Tunnelled {
+export function tunnelStage(world: OsmWorld, spanned: Spanned, knownFloors: KnownFloor[], lp: SolveLp, logger: Logger): Tunnelled {
   const { features, bridgeOutlines, levels } = world;
   const { ground } = spanned;
   const heightAt = ground.at("flights");
   const decks = new DeckIndex([...features.roads, ...features.rails], bridgeOutlines);
-  const tunnels = setTunnelFloors(features, heightAt, levels, (p) => decks.under(p), knownFloors, (p, layer) => decks.over(p, layer));
-  logger.log(`${tunnels.floors} tunnel ways under hills and lakes get floors, ${tunnels.ramps} ways out of their portals ramps, ${tunnels.walls.length} stretches of ground raised over portals`);
-  if (knownFloors.length > 0) {
-    logger.log(`${tunnels.known} of ${knownFloors.length} known tunnel floors on a tunnel`);
+  const network = tunnelNetwork(features, heightAt, levels);
+  const solved = solveFloors(features, network, lp, (p) => decks.under(p), knownFloors, (p, layer) => decks.over(p, layer));
+  for (const { way, bound, at, by } of solved.conflicts) {
+    logger.warn(`tunnel floor misses its ${bound} at (${at[0].toFixed(1)}, ${at[1].toFixed(1)}): ${way} by up to ${by.toFixed(1)} m`);
   }
-  const opened = openPortals(features.buildings, tunnels.basements, features.roads, heightAt);
-  logger.log(`${tunnels.basements.length} tunnel ways go down into basements from portals in buildings, opening ${opened} walls`);
+  const ramps = rampsOut(features.roads, network) + rampsOut(features.rails, network);
+  logger.log(`${solved.floors} tunnel ways under hills and lakes get floors, ${ramps} ways out of their portals ramps, ${network.walls.length} stretches of ground raised over portals`);
+  if (knownFloors.length > 0) {
+    logger.log(`${solved.known} of ${knownFloors.length} known tunnel floors on a tunnel`);
+  }
+  const opened = openPortals(features.buildings, solved.basements, features.roads, heightAt);
+  logger.log(`${solved.basements.length} tunnel ways go down into basements from portals in buildings, opening ${opened} walls`);
   // from here on, and in the tiles' heights, the ground over the tunnels' ends is raised to their portals' walls
-  const wallsAt = portalWallsAt(tunnels.walls);
+  const wallsAt = portalWallsAt(network.walls);
   ground.lay("portals", (below) => raiseToWalls(below, wallsAt));
   return { ground };
 }

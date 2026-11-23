@@ -47,7 +47,7 @@ export {
   type FlowRoad,
   type RoadFlows,
 } from "./flows.ts";
-export { triangulate, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
+export { RESOLUTION_M, triangulate, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
 export { allows, builtBefore, eraOf, exactYear, type Built } from "./startDates.ts";
 export {
   DAM_WIDTH_M,

@@ -67,7 +67,8 @@ for (const key of info.tiles) {
 }
 ```
 
-Coordinates are meters east (first) and north (second) of the origin. Tile `x, y` covers east `x * size ..
+Coordinates are meters east (first) and north (second) of the origin, kept in a map's files to `RESOLUTION_M`
+(exported). Tile `x, y` covers east `x * size ..
 (x + 1) * size` and north `y * size .. (y + 1) * size`. Roads, rails and areas are cut at tile edges; a
 building belongs whole to the tile its centroid is in, a tree to the tile of its trunk, a lamp to the tile of
 its foot and a piece of playground equipment, a bicycle parking, a landmark or a pitch's box to the tile of its middle; landmarks drawn as lines
@@ -128,8 +129,10 @@ Where to look:
   `src/profile.ts`.
 - Ways' users and dimensions (widths, clearances, the decks', lids' and roofs' thickness and reach, grades), which
   the modules building around them share: `src/ways.ts`, exported as data in `WAY_DIMENSIONS`.
-- Tunnels: `src/tunnels.ts` (floors, rooms, ramps at the portals, floors known at points: `tunnelFloors`) and
-  `src/cuts.ts` (a shallow tunnel the model has as an open cut, under a lid).
+- Tunnels: `src/tunnels.ts` (the tunnels' points and portals, rooms, ramps at the portals), `src/floors.ts` (the
+  floors, a linear program for each group of tunnels that touch, solved by `src/lp.ts` with [HiGHS](https://highs.dev),
+  and floors known at points: `tunnelFloors`) and `src/cuts.ts` (a shallow tunnel the model has as an open cut, under a
+  lid).
 - Bridges: `src/bridges.ts` (decks of spans and boardwalks, and steps telling a deck's height), `src/decks.ts`
   (bridge outlines as decks), `src/deckIndex.ts` (the decks' heights, and what is under or on one),
   `src/underbridges.ts` (ways under a deck), `src/stairs.ts` (staircases' landings).

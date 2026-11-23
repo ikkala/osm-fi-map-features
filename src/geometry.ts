@@ -132,6 +132,9 @@ export function clipPolygon(polygon: Polygon, rect: Rect): Polygon | undefined {
   return { outer, holes };
 }
 
+/** The resolution (m) the map's tiles keep coordinates and heights to: points nearer than it are one there */
+export const RESOLUTION_M = 0.1;
+
 /** A point as a key: ways that join share the point exactly */
 export function pointKey(p: Point): string {
   return `${p[0]},${p[1]}`;
