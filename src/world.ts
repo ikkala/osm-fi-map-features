@@ -14,7 +14,7 @@ import { DeckIndex } from "./deckIndex.ts";
 import { inheritFromOutlines } from "./buildingParts.ts";
 import { buildingSteps } from "./buildingSteps.ts";
 import { setBridgeDecks } from "./bridges.ts";
-import { setOutlineDecks, standOnDecks } from "./decks.ts";
+import { onOutline, setOutlineDecks, standOnDecks } from "./decks.ts";
 import { bicycleParkingQuery, parseBicycleParking } from "./bicycleParking.ts";
 import type { Logger } from "./builder.ts";
 import { businessQuery, parseBusinesses, placeBusinesses } from "./businesses.ts";
@@ -34,7 +34,7 @@ import { applyLaserShapes, type LaserRoofShape } from "./laserRoofShapes.ts";
 import { fetchLaserRoofs, LASER_ATTRIBUTION } from "./laserScanning.ts";
 import { splitByMeasuredParts } from "./measuredParts.ts";
 import { fetchRoofColours, ORTHO_ATTRIBUTION } from "./ortho.ts";
-import { LEVEL_HEIGHT_M, parseOsm, type Building, type GeoBox, type OsmElement, type OverpassResponse } from "./osm.ts";
+import { bounds, LEVEL_HEIGHT_M, parseOsm, type Building, type GeoBox, type OsmElement, type OverpassResponse } from "./osm.ts";
 import { openBuildings, openDoorways, openRailHalls, type ThroughBuildings } from "./passages.ts";
 import { pitchBoxes, setLevelTops } from "./pitches.ts";
 import { setPlatformTops } from "./platforms.ts";
@@ -179,7 +179,7 @@ export interface Spanned {
  * deck
  */
 export function spanStage(world: OsmWorld, covered: Covered, logger: Logger): Spanned {
-  const { features, indoors, throughBuildings } = world;
+  const { features, indoors, throughBuildings, bridgeOutlines } = world;
   const { ground } = covered;
   const heightAt = ground.at("flights");
   const ramps = (lines: Way[]) => lines.filter((l) => l.deck && !isBridge(l)).length;
@@ -193,7 +193,17 @@ export function spanStage(world: OsmWorld, covered: Covered, logger: Logger): Sp
     }
   }
   const crosses = (l: Way, p: Point) => [...(users.get(pointKey(p)) ?? [])].some((user) => user !== userOf(l));
-  const room = { least: (l: Way) => least.get(l) ?? [], grade: (l: Way) => GRADE[userOf(l)], crosses, raised: (l: Way) => raised.add(l) };
+  // the spans on one outline rise together
+  const outlines = bridgeOutlines.map((o) => ({ osm: o.osm, polygon: o.polygon, box: bounds(o.polygon.outer) }));
+  const outlineOf = new Map<Way, string>();
+  for (const way of [...features.roads, ...features.rails].filter((w) => isBridge(w) && w.line.length >= 2)) {
+    const box = bounds(way.line);
+    const on = outlines.find((o) => onOutline(way.line, o.polygon, box, o.box));
+    if (on) {
+      outlineOf.set(way, on.osm);
+    }
+  }
+  const room = { least: (l: Way) => least.get(l) ?? [], grade: (l: Way) => GRADE[userOf(l)], crosses, raised: (l: Way) => raised.add(l), outline: (l: Way) => outlineOf.get(l) };
   const stepped = setBridgeDecks(features.roads, heightAt, indoors, throughBuildings, room) + setBridgeDecks(features.rails, heightAt, indoors, undefined, room);
   logger.log(`${ramps(features.roads) + ramps(features.rails)} bridge approaches raised out of the hollows under bridges, ${stepped} decks' heights told by steps, ${raised.size} bridge ways raised for the room OSM tells under them: ${[...new Set([...raised].map((w) => w.osm))].join(", ")}`);
   return { ground };

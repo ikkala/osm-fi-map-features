@@ -367,6 +367,48 @@ test("a landing rises no more than its embankment can come down at the grade by 
   assert.deepEqual(street.deck, undefined);
 });
 
+test("tracks on one bridge outline rise together: the lowest cap of their landings bounds them all, their approaches embanked at the grade", () => {
+  // two tracks 4 m apart on one outline over a way under them, a street crossing the north track's west approach at
+  // grade 5 m out, the south track's with none: both west landings up 0.5 m at most
+  const flat = () => 100;
+  const track = (n: number) => {
+    const west: BridgeLine = { bridge: false, line: [[-100, n], [-5, n], [0, n]] };
+    const bridge: BridgeLine = { bridge: true, line: [[0, n], [60, n]] };
+    const east: BridgeLine = { bridge: false, line: [[60, n], [160, n]] };
+    return { west, bridge, east };
+  };
+  const [north, south] = [track(0), track(4)];
+  const street: BridgeLine = { bridge: false, line: [[-5, -20], [-5, 0]] };
+  const bridges = [north.bridge, south.bridge];
+  const least = (l: BridgeLine) => (bridges.includes(l) ? [48, 49, 50, 51, 52].map((e) => ({ p: [e, l.line[0][1]] satisfies Point, h: 106 })) : []);
+  const crosses = (l: BridgeLine, [e, n]: Point) => l === north.west && e === -5 && n === 0;
+  const lines = [...Object.values(north), ...Object.values(south), street];
+  setBridgeDecks(lines, flat, undefined, undefined, { least, grade: () => 0.1, crosses, outline: (l) => (bridges.includes(l) ? "w9" : undefined) });
+  for (const e of [0, 20, 48, 50, 60]) {
+    const [a, b] = bridges.map((l) => deckAt(l.line, defined(l.deck), [e, l.line[0][1]]));
+    assert.ok(Math.abs(a - b) < 1e-9, `${e}: ${a} and ${b}`);
+  }
+  assert.ok(Math.abs(deckAt(south.bridge.line, defined(south.bridge.deck), [0, 4]) - 100.5) < 1e-9);
+  // the approaches with decks no steeper than the grade
+  for (const l of lines.filter((l) => !l.bridge && l.deck)) {
+    const deck = defined(l.deck);
+    for (let i = 1; i < l.line.length; i++) {
+      const run = Math.hypot(l.line[i][0] - l.line[i - 1][0], l.line[i][1] - l.line[i - 1][1]);
+      assert.ok(Math.abs(deck[i] - deck[i - 1]) <= 0.1 * run + 1e-9);
+    }
+  }
+});
+
+test("a deck rising for the room gets a point once where both its crests and the room put one", () => {
+  // level room over a way 4 m wide: the crests' curves at its points, and where the room lifts the deck over them
+  const west: BridgeLine = { bridge: false, line: [[-100, 0], [0, 0]] };
+  const bridge: BridgeLine = { bridge: true, line: [[0, 0], [60, 0]] };
+  const east: BridgeLine = { bridge: false, line: [[60, 0], [160, 0]] };
+  const least = (l: BridgeLine) => (l === bridge ? [48, 49, 50, 51, 52].map((e) => ({ p: [e, 0] satisfies Point, h: 105 })) : []);
+  setBridgeDecks([west, bridge, east], () => 100, undefined, undefined, { least, grade: () => 0.1 });
+  assert.ok(bridge.line.every((p, i) => i === 0 || Math.hypot(p[0] - bridge.line[i - 1][0], p[1] - bridge.line[i - 1][1]) > 1e-6));
+});
+
 test("bridge lines meeting end to end where a way on the ground leads on land there: two decks, not one over it", () => {
   // two ramps down from the banks to a path in the hollow between them
   const valley = (e: number) => 100 + Math.abs(e - 20) / 5;
