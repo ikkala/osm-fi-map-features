@@ -83,8 +83,7 @@ export function setOutlineDecks<T extends DeckLine>(
       if (!isBridge(l) || !deck || deck.length !== l.line.length || l.line.length < 2) {
         return false;
       }
-      const b = boxOf(l.line);
-      return b.maxX >= box.minX && b.minX <= box.maxX && b.maxY >= box.minY && b.minY <= box.maxY && insideShare(l.line, outline.polygon) >= ON_OUTLINE_SHARE;
+      return onOutline(l.line, outline.polygon, boxOf(l.line), box);
     });
     if (members.length > 0) {
       outlined.push({ outline, members });
@@ -509,6 +508,11 @@ function deckProfile(members: DeckLine[], polygon: Polygon, along: (p: Point) =>
   const reach = Math.min(END_SLOPE_M, t1 - t0);
   const [before, after] = [(on(t0 + reach) - first) / reach, (last - on(t1 - reach)) / reach];
   return (t) => (t < t0 ? first + before * (t - t0) : t > t1 ? last + after * (t - t1) : on(t));
+}
+
+/** Whether a line is on a bridge's outline: ON_OUTLINE_SHARE of its length inside it (lineBox, box: their bounds) */
+export function onOutline(line: Point[], polygon: Polygon, lineBox: Rect = bounds(line), box: Rect = bounds(polygon.outer)): boolean {
+  return lineBox.maxX >= box.minX && lineBox.minX <= box.maxX && lineBox.maxY >= box.minY && lineBox.minY <= box.maxY && insideShare(line, polygon) >= ON_OUTLINE_SHARE;
 }
 
 /** The share of a line's length inside a polygon */

@@ -34,6 +34,8 @@ export interface DeckRoom<T> {
   grade: (line: T) => number;
   crosses?: (line: T, p: Point) => boolean;
   raised?: (line: T) => void;
+  /** The bridge outline a line is on: the spans on one share the lowest of their landings' caps, so they rise together */
+  outline?: (line: T) => string | undefined;
 }
 /** An embankment raised to a landing is walked this often (m) to where it meets the ground */
 const EMBANKMENT_STEP_M = 1;
@@ -81,7 +83,8 @@ const BOARDWALK_STRAIGHT_M = 0.05;
  * Where a deck is lower than its least heights over the ways under it (room), it rises to them, running straight
  * from them to its landings as through the heights steps tell; where its ways' grade does not reach down to a
  * landing from them, the landing rises to where it does, and the lines leading on from it are raised as embankments
- * down at that grade to the ground.
+ * down at that grade to the ground. The spans on one bridge outline (room.outline: tracks side by side) rise together, a
+ * landing no higher than the other spans' nearest it may rise.
  */
 export function setBridgeDecks<T extends BridgeLine>(
   lines: T[],
@@ -305,8 +308,32 @@ export function setBridgeDecks<T extends BridgeLine>(
     });
     return caps.length > 0 ? Math.max(h, Math.min(...caps)) : h;
   };
-  const deckSpan = ({ span, points, distances }: (typeof spans)[number]) => {
-    const own = new Set(span.map((s) => s.bridge));
+  // the spans on one outline with each other, and how high a landing of one may rise: no higher than the other spans'
+  // landings nearest it may (those not at its own other end)
+  type Span = (typeof spans)[number];
+  const byOutline = new Map<string, Span[]>();
+  const outlinesOf = (s: Span) => new Set(s.span.flatMap(({ bridge }) => room.outline?.(bridge) ?? []));
+  for (const s of spans) {
+    outlinesOf(s).forEach((o) => byOutline.set(o, [...(byOutline.get(o) ?? []), s]));
+  }
+  const ownOf = (s: Span) => new Set(s.span.map(({ bridge }) => bridge));
+  const sharedCap = (s: Span, p: Point, h: number | undefined, grade: number) => {
+    const [s0, s1] = [s.points[0].p, s.points[s.points.length - 1].p];
+    const other = key(p) === key(s0) ? s1 : s0;
+    const fellows = new Set([...outlinesOf(s)].flatMap((o) => byOutline.get(o) ?? []));
+    fellows.delete(s);
+    const caps = [...fellows].flatMap((t) => {
+      const [q0, q1] = [t.points[0].p, t.points[t.points.length - 1].p];
+      const q = Math.hypot(q0[0] - p[0], q0[1] - p[1]) <= Math.hypot(q1[0] - p[0], q1[1] - p[1]) ? q0 : q1;
+      const hq = hostedAt(q, ownOf(t)) ?? heightOf(key(q));
+      return key(q) === key(other) || hq === undefined ? [] : [landingCap(q, hq, grade, ownOf(t))];
+    });
+    const cap = landingCap(p, h, grade, ownOf(s));
+    return h === undefined ? cap : Math.max(h, Math.min(cap, ...caps));
+  };
+  const deckSpan = (s: Span) => {
+    const { span, points, distances } = s;
+    const own = ownOf(s);
     const total = distances[distances.length - 1];
     const first = hostedAt(points[0].p, own) ?? heightOf(key(points[0].p));
     const last = hostedAt(points[points.length - 1].p, own) ?? heightOf(key(points[points.length - 1].p));
@@ -323,8 +350,8 @@ export function setBridgeDecks<T extends BridgeLine>(
     // the deck from them on (lift): its free ends rise to that, and the deck runs on the hull of them all
     const grade = room.grade(span[0].bridge);
     const [a0, b0] = [first ?? known[0]?.h ?? last, last ?? known[known.length - 1]?.h ?? first];
-    // as high as each landing may rise (landingCap)
-    const [capA, capB] = [landingCap(points[0].p, a0, grade, own), landingCap(points[points.length - 1].p, b0, grade, own)];
+    // as high as each landing may rise (landingCap), with the other spans on its outline
+    const [capA, capB] = [sharedCap(s, points[0].p, a0, grade), sharedCap(s, points[points.length - 1].p, b0, grade)];
     const least = span.flatMap(({ bridge }) =>
       room.least(bridge).map(({ p, h }) => {
         const d = alongLine(bridge.line, byOwner.get(bridge) ?? new Map<number, number>(), p);
@@ -528,10 +555,10 @@ export function rounded(profile: { d: number; h: number }[], curves: Crest[], d:
   return curve.height + curve.grade * x - (curve.change * x * x) / (2 * curve.length);
 }
 
-/** The distances strictly between d0 and d1, from d0 on, every CREST_STEP_M over the curves, and those of `more` */
+/** The distances strictly between d0 and d1, from d0 on, every CREST_STEP_M over the curves, and those of `more`, each once */
 function over(curves: Crest[], d0: number, d1: number, more: number[] = []): number[] {
   const [low, high] = [Math.min(d0, d1), Math.max(d0, d1)];
-  const found: number[] = [...new Set(more)].filter((x) => x > low + 1e-6 && x < high - 1e-6);
+  const found: number[] = more.filter((x) => x > low + 1e-6 && x < high - 1e-6);
   for (const c of curves) {
     for (let x = c.from; x <= c.from + c.length; x += CREST_STEP_M) {
       if (x > low + 1e-6 && x < high - 1e-6) {
@@ -539,7 +566,8 @@ function over(curves: Crest[], d0: number, d1: number, more: number[] = []): num
       }
     }
   }
-  return found.sort((x, y) => (d1 >= d0 ? x - y : y - x));
+  found.sort((x, y) => (d1 >= d0 ? x - y : y - x));
+  return found.filter((x, i) => i === 0 || Math.abs(x - found[i - 1]) > 1e-6);
 }
 
 /** The height d along a profile of points by distance, straight between them and level past its ends */
