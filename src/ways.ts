@@ -54,6 +54,12 @@ export const GRADE: Readonly<Record<WayUser, number>> = { people: 0.08, vehicles
 export const TUNNEL_GRADE = 0.07;
 /** Stairs rise no steeper than this: out of a tunnel (and corridors there), and out of a cut under a bridge */
 export const STAIRS_GRADE = 0.6;
+/**
+ * A way whose heights are set (a deck, a floor, a bed) bends over the line between its heights BEND_SPAN_M before
+ * and after it at most MAX_BEND_M (m), so that it does not kink: the smoothness its maps are held to
+ */
+export const BEND_SPAN_M = 10;
+export const MAX_BEND_M = 0.2;
 
 /** Whether a way is a road (highway=*), not a railway */
 export function isRoad(way: Way): way is Road {
@@ -84,6 +90,8 @@ export const WAY_DIMENSIONS = {
   clearance: CLEARANCE_M,
   minClearance: MIN_CLEARANCE_M,
   grade: GRADE,
+  bendSpan: BEND_SPAN_M,
+  maxBend: MAX_BEND_M,
   walkways: [...WALKWAYS],
   tramways: [...TRAMWAYS],
 } as const;

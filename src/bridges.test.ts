@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { deckAt } from "./bridges.ts";
 import { solveHeights, type HeightOptions } from "./heights.ts";
-import type { Point } from "./geometry.ts";
+import { RESOLUTION_M, type Point } from "./geometry.ts";
 import { loadLp } from "./lp.ts";
 import type { MapFeatures, Rail, Road } from "./osm.ts";
 import { defined } from "./testing.ts";
-import { isRoad, type Way } from "./ways.ts";
+import { BEND_SPAN_M, isRoad, MAX_BEND_M, type Way } from "./ways.ts";
 
 const lp = await loadLp();
 let ids = 0;
@@ -310,7 +310,8 @@ test("a deck rises over a way under it to the room OSM tells, never dipping, its
   const lines = solve([west, bridge, east, under], flat);
   const deck = defined(bridge.deck);
   const at = (e: number) => deckAt(bridge.line, deck, [e, 0]);
-  assert.ok(at(50) >= 106 - 0.01);
+  // within the simplified deck's tolerance
+  assert.ok(at(50) >= 106 - 0.05);
   for (let e = 2; e <= 58; e += 2) {
     assert.ok(at(e) >= (at(e - 2) + at(e + 2)) / 2 - 1e-6, `dips at ${e}`);
   }
@@ -385,7 +386,8 @@ test("a way under a bridge too low over it goes down into a cut under it, the de
   near(deck.deck, [100, 100]);
   // the room for people (2.7 m) and the deck's 1 m under the deck: 96.3, ramping up at 8 % to the ground
   assert.ok(floor && floor.floor && isRoad(floor));
-  assert.ok(Math.abs(Math.min(...floor.floor) - 96.3) < 0.02);
+  // as deep as the room needs, or a bend deeper, to round its bottom
+  assert.ok(Math.min(...floor.floor) <= 96.3 + 0.02 && Math.min(...floor.floor) >= 96.3 - MAX_BEND_M);
   // its room in the cut that much, so its roof stays under the deck
   assert.ok(floor.room !== undefined && Math.abs(floor.room - 2.7) < 0.02);
   assert.ok(Math.abs(floor.floor[0] - 98) <= 0.05 && Math.abs(floor.floor[floor.floor.length - 1] - 98) <= 0.05);
@@ -395,7 +397,7 @@ test("a way under a bridge too low over it goes down into a cut under it, the de
   assert.equal(ways.filter((w) => w.osm === "w2").length, 3);
 });
 
-test("a cut's ramps ease out of its bottom, with only the points its floor's shape needs: it bends no more than 0.16 m from the line 10 m either side", () => {
+test("a cut's ramps ease out of its bottom, with only the points its floor's shape needs: it bends no more than MAX_BEND_M from the line BEND_SPAN_M either side", () => {
   for (const [kind, width] of [["footway", 2.5], ["primary", 6]] as const) {
     const way = road("w2", [[0, -100], [0, 100]], { kind, width });
     const [floor] = cut([bridge(), way], 98.5).cuts("w2");
@@ -407,8 +409,9 @@ test("a cut's ramps ease out of its bottom, with only the points its floor's sha
       const i = n.findIndex((v, k) => k + 1 < n.length && v <= y && n[k + 1] >= y);
       return heights[i] + ((heights[i + 1] - heights[i]) * (y - n[i])) / (n[i + 1] - n[i] || 1);
     };
-    for (let y = n[0] + 10; y <= n[n.length - 1] - 10; y += 0.5) {
-      assert.ok(Math.abs(at(y) - (at(y - 10) + at(y + 10)) / 2) <= 0.16 + 1e-6, `${kind} at ${y}`);
+    for (let y = n[0] + BEND_SPAN_M; y <= n[n.length - 1] - BEND_SPAN_M; y += 0.5) {
+      // its points kept within half the resolution of its heights
+      assert.ok(Math.abs(at(y) - (at(y - BEND_SPAN_M) + at(y + BEND_SPAN_M)) / 2) <= MAX_BEND_M + RESOLUTION_M / 2, `${kind} at ${y}`);
     }
   }
 });

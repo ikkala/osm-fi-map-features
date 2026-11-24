@@ -1,11 +1,12 @@
 // The floors of the bored tunnels, over the network of their points (tunnels.ts), in the heights' program
 // (heights.ts), their bounds missed only by priority, at the least cost (HARD_COST and on):
 // - the floors known from plans hold;
-// - straight between known floors of a tunnel and on to its portals, a tunnel's grade between its points, its floor
-//   bending no more than MAX_BEND_M over BEND_SPAN_M, tunnels of one layer whose rooms overlap one hall (a point of
-//   one and its point on the other share a floor), and a car park's floor no lower than its level;
+// - straight between known floors of a tunnel and on to its portals, a tunnel's grade between its points, tunnels of
+//   one layer whose rooms overlap one hall (a point of one and its point on the other share a floor), and a car
+//   park's floor no lower than its level;
 // - room and roof under the ways, decks, tunnels in cuts and buildings' footings over them, and under the floors of
 //   the tunnels of a higher layer whose rooms overlap theirs;
+// - its floor bending no more than MAX_BEND_M over BEND_SPAN_M, its heights rounded to the tiles' resolution;
 // - the portals at the ground there, lower only for those;
 // - cover under the ground for their users' room and roof, eased in from the portals, and under water a bed; where
 //   it is missed, the roof is a lid.
@@ -17,7 +18,7 @@ import type { NamedPrograms } from "./lp.ts";
 import { bounds, type Building, type MapFeatures, type Road } from "./osm.ts";
 import { inTunnel, isBridge } from "./profile.ts";
 import { acrossRoom, BED_M, COVER_M, lowestGround, pointsAround, spread, WALL_FOOTING_M, WATER_DEPTH_M, type TunnelNetwork, type TunnelNode } from "./tunnels.ts";
-import { isRoad, ROOM_SIDE_M, TUNNEL_GRADE, widthOf, type Way } from "./ways.ts";
+import { BEND_SPAN_M, isRoad, MAX_BEND_M, ROOM_SIDE_M, TUNNEL_GRADE, widthOf, type Way } from "./ways.ts";
 
 /** A known floor is the floor of the tunnel's point nearest it within this far (m) */
 const KNOWN_REACH_M = 6;
@@ -27,19 +28,20 @@ const OVER_PORTAL_M = 1;
 const COVERED_SHARE = 0.5;
 /** A tunnel's junctions are averaged this many rounds as it hangs between its portals (they settle in far fewer) */
 const HANG_ROUNDS = 1000;
-/** A floor bends over the line between its heights BEND_SPAN_M before and after it at most MAX_BEND_M (m), so that it does not kink */
-export const BEND_SPAN_M = 10;
-export const MAX_BEND_M = 0.1;
 /**
  * The floors' bounds by priority, as the cost (per meter) of missing one at a point: the known floors hold; then the
- * straight floors between them, grades, bends and halls' shared floors (missed only where those leave no room for
- * them); then the room under what is over a tunnel and over what is under it; then a portal at its height (no higher,
+ * straight floors between them, grades and halls' shared floors (missed only where those leave no room for them);
+ * then the room under what is over a tunnel and over what is under it; then the bends, of every line the heights
+ * solve (heights.ts too), which yield to all of those; then a portal at its height (no higher,
  * and lower only for those), cheaper than a deck raised over it (heights.ts), so that a tunnel goes down under a deck
  * rather than lift it; then the cover, a shortfall making the roof a lid. Each meter a floor is deeper than it needs
  * costs SHALLOW_COST, so that the floors keep as high as their bounds let them.
  */
 export const HARD_COST = 1e5;
 export const ROOM_COST = 1e3;
+export const BEND_COST = 1e2;
+/** The bend a solved line may have: MAX_BEND_M, less what rounding its heights to the tiles' resolution can add */
+const SOLVED_BEND_M = MAX_BEND_M - RESOLUTION_M;
 export const PORTAL_COST = 1e-2;
 const COVER_COST = 1e-4;
 export const SHALLOW_COST = 1e-6;
@@ -124,7 +126,7 @@ export function floorRows(
     program.column(k, f === undefined ? -SHALLOW_COST : 0, lower, node.known || node.portal !== undefined ? Math.max(lower, node.floor) : Infinity);
     node.next.filter(({ key }) => k < key).forEach(({ key, length }) => bounds.push({ cost: HARD_COST, bound: "grade", k, terms: [[k, 1], [key, -1]], lower: -TUNNEL_GRADE * length, upper: TUNNEL_GRADE * length }));
   }
-  tunnels.forEach((way) => bends(way.line).forEach(({ k, terms, allowed }) => bounds.push({ cost: HARD_COST, bound: "bend", k, terms, lower: -allowed, upper: allowed })));
+  tunnels.forEach((way) => bends(way.line).forEach(({ k, terms, allowed }) => bounds.push({ cost: BEND_COST, bound: "bend", k, terms, lower: -allowed, upper: allowed })));
   for (const { cost, bound, k, terms, lower, upper } of bounds) {
     program.soft({ cost, lower, upper, terms, tag: { way: through.get(k)?.[0]?.osm ?? k, bound, at: nodes.get(k)?.p ?? [0, 0] } });
   }
@@ -143,14 +145,14 @@ export function setFloors(network: TunnelNetwork, values: Map<string, number>): 
 
 /**
  * A line's bends: at each point its floor less the line between its neighbours' floors, as its key (keys: the points')
- * and the terms, and how far that may be either way: as far as a curve bending MAX_BEND_M over BEND_SPAN_M either way does
+ * and the terms, and how far that may be either way: as far as a curve bending SOLVED_BEND_M over BEND_SPAN_M either way does
  */
 export function bends(line: Point[], keys = line.map(pointKey)): { k: string; terms: [string, number][]; allowed: number }[] {
   const length = (i: number) => Math.hypot(line[i + 1][0] - line[i][0], line[i + 1][1] - line[i][1]);
   return keys.slice(1, -1).flatMap((k, i) => {
     const [before, after] = [length(i), length(i + 1)];
     const terms: [string, number][] = [[k, 1], [keys[i], -after / (before + after)], [keys[i + 2], -before / (before + after)]];
-    return before > 0 && after > 0 ? [{ k, terms, allowed: (MAX_BEND_M * before * after) / BEND_SPAN_M ** 2 }] : [];
+    return before > 0 && after > 0 ? [{ k, terms, allowed: (SOLVED_BEND_M * before * after) / BEND_SPAN_M ** 2 }] : [];
   });
 }
 
@@ -304,7 +306,7 @@ function besideOn(way: Way, p: Point, reach: number, nodes: Map<string, TunnelNo
 /**
  * The cover: deep enough under the ground for the room and roof here and halfway to the neighbours, eased in from
  * the portals, whose walls the elevation model smooths into slopes, on one curve from level at the portal that bends
- * no more than MAX_BEND_M and is no steeper than TUNNEL_GRADE; where it cannot be met by a portal, the roof is a lid
+ * no more than SOLVED_BEND_M and is no steeper than TUNNEL_GRADE; where it cannot be met by a portal, the roof is a lid
  * over a cut; from a portal in a building only under a building (the model leaves buildings out, and beyond its walls
  * the ground over the tunnel is the open ground). Under water deeper by its depth and a bed over the roof, across the
  * room's width too, as a water's surface falls across it where it flows
@@ -332,10 +334,10 @@ function covers(features: MapFeatures, network: TunnelNetwork, underBridge: (p: 
 
 /**
  * How deep a floor eased in from a portal is d meters in, on the way to `depth`: level at the portal, bending at most
- * as MAX_BEND_M lets it to TUNNEL_GRADE, on at that grade, and bending level again
+ * as SOLVED_BEND_M lets it to TUNNEL_GRADE, on at that grade, and bending level again
  */
 export function easedDepth(depth: number, d: number): number {
-  const curve = (2 * MAX_BEND_M) / BEND_SPAN_M ** 2;
+  const curve = (2 * SOLVED_BEND_M) / BEND_SPAN_M ** 2;
   // the bend's reach and how deep it takes the floor, half the way where the depth is too shallow for the grade
   const bend = Math.min(TUNNEL_GRADE / curve, Math.sqrt(depth / curve));
   const down = (curve * bend * bend) / 2;

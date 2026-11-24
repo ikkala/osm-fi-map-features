@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { deckAt } from "./bridges.ts";
-import { MAX_BEND_M } from "./floors.ts";
-import { nearestOnLine, type Point } from "./geometry.ts";
+import { nearestOnLine, RESOLUTION_M, type Point } from "./geometry.ts";
 import { solveHeights } from "./heights.ts";
 import { loadLp } from "./lp.ts";
 import type { MapFeatures, Rail, Road } from "./osm.ts";
 import { defined } from "./testing.ts";
-import type { Way } from "./ways.ts";
+import { BEND_SPAN_M, MAX_BEND_M, type Way } from "./ways.ts";
 
 const lp = await loadLp();
 
@@ -132,5 +131,20 @@ test("a cut under a railway's deck, which keeps to its landings, takes the paths
     for (const piece of roads.filter((w) => w.osm === osm && w.floor)) {
       piece.line.forEach(([e], i) => Math.abs(e) <= 2.5 && assert.ok(Math.abs(defined(piece.floor)[i] - trackAt(n)) < 0.01, `${osm} ${e}`));
     }
+  }
+});
+
+test("a solved line, its heights rounded to the tiles' resolution, bends no more than MAX_BEND_M over BEND_SPAN_M", () => {
+  // a road in a cut 2 m deep under a footbridge, on level ground
+  const ground = () => 100;
+  const bridge = road("w1", [[-20, 0], [20, 0]], { bridge: true, layer: 1, width: 3 });
+  const street = road("w2", [[0, -150], [0, 150]], { kind: "residential", width: 6 });
+  const landings = [road("w3", [[-60, 0], [-20, 0]]), road("w4", [[20, 0], [60, 0]])];
+  const { roads } = solve([bridge, street, ...landings], ground);
+  const cuts = roads.filter((w) => w.osm === "w2" && w.floor);
+  assert.ok(cuts.some((w) => Math.min(...defined(w.floor)) < 100 - 1));
+  for (const cut of cuts) {
+    const rounded = defined(cut.floor).map((h) => Math.round(h / RESOLUTION_M) * RESOLUTION_M);
+    assert.ok(mostBend(cut.line, rounded, BEND_SPAN_M) <= MAX_BEND_M + 1e-9, `${mostBend(cut.line, rounded, BEND_SPAN_M)}`);
   }
 });

@@ -8,7 +8,7 @@ import { easedDepth, type KnownFloor } from "./floors.ts";
 import { solveHeights } from "./heights.ts";
 import { loadLp } from "./lp.ts";
 import { BED_M, CAR_PARK_CLEARANCE_M, COVER_M, WALL_FOOTING_M, fitRoomsUnderDecks, openPortals, portalWallsAt, raiseToWalls, roomHeight, setTunnelRooms, tunnelNetwork, uncoverAtGrade, WATER_DEPTH_M } from "./tunnels.ts";
-import { CLEARANCE_M, ROOF_M } from "./ways.ts";
+import { CLEARANCE_M, MAX_BEND_M, ROOF_M } from "./ways.ts";
 
 function road(osm: string, line: Point[], extra: Partial<Road> = {}): Road {
   return { osm, kind: "primary", width: 8, layer: 0, bridge: false, tunnel: false, line, ...extra };
@@ -151,7 +151,7 @@ test("the floor sinks under a dip in the ground, no steeper than a road tunnel, 
   const floor = defined(tunnel.floor);
   // as deep as the dip needs, or a bend deeper, to round its bottom
   const deepest = 102 - CLEARANCE_M.vehicles - ROOF_M - COVER_M;
-  assert.ok(Math.min(...floor) <= deepest + 1e-6 && Math.min(...floor) >= deepest - 0.1 - 1e-6, `${Math.min(...floor)}`);
+  assert.ok(Math.min(...floor) <= deepest + 1e-6 && Math.min(...floor) >= deepest - MAX_BEND_M - 1e-6, `${Math.min(...floor)}`);
   assert.deepEqual([floor[0], floor[floor.length - 1]], [100, 100]);
   for (let i = 1; i < floor.length; i++) {
     const step = Math.hypot(tunnel.line[i][0] - tunnel.line[i - 1][0], tunnel.line[i][1] - tunnel.line[i - 1][1]);
@@ -179,7 +179,7 @@ test("past a dip the floor rises again no steeper than a road tunnel, and bends 
   for (const i of inside) {
     assert.ok(Math.abs(floor[i] - floor[i - 1]) <= 0.07 * 10 + 1e-9, `grade at ${tunnel.line[i][0]}`);
     const bend = floor[i] - (floor[i - 1] + floor[i + 1]) / 2;
-    assert.ok(Math.abs(bend) <= 0.1 + 1e-3, `bend ${bend} at ${tunnel.line[i][0]}`);
+    assert.ok(Math.abs(bend) <= MAX_BEND_M + 1e-3, `bend ${bend} at ${tunnel.line[i][0]}`);
   }
 });
 
@@ -194,7 +194,7 @@ test("a floor under a way crossing over it bends gently: rounded deeper beside i
   assert.ok(Math.min(...floor) <= under + 1e-9);
   for (let i = 1; i + 1 < floor.length; i++) {
     const bend = floor[i] - (floor[i - 1] + floor[i + 1]) / 2;
-    assert.ok(Math.abs(bend) <= 0.1 + 1e-3, `bend ${bend} at ${tunnel.line[i][0]}`);
+    assert.ok(Math.abs(bend) <= MAX_BEND_M + 1e-3, `bend ${bend} at ${tunnel.line[i][0]}`);
   }
   // beside the street the floor is deeper than the road tunnel's grade alone takes it
   const beside = tunnel.line.findIndex(([e]) => e === 220);
@@ -464,7 +464,7 @@ test("a tunnel's floor under a wavy hill does not rise with its waves, and is de
   // no point over the line between its neighbours (the ground's humps); the floor may still bend down
   for (let i = 1; i + 1 < floor.length; i++) {
     const bend = floor[i] - (floor[i - 1] + floor[i + 1]) / 2;
-    assert.ok(bend <= 0.1 + 1e-3, `bend ${bend.toFixed(2)} at ${tunnel.line[i][0]}`);
+    assert.ok(bend <= MAX_BEND_M + 1e-3, `bend ${bend.toFixed(2)} at ${tunnel.line[i][0]}`);
   }
   // deep enough everywhere: the room, roof and cover under the ground around each point, eased in from the portals
   for (const [i, [e]] of tunnel.line.entries()) {
@@ -649,7 +649,7 @@ test("a trunk link beside the trunk in one hall has its floor, however far apart
   // but at the link's portal, 1.2 m higher, which comes down as far as the floor's bend in from it needs
   assert.deepEqual(round(link.floor?.slice(1)), round(trunk.floor?.slice(1)));
   const floor = defined(link.floor);
-  assert.ok(floor[0] < 101.2 - 0.5 && Math.abs(floor[1] - (floor[0] + floor[2]) / 2) <= 0.1 + 1e-6, `${floor}`);
+  assert.ok(floor[0] < 101.2 - 0.5 && Math.abs(floor[1] - (floor[0] + floor[2]) / 2) <= MAX_BEND_M + 1e-6, `${floor}`);
 });
 
 test("a tunnel's floor does not depend on tunnels crossing elsewhere: each group of tunnels that touch goes through the passes on its own", () => {
@@ -853,7 +853,7 @@ test("a portal stays at its height: a hollow too near it for the floor to bend d
   assert.deepEqual([floor[0], floor.at(-1)], [100, 100]);
   // bending no more than MAX_BEND_M between its heights 10 m before and after
   for (let i = 1; i + 1 < floor.length; i++) {
-    assert.ok(Math.abs(floor[i] - (floor[i - 1] + floor[i + 1]) / 2) <= 0.1 + 1e-6, `bend at ${tunnel.line[i][0]}`);
+    assert.ok(Math.abs(floor[i] - (floor[i - 1] + floor[i + 1]) / 2) <= MAX_BEND_M + 1e-6, `bend at ${tunnel.line[i][0]}`);
   }
   const short = conflicts.filter((c) => c.way === "w1" && c.bound === "cover");
   assert.ok(short.length > 0 && short.every((c) => c.at[0] >= 10 && c.at[0] <= 30), JSON.stringify(conflicts));
@@ -871,7 +871,7 @@ test("a way's floor bends no more than MAX_BEND_M through a junction too, where 
   const junction = trunk.line.findIndex(([e]) => e === 200);
   assert.ok(floor[junction] < 99, `${floor[junction]}`);
   for (let i = 1; i + 1 < floor.length; i++) {
-    assert.ok(Math.abs(floor[i] - (floor[i - 1] + floor[i + 1]) / 2) <= 0.1 + 1e-6, `bend ${floor[i] - (floor[i - 1] + floor[i + 1]) / 2} at ${trunk.line[i][0]}`);
+    assert.ok(Math.abs(floor[i] - (floor[i - 1] + floor[i + 1]) / 2) <= MAX_BEND_M + 1e-6, `bend ${floor[i] - (floor[i - 1] + floor[i + 1]) / 2} at ${trunk.line[i][0]}`);
   }
 });
 

@@ -12,13 +12,13 @@
 //   their own stretch, as far as its depth needs. A point of a stretch where a way meets it that has none there is
 //   held at the ground, as are a stretch's ends inside a way and a cut's dead end.
 // - hard: a cut's grade and a ramp's between their points, as their users' or the ground's where steeper (an
-//   approach's as steep as stairs for people), a deck never dipping, under a deck a railway's least room (a
-//   tramway's over the lowest its bed goes down to there, trackbeds.ts), a railway's deck's bends, and the floors'
-//   (floors.ts);
+//   approach's as steep as stairs for people), a deck never dipping, under a deck a railway's least room (a tramway's over the lowest its
+//   bed goes down to there, trackbeds.ts), and the floors' (floors.ts);
 // - the room under the decks (the way's or bridge's that OSM tells, else the users'), under them over the tunnels,
 //   and over a cut the surfaces of the ways in its room at its height; the heights steps tell; then the bends of
-//   every line through its points (a deck's at a junction through its straightest pair), no more than MAX_BEND_M over
-//   BEND_SPAN_M; then the users' grade on the approaches and the decks (a deck's as steep as its landings are);
+//   every line through its points (a deck's at a junction through its straightest pair), no more than
+//   MAX_BEND_M over BEND_SPAN_M once rounded to the tiles' resolution, which yield to all of those (BEND_COST, floors.ts); then the users' grade on the
+//   approaches and the decks (a deck's as steep as its landings are);
 // - and each meter a deck or an approach is raised or a way cut, by the length it stands for (a train's TRACK_COST
 //   times), so that the decks keep to the line between their landings, the ways to the ground and the cuts shallow;
 //   the floors' own (a portal at its height cheaper than a deck raised over it).
@@ -26,22 +26,21 @@
 // it a cut with a floor.
 import { approachable, landings, setBoardwalkDeck, spansOf, type Landing } from "./bridges.ts";
 import { DeckIndex, MAX_DEPTH_M } from "./deckIndex.ts";
-import { BEND_SPAN_M, bends, floorRows, HARD_COST, PORTAL_COST, ROOM_COST, setFloors, SHALLOW_COST, type FloorBound, type KnownFloor, type OverTunnel } from "./floors.ts";
+import { BEND_COST, bends, floorRows, HARD_COST, PORTAL_COST, ROOM_COST, setFloors, SHALLOW_COST, type FloorBound, type KnownFloor, type OverTunnel } from "./floors.ts";
 import { densify, distancesAlong, grownRect, indexOwnBoxes, nearestOnLine, pointAt, pointKey, pushTo, RESOLUTION_M, simplifyLine, type Point } from "./geometry.ts";
 import { groupsOf, NamedPrograms, type NamedRow, type SolveLp } from "./lp.ts";
 import { bounds, type BridgeOutline, type MapFeatures, type Road } from "./osm.ts";
 import { inTunnel, isBridge, offStructures } from "./profile.ts";
 import { spread, tunnelNetwork, type TunnelNetwork } from "./tunnels.ts";
-import { DECK_THICKNESS_M, GRADE, isRoad, LEAST_CLEARANCE_M, MIN_CLEARANCE_M, ROOM_SIDE_M, STAIRS_GRADE, TRAM_CUT_CLEARANCE_M, TUNNEL_GRADE, userOf, widthOf, type Way } from "./ways.ts";
+import { BEND_SPAN_M, DECK_THICKNESS_M, GRADE, isRoad, LEAST_CLEARANCE_M, MIN_CLEARANCE_M, ROOM_SIDE_M, STAIRS_GRADE, TRAM_CUT_CLEARANCE_M, TUNNEL_GRADE, userOf, widthOf, type Way } from "./ways.ts";
 
 /** The ways' heights are solved this often along them (m) */
 const STEP_M = 2;
 /**
- * The costs after the hard bounds and the room (floors.ts), a meter: a bend, an approach steeper than its users'
+ * The costs after the hard bounds, the room and the bends (floors.ts), a meter: an approach steeper than its users'
  * grade, and each meter a deck or an approach is over the ground (or a deck over the line between its landings) or a
  * way down in a cut, a meter along: raising a deck dearer than a cut under it, and a railway's TRACK_COST times a road's
  */
-const BEND_COST = 1e2;
 const GRADE_COST = 10;
 const RAISE_COST = 0.1;
 const CUT_COST = 0.01;
@@ -746,8 +745,9 @@ class HeightModel {
         const keys = [through[0], k, through[1]];
         for (const { terms, allowed } of bends(keys.map((q) => this.nodes.get(q)?.p ?? node.p), keys)) {
           const deck = node.kind === "deck";
-          found.push({ cost: deck && node.rail ? HARD_COST : BEND_COST, bound: "bend", k, terms, lower: deck ? -Infinity : -allowed, upper: allowed });
+          found.push({ cost: BEND_COST, bound: "bend", k, terms, lower: deck ? -Infinity : -allowed, upper: allowed });
           if (deck) {
+            // the deck has no ground under it: never dipping is what holds it up between its landings
             found.push({ cost: HARD_COST, bound: "dip", k, terms, lower: 0, upper: Infinity });
           }
         }
