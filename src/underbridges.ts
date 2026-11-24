@@ -1,6 +1,6 @@
 // Ways under bridges. A bridge's deck runs straight from the ground at its ends, and a way under it, on the bare
 // ground there (bareGround.ts), often has too little room under the deck. Where OSM tells the room there (the way's
-// maxheight, the bridge's min_height), a road's deck rises to give it and the way stays on the ground (leastDecks,
+// maxheight, the bridge's min_height), the deck rises to give it and the way stays on the ground (leastDecks,
 // bridges.ts); elsewhere the deck stays straight and the way goes down into a cut under it, ramping down to the floor
 // the room needs, and up again.
 import { deckAt } from "./bridges.ts";
@@ -23,15 +23,14 @@ const SAMPLE_M = 1;
 const MIN_DEPTH_M = 0.05;
 
 /**
- * The least top of each road's bridge deck over the ways under it (not boardwalks, not in tunnels, on a lower layer) where
+ * The least top of each bridge's deck over the ways under it (not boardwalks, not in tunnels, on a lower layer) where
  * OSM tells the room there: the way's clearance, else the bridge's roomUnder, over the way's ground at its nearest
  * point, and the deck's thickness. Looked at every SAMPLE_M along the bridge where its deck, as wide as it and
  * DECK_EDGE_M past its sides, is over the way's width near where the way crosses under its line: not a way meeting
- * it, leading on from it or running beside it (setBridgeDecks raises the deck to them). A railway's deck stays: its
- * line keeps its gentle grade far past the approaches the map raises, and its tracks side by side would part.
+ * it, leading on from it or running beside it (setBridgeDecks raises the deck to them).
  */
 export function leastDecks(ways: readonly Way[], heightAt: (e: number, n: number) => number | undefined): Map<Way, { p: Point; h: number }[]> {
-  const bridges = ways.filter((w) => isBridge(w) && isRoad(w) && !w.boardwalk && w.line.length >= 2);
+  const bridges = ways.filter((w) => isBridge(w) && !(isRoad(w) && w.boardwalk) && w.line.length >= 2);
   const under = ways.filter((w) => !isBridge(w) && !inTunnel(w) && w.line.length >= 2);
   const reach = (w: Way): Rect => {
     const box = bounds(w.line);
