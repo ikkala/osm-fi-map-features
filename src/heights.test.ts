@@ -98,7 +98,7 @@ test("a way crossing a cut keeps its own heights: the cut is held at the ground 
   }
 });
 
-test("a ramp out of a tunnel solved with the deck over it: it goes down under the deck from the tunnel's floor at the portal, the deck staying on its landings' line, the room it cannot reach told", () => {
+test("a ramp out of a tunnel solved with the deck over it: it goes down under the deck from the tunnel's floor at the portal to keep its room, the deck staying on its landings' line", () => {
   // an underpass under a hill; its way out east passes under a footbridge's deck 10 m from the portal
   const ground = (e: number, n: number) => (Math.abs(n) >= 20 && e > 0 ? 100 : e < 0 ? 104 : 100);
   const tunnel = road("w1", [[-60, 0], [0, 0]], { tunnel: true, layer: -1, width: 3 });
@@ -113,9 +113,8 @@ test("a ramp out of a tunnel solved with the deck over it: it goes down under th
   assert.equal(defined(ramp.floor)[0], floor);
   const under = defined(heightAt(roads, "w3", [10, 0], 100));
   const deck = deckAt(bridge.line, defined(bridge.deck), [10, 0]);
-  assert.ok(Math.abs(deck - 100) < 1e-6 && under < 100 - 2, `deck ${deck}, under it ${under}`);
-  const missed = conflicts.find((c) => c.bound === "room" && c.way === "w4");
-  assert.ok(missed && Math.abs(missed.by - (under - (deck - 1 - 2.7))) < 0.06, JSON.stringify(conflicts));
+  assert.ok(Math.abs(deck - 100) < 1e-6 && deck - 1 - under >= 2.7 - 0.02, `deck ${deck}, under it ${under}`);
+  assert.ok(!conflicts.some((c) => c.bound === "room"), JSON.stringify(conflicts));
   const heights = defined(ramp.floor);
   heights.slice(1).forEach((h, i) => assert.ok(Math.abs(h - heights[i]) <= 0.6 * Math.hypot(ramp.line[i + 1][0] - ramp.line[i][0], ramp.line[i + 1][1] - ramp.line[i][1]) + 1e-6));
 });

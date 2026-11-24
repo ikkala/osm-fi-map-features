@@ -11,7 +11,7 @@
 //   stretch is local: it ends at a junction, held at the ground there, as it is at its ends inside a way and at a dead
 //   end, and the ways meeting it keep their own heights; but a ramp goes on into the ways ending on it, if no deck's.
 // - hard: a cut's grade and a ramp's between their points, as their users' or the ground's where steeper (an
-//   approach's as steep as stairs for people, a railway's as its users' grade), a deck never dipping, under a deck a
+//   approach's as steep as stairs for people, a railway's as its users' grade; a ramp's up to stairs' soft), a deck never dipping, under a deck a
 //   railway's least room (a tramway's over the lowest its bed goes down to there, trackbeds.ts), the floors'
 //   (floors.ts), and a deck no higher than the line its landings set, but where OSM tells the room under it or steps a
 //   height on it (the spans side by side on one bridge outline one deck);
@@ -27,7 +27,7 @@
 import { approachable, landings, setBoardwalkDeck, spansOf, type Landing } from "./bridges.ts";
 import { DeckIndex, MAX_DEPTH_M } from "./deckIndex.ts";
 import { BEND_COST, bends, floorRows, HARD_COST, PORTAL_COST, ROOM_COST, setFloors, SHALLOW_COST, type FloorBound, type KnownFloor, type OverTunnel } from "./floors.ts";
-import { densify, distancesAlong, grownRect, indexOwnBoxes, listOf, MinHeap, nearestOnLine, pointAt, pointInPolygon, pointKey, pushTo, RESOLUTION_M, simplifyLine, type Point } from "./geometry.ts";
+import { densify, distancesAlong, grownRect, indexOwnBoxes, listOf, nearestOnLine, pointAt, pointInPolygon, pointKey, pushTo, RESOLUTION_M, simplifyLine, type Point } from "./geometry.ts";
 import { groupsOf, NamedPrograms, type NamedRow, type SolveLp } from "./lp.ts";
 import { bounds, type BridgeOutline, type MapFeatures, type Road } from "./osm.ts";
 import { inTunnel, isBridge, offStructures } from "./profile.ts";
@@ -480,7 +480,7 @@ class HeightModel {
 
   /**
    * The stations and steps of the ways' stretches, those of several kinds on a way joined (an approach's where they
-   * overlap), held at the ground at their ends inside a way, at a cut's dead end, and where a way meets them with no
+   * overlap, a ramp's over a cut's), held at the ground at their ends inside a way, at a cut's dead end, and where a way meets them with no
    * stretch of its own there (a span's and a tunnel's points have theirs)
    */
   build(): void {
@@ -495,7 +495,7 @@ class HeightModel {
       const length = along[along.length - 1];
       const own = new Map<number, string>();
       this.regions.set(way, own);
-      const covering = (d: number) => list.filter((s) => s.from <= d + 1e-6 && s.to >= d - 1e-6).sort((x, y) => NODE_RANK[y.kind] - NODE_RANK[x.kind])[0];
+      const covering = (d: number) => list.filter((s) => s.from <= d + 1e-6 && s.to >= d - 1e-6).sort((x, y) => NODE_RANK[y.kind] - NODE_RANK[x.kind] || Number(y.level === true) - Number(x.level === true) || Number(y.soft) - Number(x.soft))[0];
       for (const [from, to] of listOf(merged, way)) {
         const ds = stations(from, to, [...along, ...this.#fillEnds(way), ...list.flatMap((s) => (s.level ? [s.from, s.to] : []))]);
         const keys = ds.map((d, i) => {
@@ -594,7 +594,7 @@ class HeightModel {
           const past = (segment === 0 && along < 0) || (segment === b.line.length - 2 && along > 1);
           if (inside(p) && !past) {
             this.#tied.push([k, this.deckKey(b, segment)]);
-            this.bounds.push({ cost: ROOM_COST, bound: "room", k, terms: [[k, 1], [this.deckKey(b, segment), t - 1], [this.deckKey(b, segment + 1), -t]], lower: 0, upper: 0 });
+            this.bounds.push({ cost: ROOM_COST, bound: "hall", k, terms: [[k, 1], [this.deckKey(b, segment), t - 1], [this.deckKey(b, segment + 1), -t]], lower: 0, upper: 0 });
           }
         });
       }
@@ -642,21 +642,27 @@ class HeightModel {
       anchors.set(root, Math.max(h ?? -Infinity, anchors.get(root) ?? -Infinity));
     }
     const floors = new Set([...this.nodes.keys()].filter((k) => this.program.has(k)));
-    // a deck rises over the line its landings set only where OSM tells the room under it, or steps a height on it
-    const told = new Set([...this.#under.filter((u) => u.told).map((u) => decks(u.deck[0])), ...[...this.#told.keys()].map(decks)]);
-    const chord = new Map([...this.#chords()].filter(([k]) => !told.has(decks(k))));
-    for (const [k, node] of this.nodes) {
-      if (!floors.has(k)) {
-        const [low, high] = this.#limits(k, node, anchors.get(decks(k)), chord.get(k) ?? Infinity);
-        this.program.column(k, node.weight * (node.train ? TRACK_COST : 1) * (node.kind === "cut" ? -node.cost : node.kind === "held" ? 0 : node.cost), low, high);
-      }
-    }
     const soft = ({ cost, bound, k, terms, lower, upper }: Bound): NamedRow<HeightTag> => {
       const node = this.nodes.get(k);
       const tunnel = this.#network.nodes.get(k);
       return { cost, lower, upper, terms, tag: { way: node?.osm ?? this.#network.through.get(k)?.[0]?.osm ?? k, bound, at: node?.p ?? tunnel?.p ?? [0, 0] } };
     };
-    [...this.bounds, ...this.#grades(decks), ...this.#rooms()].forEach((b) => this.program.soft(soft(b)));
+    const rows = [...this.bounds, ...this.#grades(decks), ...this.#rooms()];
+    const cost = (node: HeightNode) => node.weight * (node.train ? TRACK_COST : 1) * (node.kind === "cut" ? -node.cost : node.kind === "held" ? 0 : node.cost);
+    // a deck rises over the line its landings set, as the decks solve alone, only where OSM tells the room under it,
+    // or steps a height on it
+    const told = new Set([...this.#under.filter((u) => u.told).map((u) => decks(u.deck[0])), ...[...this.#told.keys()].map(decks)]);
+    const alone = new NamedPrograms<HeightTag>();
+    const decked = [...this.nodes].filter(([, node]) => node.kind === "deck");
+    decked.forEach(([k, node]) => alone.column(k, cost(node), ...this.#limits(k, node, anchors.get(decks(k)), Infinity)));
+    [...rows, ...this.#bends(floors, new Set())].filter((b) => b.bound !== "room" && b.terms.every(([q]) => this.nodes.get(q)?.kind === "deck")).forEach((b) => alone.soft(soft(b)));
+    const line = alone.solve(lp, RESOLUTION_M / 2).values;
+    for (const [k, node] of this.nodes) {
+      if (!floors.has(k)) {
+        this.program.column(k, cost(node), ...this.#limits(k, node, anchors.get(decks(k)), told.has(decks(k)) ? Infinity : (line.get(k) ?? Infinity)));
+      }
+    }
+    rows.forEach((b) => this.program.soft(soft(b)));
     // the bends held where the lines leave the ground, more of them each round, solved again where they did
     const strict = new Set<string>();
     const misses = new Map<string, { tag: HeightTag; by: number }[]>();
@@ -668,7 +674,6 @@ class HeightModel {
       if (off.length === 0) {
         break;
       }
-      if (process.env.DBG) console.log("off", off.map((k) => [k, this.heights.get(k), this.nodes.get(k)?.ground]));
       off.forEach((k) => strict.add(k));
       only = (k) => off.includes(k);
     }
@@ -713,7 +718,7 @@ class HeightModel {
    * The grades between the points: a deck's no steeper than its users' or its landings' between them, an approach's
    * than the ground under it, or stairs for people, or a railway's than its users' grade, and missed past its users'
    * grade only at GRADE_COST, a ramp's
-   * likewise past TUNNEL_GRADE up to stairs' at a portal's cost (floors.ts), a cut's than its own or the ground's
+   * likewise past TUNNEL_GRADE at a portal's cost (floors.ts), past stairs' at a bend's, a cut's than its own or the ground's
    */
   #grades(decks: (k: string) => string): Bound[] {
     const steepest = new Map<string, number>();
@@ -733,7 +738,8 @@ class HeightModel {
       if (kind === "approach" || soft) {
         // a railway climbs no steeper than its users' grade at all
         const steepest = isRoad(way) ? (soft || userOf(way) === "people" ? STAIRS_GRADE : Infinity) : grade;
-        return [row(soft ? PORTAL_COST : GRADE_COST, Math.max(grade * length, ground)), row(HARD_COST, Math.max(steepest * length, ground))];
+        // a ramp steeper than stairs yields to the room as a bend does
+        return [row(soft ? PORTAL_COST : GRADE_COST, Math.max(grade * length, ground)), row(soft ? BEND_COST : HARD_COST, Math.max(steepest * length, ground))];
       }
       return [row(HARD_COST, Math.max(grade * length, ground))];
     });
@@ -797,23 +803,6 @@ class HeightModel {
       const user = userOf(way);
       return user === "trams" ? [row(TRAM_ROOM_COST, room), row(HARD_COST, LEAST_CLEARANCE_M.trams, MAX_DEPTH_M)] : [row(ROOM_COST, room), ...(isRoad(way) ? [] : [row(HARD_COST, LEAST_CLEARANCE_M[user])])];
     });
-  }
-
-  /**
-   * The decks' heights as their landings set them: the lowest a deck never dipping goes through them, at each point
-   * the highest of the lines between two of them it lies between along the deck (on past the last, level), and again
-   * with the junctions of decks as theirs, so that a branch runs from its junction
-   */
-  #chords(): Map<string, number> {
-    const next = new Map<string, { k: string; length: number }[]>();
-    this.edges.filter((e) => e.kind === "deck").forEach(({ a, b, length }) => {
-      pushTo(next, a, { k: b, length });
-      pushTo(next, b, { k: a, length });
-    });
-    const landings = [...this.#landings].flatMap(([k, h]) => (h === undefined ? [] : [{ k, h }]));
-    const first = lines(next, landings);
-    const junctions = [...next].filter(([k, list]) => list.length > 2 && first.has(k)).map(([k]) => ({ k, h: first.get(k) ?? 0 }));
-    return junctions.length > 0 ? lines(next, [...landings, ...junctions]) : first;
   }
 
   /** A way's height `at` along it as its stations' (the two around it, by how near), none where it has none there */
@@ -901,38 +890,6 @@ class HeightModel {
     const terms = this.#terms(way, at);
     return terms.length > 0 ? terms.reduce((sum, [k, v]) => sum + v * (this.heights.get(k) ?? 0), 0) : undefined;
   }
-}
-
-/**
- * At each point of a graph (`next`), the highest of the lines between two anchors it lies between along the graph,
- * by their heights and how far (on past the last anchor, the nearest's height)
- */
-function lines(next: Map<string, { k: string; length: number }[]>, anchors: { k: string; h: number }[]): Map<string, number> {
-  const far = anchors.map(({ k: start }) => {
-    const best = new Map([[start, 0]]);
-    const heap = new MinHeap<string>();
-    heap.push(start, 0);
-    for (let top = heap.pop(); top; top = heap.pop()) {
-      const d = top.value;
-      if (d <= (best.get(top.item) ?? Infinity)) {
-        listOf(next, top.item).filter(({ k, length }) => d + length < (best.get(k) ?? Infinity)).forEach(({ k, length }) => {
-          best.set(k, d + length);
-          heap.push(k, d + length);
-        });
-      }
-    }
-    return best;
-  });
-  const found = new Map<string, number>();
-  for (const k of next.keys()) {
-    const reach = anchors.flatMap((a, i) => (far[i].has(k) ? [{ ...a, d: far[i].get(k) ?? 0, i }] : []));
-    const between = reach.flatMap((p) => reach.filter((q) => q.i > p.i && p.d + q.d <= (far[p.i].get(q.k) ?? Infinity) + 1e-6).map((q) => (p.h * q.d + q.h * p.d) / (p.d + q.d || 1)));
-    const nearest = [...reach].sort((x, y) => x.d - y.d)[0];
-    if (nearest) {
-      found.set(k, between.length > 0 ? Math.max(...between) : nearest.h);
-    }
-  }
-  return found;
 }
 
 /** Ways that rise out of a tunnel as stairs do */
