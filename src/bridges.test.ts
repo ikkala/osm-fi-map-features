@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { deckAt, setBridgeDecks, type BridgeLine } from "./bridges.ts";
 import type { Point } from "./geometry.ts";
+import type { Rail, Road } from "./osm.ts";
 import { defined } from "./testing.ts";
+import { leastDecks } from "./underbridges.ts";
+import { DECK_THICKNESS_M, GRADE, userOf, type Way } from "./ways.ts";
 
 // a river 10 m below the banks between e = 10 and e = 30
 const heightAt = (e: number) => (e > 10 && e < 30 ? 90 : e <= 10 ? 100 : 104);
@@ -299,6 +302,43 @@ test("a deck rises over a way under it to the room OSM tells, easing back at its
   assert.ok(Math.abs(defined(eastRamp.deck)[0] - 105.2) < 1e-9 && Math.abs(defined(eastRamp.deck)[1] - 100) < 1e-9);
   const westRamp = defined(ramps.find((l) => l.line.some(([e]) => e < 0)));
   assert.ok(Math.abs(Math.min(...westRamp.line.map(([e]) => e)) + 12) < 1e-9);
+});
+
+test("a railway's deck rises over a road with the room OSM tells, its approaches climbing at the railway's grade; with none told it stays", () => {
+  // level ground at 100; a tramway's 40 m bridge from e = 0 to e = 40 over a 9 m wide road along n at e = 20
+  const flat = () => 100;
+  const build = (clearance?: number) => {
+    const rail = (line: Point[], bridge = false): Rail => ({ osm: "w1", kind: "tram", layer: bridge ? 1 : 0, bridge, tunnel: false, line });
+    const west = rail([[-300, 0], [0, 0]]);
+    const bridge = rail([[0, 0], [40, 0]], true);
+    const east = rail([[40, 0], [340, 0]]);
+    const road: Road = { osm: "w2", kind: "primary", width: 9, layer: 0, bridge: false, tunnel: false, line: [[20, -60], [20, 60]], ...(clearance !== undefined && { clearance }) };
+    const rails = [west, bridge, east];
+    const least = leastDecks([...rails, road], flat);
+    setBridgeDecks(rails, flat, undefined, undefined, { least: (l: Way) => least.get(l) ?? [], grade: (l: Way) => GRADE[userOf(l)] });
+    return { rails, bridge, road };
+  };
+  const { rails, bridge, road } = build(5);
+  const at = (e: number) => deckAt(bridge.line, defined(bridge.deck), [e, 0]);
+  // the room and the deck's thickness over the road, and down at the tram's grade from there to the landings
+  const top = 100 + 5 + DECK_THICKNESS_M;
+  assert.ok(Math.abs(at(20) - top) < 1e-9);
+  const landing = at(0);
+  assert.ok(landing > 100 && Math.abs(at(40) - landing) < 1e-9 && Math.abs(top - landing - GRADE.trams * 14) < 1e-9);
+  // the approaches embanked down at that grade to the ground, as far as that takes
+  const ramps = rails.filter((l) => !l.bridge && l.deck);
+  assert.equal(ramps.length, 2);
+  const reach = (landing - 100) / GRADE.trams;
+  for (const ramp of ramps) {
+    const far = ramp.line.reduce((a, p) => (Math.abs(p[0] - 20) > Math.abs(a[0] - 20) ? p : a));
+    assert.ok(Math.abs(Math.abs(far[0] - 20) - 20 - reach) < 1e-6);
+    assert.ok(Math.abs(Math.max(...defined(ramp.deck)) - landing) < 1e-9 && Math.abs(Math.min(...defined(ramp.deck)) - 100) < 1e-9);
+  }
+  assert.equal(road.deck, undefined);
+  // with no room told, the deck stays on the ground at its ends and no approach rises
+  const plain = build();
+  assert.deepEqual(plain.bridge.deck, [100, 100]);
+  assert.equal(plain.rails.filter((l) => !l.bridge && l.deck).length, 0);
 });
 
 test("a deck high enough over the way under it stays as it is", () => {

@@ -222,9 +222,11 @@ test("leastDecks: the deck's least top over a way under it, its room over the wa
   const ending = road("w5", [[40, -1], [31, 0]], { kind: "primary", clearance: 4 });
   const beside = road("w6", [[-20, 5], [20, 5]], { kind: "primary", clearance: 4 });
   assert.equal(leastDecks([deck, leading, ending, beside], () => 98).get(deck), undefined);
-  // a railway's deck stays as it is
+  // a railway's deck too, over e = -6.5 .. 6.5 (its ballast's half width and edge); over a way without the room, none
   const railway: Rail = { osm: "w7", kind: "rail", layer: 1, bridge: true, tunnel: false, line: [[-30, 0], [30, 0]], deck: [100, 100] };
-  assert.equal(leastDecks([railway, tagged], () => 98).get(railway), undefined);
+  const rail = leastDecks([railway, tagged], () => 98).get(railway) ?? [];
+  assert.ok(rail.length > 0 && rail.every(({ p, h }) => Math.abs(p[0]) <= 6.5 + 1e-9 && Math.abs(h - (98 + 5 + DECK_THICKNESS_M)) < 1e-9));
+  assert.equal(leastDecks([railway, untagged], () => 98).get(railway), undefined);
   // the bridge's min_height gives every way under it that room
   const high = road("w1", [[-30, 0], [30, 0]], { layer: 1, bridge: true, roomUnder: 4.5 });
   const room = leastDecks([high, untagged], () => 98).get(high) ?? [];
