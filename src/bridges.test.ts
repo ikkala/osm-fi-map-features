@@ -416,20 +416,17 @@ test("a cut's ramps ease out of its bottom, with only the points its floor's sha
   }
 });
 
-test("a way crossing a cut goes down with it there, within a ramp of its own; a way of another layer meeting it holds it", () => {
-  // 1.7 m down for a person's room: ramps at 8 % end 21 m past the bottom; a street across the ramp 22 m out
-  const path = road("w2", [[0, -60], [0, 22], [0, 60]], { kind: "footway", width: 2.5 });
-  const street = road("w3", [[-30, 22], [0, 22], [30, 22]]);
+test("a cut is local: held at the ground where a way meets it, its ramp rising before it, the way crossing keeping its own heights", () => {
+  // 1.7 m down for a person's room: ramps at 8 % end 21 m past the bottom; a street across the ramp 32 m out
+  const path = road("w2", [[0, -60], [0, 32], [0, 60]], { kind: "footway", width: 2.5 });
+  const street = road("w3", [[-30, 32], [0, 32], [30, 32]]);
   const ways = [bridge(), path, street];
   const solved = cut(ways, 98);
   const [floor] = solved.cuts("w2");
   assert.ok(floor?.floor);
   assert.ok(Math.min(...floor.floor) <= 96.3 + 0.02);
-  const heightAt = (osm: string) => [...solved.cuts(osm)].flatMap((w) => w.line.flatMap(([e, n], i) => (e === 0 && n === 22 ? [defined(w.floor)[i]] : [])));
-  const [shared] = heightAt("w2");
-  assert.ok(shared !== undefined && shared < 98 - 0.01);
-  assert.deepEqual(heightAt("w3"), [shared]);
-  assert.ok(solved.cuts("w3").every((w) => w.line.every(([e], i) => Math.abs(e) < 30 - 1e-9 || Math.abs(defined(w.floor)[i] - 98) < 1e-6)));
+  assert.ok(Math.max(...floor.line.map(([, n]) => n)) <= 32 + 1e-6);
+  assert.equal(street.floor, undefined);
   // a path on another layer across the other ramp holds it there too
   const other = road("w4", [[0, -60], [0, -10], [0, 60]], { kind: "footway", width: 2.5 });
   const above = road("w5", [[-20, -10], [0, -10], [20, -10]], { kind: "footway", width: 2.5, layer: 1 });
@@ -438,7 +435,7 @@ test("a way crossing a cut goes down with it there, within a ramp of its own; a 
   assert.ok(cuts.every((w) => w.line.every(([, n], i) => n > -10 + 1e-6 || (n === -10 && Math.abs(defined(w.floor)[i] - 98) < 1e-6))));
 });
 
-test("a way whose room would need a cut deeper than 3 m goes down 3 m, the deck rising between its landings for the rest; one ending under the bridge is held at its end", () => {
+test("a way whose room would need a cut deeper than 3 m goes down 3 m, the deck staying on its landings' line, the rest missed; one ending under the bridge is held at its end", () => {
   const deck = bridge();
   const deep = road("w2", [[0, -60], [0, 60]], { kind: "primary" });
   const ending = road("w3", [[10, -60], [10, 1]], { kind: "footway", width: 2.5 });
@@ -449,9 +446,9 @@ test("a way whose room would need a cut deeper than 3 m goes down 3 m, the deck 
   const [floor] = solved.cuts("w2");
   assert.ok(floor?.floor && isRoad(floor) && floor.room !== undefined);
   const lowest = Math.min(...floor.floor);
-  assert.ok(lowest >= 96 - 0.02 && deckAt(deck.line, defined(deck.deck), [0, 0]) - 1 - lowest >= 4.2 - 0.02);
-  assert.ok(floor.room > 4.2 - 0.02);
-  assert.ok(solved.cuts("w3").every((w) => Math.min(...(w.floor ?? [])) > 99 - 0.5));
+  assert.ok(lowest >= 96 - 0.02 && lowest <= 96 + 0.05 && Math.abs(deckAt(deck.line, defined(deck.deck), [0, 0]) - 100) < 1e-6);
+  assert.ok(Math.abs(floor.room - 3) < 0.06, `${floor.room}`);
+  assert.ok(solved.cuts("w3").every((w) => w.line.every(([e, n], i) => e !== 10 || n !== 1 || Math.abs(defined(w.floor)[i] - 99) < 1e-6)));
 });
 
 test("ways joined end to end under a bridge go down as one, across where they meet, with no step there", () => {
@@ -463,7 +460,7 @@ test("ways joined end to end under a bridge go down as one, across where they me
   assert.ok(Math.abs(ofA[ofA.length - 1] - ofB[0]) < 1e-9 && ofB[0] < 97 - 1);
 });
 
-test("paths meeting under a bridge go down together, at one height where they meet", () => {
+test("paths meeting under a bridge, each in a cut of its own there, meet at one height; a path crossing a cut keeps to the ground", () => {
   const path = road("w2", [[0, -60], [0, 2], [0, 12], [0, 60]], { kind: "footway", width: 2.5 });
   // a cycleway joining it under the deck, and a footway across it where its ramp is
   const joining = road("w3", [[0, 2], [80, 2]], { kind: "cycleway", width: 3 });
@@ -479,15 +476,12 @@ test("paths meeting under a bridge go down together, at one height where they me
     }
     return undefined;
   };
-  // a person's room under the deck there
-  assert.ok(deckAt(ways[0].line, defined(ways[0].deck), [0, 0]) - 1 - (floorAt("w2", [0, 2]) ?? Infinity) >= 2.7 - 0.02);
-  assert.equal(floorAt("w3", [0, 2]), floorAt("w2", [0, 2]));
-  const crossing = floorAt("w4", [0, 12]);
-  assert.ok(crossing !== undefined && crossing < 98 - 0.05);
-  assert.equal(floorAt("w2", [0, 12]), crossing);
-  for (const way of ways.filter((w) => w.floor)) {
-    assert.ok(way.floor && Math.min(...way.floor) >= 98 - 3 - 1e-6);
-  }
+  // at one height where they meet, down in their cuts under the deck, which stays on its landings' line
+  const met = floorAt("w2", [0, 2]) ?? 98;
+  assert.equal(floorAt("w3", [0, 2]) ?? 98, met);
+  assert.ok(met < 98 - 0.5 && Math.abs(deckAt(ways[0].line, defined(ways[0].deck), [0, 0]) - 100) < 1e-6, `${met}`);
+  // the path across keeps to the ground
+  assert.ok(ways.filter((w) => w.osm === "w4").every((w) => w.floor === undefined));
 });
 
 test("a way under a bridge with room enough stays on its ground", () => {
@@ -574,7 +568,7 @@ test("a raise never spreads into the network: an approach is held at the ground 
   assert.ok(Math.abs(deckAt(west.line, defined(west.deck), [-10, 0]) - 100) < 1e-6);
 });
 
-test("ways side by side under a deck each keep their room: a road's cut leaves the cycleway beside it its own", () => {
+test("ways side by side under a deck each go down for their room: a road's cut as deep as a cut goes, the cycleway beside it to its own", () => {
   const street = road("w2", [[0, -60], [0, 60]], { kind: "secondary", width: 7 });
   const cycleway = road("w3", [[6, -60], [6, 60]], { kind: "cycleway", width: 3 });
   const deck = bridge();
@@ -582,10 +576,10 @@ test("ways side by side under a deck each keep their room: a road's cut leaves t
   const solved = cut(ways, 98.5);
   const top = deckAt(deck.line, defined(deck.deck), [3, 0]) - 1;
   const lowest = (osm: string) => Math.min(98.5, ...solved.cuts(osm).flatMap((w) => w.floor ?? []));
-  assert.ok(top - lowest("w2") >= 4.2 - 0.02 && top - lowest("w3") >= 2.7 - 0.02, `${top} ${lowest("w2")} ${lowest("w3")}`);
+  assert.ok(Math.abs(top - 99) < 1e-6 && Math.abs(lowest("w2") - (98.5 - 3)) < 0.05 && top - lowest("w3") >= 2.7 - 0.02, `${top} ${lowest("w2")} ${lowest("w3")}`);
 });
 
-test("a tramway under a deck goes down into a cut where it can; where a way of another layer meeting it holds it, its bed goes down under the deck instead (trackbeds.ts), and the deck rises only where that is not enough", () => {
+test("a tramway under a deck goes down into a cut where it can; where a way of another layer meeting it holds it, its bed goes down under the deck instead (trackbeds.ts), the deck staying on its landings' line", () => {
   const tram = (): Rail => ({ osm: "w2", kind: "tram", layer: 0, bridge: false, tunnel: false, line: [[0, -200], [0, 6], [0, 200]] });
   const free = [tram()];
   cut([bridge()], 97, free);
@@ -597,12 +591,11 @@ test("a tramway under a deck goes down into a cut where it can; where a way of a
   solveDecks([deck, street()], held, under(97));
   assert.ok(held.every((r) => r.floor === undefined || Math.min(...r.floor) > 97 - 0.5));
   near(deck.deck, [100, 100]);
-  // 0.5 m over the ground it is not enough: the deck rises by the rest
+  // 0.5 m over the ground it is not enough: the deck stays, the rest of the room missed
   const higher = bridge();
   const rails = [tram()];
   solveDecks([higher, street()], rails, under(98.5));
-  const lowest = Math.min(98.5, ...rails.flatMap((r) => r.floor ?? []));
-  assert.ok(deckAt(higher.line, defined(higher.deck), [0, 0]) > 100.1 && deckAt(higher.line, defined(higher.deck), [0, 0]) - 1 - (lowest - 3) >= 4 - 0.01);
+  near(higher.deck, [100, 100]);
 });
 
 test("a cut does not take the room of a way beside it: where their rooms overlap they share a height, here the ground's", () => {

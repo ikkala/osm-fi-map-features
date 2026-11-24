@@ -298,8 +298,8 @@ test("stairs up out of an underpass where it goes on past them rise from its flo
   assert.deepEqual([ramp.line, round(ramp.floor)], [[[50, 0], [50, -3], [50, -12], [50, -14]], [100, 100, 105.4, 106]]);
 });
 
-test("the ways meeting a ramp on its way go down with it there, within their own ramps: one ending there, and one passing through", () => {
-  // a footway underpass 12 m long under a street on level ground at 100; the way out west ramps up 40 m
+test("a ramp is local: held at the ground at the first way meeting it, which keeps its own heights", () => {
+  // a footway underpass 12 m long under a street on level ground at 100; the way out west meets a path 10 m out
   const tunnel = road("w1", [[0, 0], [12, 0]], { tunnel: true, layer: -1, kind: "footway", width: 2.5 });
   const west = road("w3", [[-60, 0], [-20, 0], [-10, 0], [0, 0]], { kind: "footway", width: 2.5 });
   const joining = road("w5", [[-10, 0], [-10, -30]], { kind: "path", width: 1.5 });
@@ -307,14 +307,9 @@ test("the ways meeting a ramp on its way go down with it there, within their own
   const map = features([west, tunnel, road("w4", [[12, 0], [72, 0]], { kind: "footway", width: 2.5 }), road("w2", [[6, -20], [6, 20]]), joining, across]);
   solveTunnels(map, () => 100);
   const ramp = defined(map.roads.find((r) => r.osm === "w3" && r.floor));
-  const at = ramp.line.findIndex(([e]) => e === -10);
-  assert.ok(defined(ramp.floor)[at] < 99, `the ramp at ${defined(ramp.floor)[at]}`);
-  assert.deepEqual([joining.line[0], defined(joining.floor)[0], defined(joining.floor).at(-1)], [[-10, 0], defined(ramp.floor)[at], 100]);
-  // the path across at -20 shares the ramp's height there, back at the ground at its ends
-  const crossing = map.roads.filter((r) => r.osm === "w6" && r.floor);
-  const shared = ramp.line.findIndex(([e]) => e === -20);
-  assert.ok(crossing.some((r) => r.line.some(([e, n], i) => e === -20 && n === 0 && Math.abs(defined(r.floor)[i] - defined(ramp.floor)[shared]) < 1e-9)));
-  assert.ok(crossing.every((r) => r.line.every(([, n], i) => Math.abs(n) < 10 - 1e-9 || Math.abs(defined(r.floor)[i] - 100) < 1e-6)));
+  assert.deepEqual([ramp.line[0], defined(ramp.floor)[0]], [[-10, 0], 100]);
+  assert.ok(Math.min(...defined(ramp.floor)) < 99, `${ramp.floor}`);
+  assert.deepEqual([joining.floor, across.floor], [undefined, undefined]);
 });
 
 test("under water the floor is deeper by the water's depth and a bed over the roof", () => {
@@ -527,17 +522,14 @@ test("the ground over a tunnel's end is raised to the ground in from it, where t
   assert.ok(portal <= 100 - COVER_M && portal > 99, `${portal}`);
 });
 
-test("a way crossing a ramp at a joint's point goes down with it there, at one height with it, within a ramp of its own", () => {
+test("a ramp is held at the ground where a way passes through the short way's end: the short way rises to the ground there", () => {
   const ground = (e: number) => (e <= 40 ? 104 : 102);
   const short = stub();
   const across = road("w6", [[40.5, -20], [40.5, 0], [40.5, 20]], { kind: "service", width: 4 });
   const map = features([road("w2", [[-20, 0], [0, 0]]), underpass(), short, road("w4", [[40.5, 0], [80, 0]], { kind: "cycleway", width: 2.5 }), across, road("w5", [[36, -20], [36, 20]])]);
   solveTunnels(map, ground);
-  const at = defined(short.floor).at(-1) ?? Infinity;
-  assert.ok(at < 102 - 1, `${at}`);
-  const floorAt = (osm: string) => map.roads.filter((r) => r.osm === osm && r.floor).flatMap((r) => r.line.flatMap(([e, n], i) => (e === 40.5 && n === 0 ? [defined(r.floor)[i]] : [])));
-  assert.deepEqual([...floorAt("w6"), ...floorAt("w4")], [at, at]);
-  assert.deepEqual([across.line[0], defined(across.floor)[0]], [[40.5, -20], 102]);
+  assert.equal(defined(short.floor).at(-1), 102);
+  assert.deepEqual([across.floor, map.roads.filter((r) => r.osm === "w4" && r.floor).length], [undefined, 0]);
 });
 
 test("a way over a portal is level over the cut in front of it, wider than the tunnel, and the cut stays", () => {
