@@ -298,8 +298,9 @@ test("stairs up out of an underpass where it goes on past them rise from its flo
   assert.deepEqual([ramp.line, round(ramp.floor)], [[[50, 0], [50, -3], [50, -12], [50, -14]], [100, 100, 105.4, 106]]);
 });
 
-test("a ramp is local: held at the ground at the first way meeting it, which keeps its own heights", () => {
-  // a footway underpass 12 m long under a street on level ground at 100; the way out west meets a path 10 m out
+test("a way ending at a ramp on its way ramps on from the ramp's floor there; the ramp is held at the ground where a way passes through, which keeps its heights", () => {
+  // a footway underpass 12 m long under a street on level ground at 100; the way out west meets a path ending 10 m out
+  // and one passing through 20 m out
   const tunnel = road("w1", [[0, 0], [12, 0]], { tunnel: true, layer: -1, kind: "footway", width: 2.5 });
   const west = road("w3", [[-60, 0], [-20, 0], [-10, 0], [0, 0]], { kind: "footway", width: 2.5 });
   const joining = road("w5", [[-10, 0], [-10, -30]], { kind: "path", width: 1.5 });
@@ -307,9 +308,11 @@ test("a ramp is local: held at the ground at the first way meeting it, which kee
   const map = features([west, tunnel, road("w4", [[12, 0], [72, 0]], { kind: "footway", width: 2.5 }), road("w2", [[6, -20], [6, 20]]), joining, across]);
   solveTunnels(map, () => 100);
   const ramp = defined(map.roads.find((r) => r.osm === "w3" && r.floor));
-  assert.deepEqual([ramp.line[0], defined(ramp.floor)[0]], [[-10, 0], 100]);
-  assert.ok(Math.min(...defined(ramp.floor)) < 99, `${ramp.floor}`);
-  assert.deepEqual([joining.floor, across.floor], [undefined, undefined]);
+  assert.deepEqual([ramp.line[0], defined(ramp.floor)[0]], [[-20, 0], 100]);
+  const at = ramp.line.findIndex(([e]) => e === -10);
+  assert.ok(defined(ramp.floor)[at] < 99, `${ramp.floor}`);
+  assert.deepEqual([joining.line[0], defined(joining.floor)[0], defined(joining.floor).at(-1)], [[-10, 0], defined(ramp.floor)[at], 100]);
+  assert.equal(across.floor, undefined);
 });
 
 test("under water the floor is deeper by the water's depth and a bed over the roof", () => {

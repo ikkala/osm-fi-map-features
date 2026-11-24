@@ -12,7 +12,7 @@
 //   it is missed, the roof is a lid.
 // Within the bounds a floor keeps as high as it can, no higher than it hangs between its portals.
 import { deckAt } from "./bridges.ts";
-import { densify, distanceToRing, distanceToSegment, grownRect, indexOwnBoxes, inRect, metersAlong, MinHeap, nearestOnLine, nearestOnSegment, pointInPolygon, pointKey, pushTo, rectsMeet, RESOLUTION_M, type Point, type Rect } from "./geometry.ts";
+import { densify, distanceToRing, distanceToSegment, grownRect, indexOwnBoxes, inRect, listOf, metersAlong, MinHeap, nearestOnLine, nearestOnSegment, pointInPolygon, pointKey, pushTo, rectsMeet, RESOLUTION_M, type Point, type Rect } from "./geometry.ts";
 import type { HeightTag } from "./heights.ts";
 import type { NamedPrograms } from "./lp.ts";
 import { bounds, type Building, type MapFeatures, type Road } from "./osm.ts";
@@ -204,7 +204,7 @@ function besides(tunnels: Way[], nodes: Map<string, TunnelNode>, through: Map<st
 function branchesAt(tunnels: Way[], nodes: Map<string, TunnelNode>, through: Map<string, Way[]>): Map<Way, Set<Way>> {
   const branches = new Map<Way, Set<Way>>();
   for (const [k, node] of nodes) {
-    const ways = (through.get(k) ?? []).filter((w) => tunnels.includes(w));
+    const ways = listOf(through, k).filter((w) => tunnels.includes(w));
     if (node.next.length < 3 || ways.length < 2) {
       continue;
     }
@@ -264,7 +264,7 @@ function touching(network: TunnelNetwork, pairs: [string, string][]): { keys: st
       if (!groupOf.has(k)) {
         groupOf.set(k, group);
         group.keys.push(k);
-        queue.push(...(links.get(k) ?? []));
+        queue.push(...listOf(links, k));
       }
     }
   }
@@ -372,13 +372,13 @@ function underFootings(buildings: Building[], network: TunnelNetwork, basements:
   // tunnel's: it goes into it
   const aisles = new Set(network.tunnels.filter((w) => isRoad(w) && w.service === "parking_aisle"));
   const entered = new Set(
-    [...nodes].filter(([k, node]) => node.next.length === 1 || node.stairs || node.sideStairs || (through.get(k) ?? []).some((w) => aisles.has(w))).flatMap(([, node]) => under(node)),
+    [...nodes].filter(([k, node]) => node.next.length === 1 || node.stairs || node.sideStairs || listOf(through, k).some((w) => aisles.has(w))).flatMap(([, node]) => under(node)),
   );
   const lows = new Map<number, number>();
   const lowest = (i: number) => lows.get(i) ?? lows.set(i, lowestGround(standing[i], heightAt)).get(i) ?? Infinity;
   const found: [string, number][] = [];
   for (const [k, node] of nodes) {
-    if (!(through.get(k) ?? []).some((w) => basements.has(w))) {
+    if (!listOf(through, k).some((w) => basements.has(w))) {
       for (const i of under(node).filter((i) => !entered.has(i))) {
         found.push([k, lowest(i) - WALL_FOOTING_M - (node.depth - COVER_M)]);
       }
@@ -395,7 +395,7 @@ function underFootings(buildings: Building[], network: TunnelNetwork, basements:
 function holdKnown(nodes: Map<string, TunnelNode>, through: Map<string, Way[]>, known: readonly KnownFloor[]): { count: number; straight: Map<string, Straight> } {
   const knownByName = new Map<string, string[]>();
   const named = (k: string, name: string | undefined) =>
-    name === undefined || (through.get(k) ?? []).some((way) => ("name" in way && way.name === name) || way.osm === name);
+    name === undefined || listOf(through, k).some((way) => ("name" in way && way.name === name) || way.osm === name);
   let count = 0;
   for (const { p, floor, name } of known) {
     const off = (q: Point) => Math.hypot(q[0] - p[0], q[1] - p[1]);
@@ -539,7 +539,7 @@ function underDecks(ways: Way[], network: TunnelNetwork, deckOver: (p: Point, la
   const cuts = ways.filter((w) => w.lid !== undefined && w.line.length >= 2 && !w.line.some((p) => nodes.has(pointKey(p))));
   const found: FloorBound[] = [];
   for (const [k, node] of nodes) {
-    const layer = Math.max(...(through.get(k) ?? []).map((w) => w.layer));
+    const layer = Math.max(...listOf(through, k).map((w) => w.layer));
     const row = (terms: [string, number][], over: number): FloorBound => ({ cost: ROOM_COST, bound: "room", k, terms: [[k, 1], ...terms], lower: -Infinity, upper: over - (node.depth - COVER_M) });
     pointsAround(nodes, node).forEach((p) => {
       const deck = deckOver(p, layer);
@@ -581,7 +581,7 @@ function hang(nodes: Map<string, TunnelNode>): [string, number][] {
       }
       let sum = 0;
       let weight = 0;
-      for (const { other, length } of ends.get(k) ?? []) {
+      for (const { other, length } of listOf(ends, k)) {
         const v = value.get(other);
         if (v !== undefined) {
           sum += v / length;

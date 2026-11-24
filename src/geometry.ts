@@ -113,6 +113,11 @@ export function grownRect(box: Rect, by: number): Rect {
 }
 
 /** Adds a value to the list a map keeps at a key */
+/** A map's list at a key, empty where it has none */
+export function listOf<K, V>(map: ReadonlyMap<K, readonly V[]>, key: K): readonly V[] {
+  return map.get(key) ?? [];
+}
+
 export function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const list = map.get(key);
   if (list) {

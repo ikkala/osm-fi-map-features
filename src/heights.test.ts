@@ -183,3 +183,14 @@ test("the tracks on one bridge outline keep one deck across: a clearance told un
   const [n, s] = [deckAt(north.line, defined(north.deck), [0, 2]), deckAt(south.line, defined(south.deck), [0, -2])];
   assert.ok(n > 104 && Math.abs(n - s) < 0.05, `${n} ${s}`);
 });
+
+test("a ramp goes on into no way of a deck's: at a joint onto a bridge's approach it is held at the ground, the approach raised from its landing", () => {
+  // an underpass under a street on level ground at 100, its way out east joining a bridge's approach 10 m out
+  const flat = () => 100;
+  const tunnel = road("w1", [[-12, 0], [0, 0]], { tunnel: true, layer: -1 });
+  const ways = [road("w0", [[-60, 0], [-12, 0]]), tunnel, road("w2", [[0, 0], [10, 0]]), road("w3", [[10, 0], [110, 0]]), road("w4", [[110, 0], [150, 0]], { bridge: true, layer: 1 }), road("w5", [[150, 0], [300, 0]])];
+  const { roads } = solve([...ways, road("w6", [[-6, -20], [-6, 20]], { kind: "residential", width: 6 }), road("w7", [[130, -30], [130, 30]], { clearance: 5 })], flat);
+  const ramp = defined(roads.find((w) => w.osm === "w2" && w.floor));
+  assert.deepEqual([ramp.line.at(-1), defined(ramp.floor).at(-1)], [[10, 0], 100]);
+  assert.ok(roads.filter((w) => w.osm === "w3").every((w) => w.floor === undefined) && roads.some((w) => w.osm === "w3" && w.deck));
+});

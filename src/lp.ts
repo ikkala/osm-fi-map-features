@@ -1,7 +1,7 @@
 // Linear programs, solved with HiGHS (highs.dev, MIT) compiled to WebAssembly: deterministic, one thread.
 import { createRequire } from "node:module";
 import type { Highs } from "highs";
-import { pushTo } from "./geometry.ts";
+import { listOf, pushTo } from "./geometry.ts";
 
 // its CommonJS build: the types read the package as CommonJS
 const loadHighs: () => Promise<Highs> = createRequire(import.meta.url)("highs");
@@ -92,7 +92,7 @@ export class NamedPrograms<T> {
         return program.cost.push(cost) - 1;
       };
       list.forEach((name) => column(...(this.#columns.get(name) ?? [0, 0, 0])));
-      const slacks = (rows.get(root) ?? []).map(({ cost, terms, lower, upper, tag }) => {
+      const slacks = listOf(rows, root).map(({ cost, terms, lower, upper, tag }) => {
         const slack = column(cost, 0, Infinity);
         const sum = new Map<number, number>();
         for (const [name, v] of terms) {
