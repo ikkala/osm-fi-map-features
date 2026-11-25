@@ -1,12 +1,13 @@
 // Buildings whose outline holds parts of clearly different heights in a city's 3D building parts (roofTops.ts), such
 // as a hall, a low link and a tower drawn as one outline, become outlines with parts: the measured parts within the
-// outline, those of about one height that touch merged, each of their own height; what of the outline no part covers
-// goes, along a part within SLIVER_M of it, to that part, the lowest first, and the rest to the part nearest it, and
-// so do its entrances. An outline a way crosses (into a garage, through a passage, in a tunnel under or beside it) is
-// left as it is: its parts would stand in the way's room or block it.
+// outline, those of about one height that touch merged, each of their own height; what of a part narrower than
+// NARROW_M lies beside a lower one goes to that one, rather than stand over it as a thin wall; what of the outline no
+// part covers goes, along a part within SLIVER_M of it, to that part, the lowest first, and the rest to the part
+// nearest it, and so do its entrances. An outline a way crosses (into a garage, through a passage, in a tunnel under
+// or beside it) is left as it is: its parts would stand in the way's room or block it.
 import clipping from "polygon-clipping";
 import { storeyHeight } from "./ages.ts";
-import { distanceToRing, distanceToSegment, grownRect, pointInPolygon, polygonArea, RectGrid, rectsMeet, ringCentroid, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
+import { distanceToRing, distanceToSegment, grownRect, lineLength, pointInPolygon, polygonArea, RectGrid, rectsMeet, ringCentroid, type Point, type Polygon, type Rect, type Ring } from "./geometry.ts";
 import { bounds, type Building, type Road } from "./osm.ts";
 import { measurable, partGrid, type MeasuredPart } from "./roofTops.ts";
 import { inTunnel } from "./profile.ts";
@@ -32,6 +33,8 @@ const CELL_M = 50;
  * front of a lower
  */
 const SLIVER_M = 1;
+/** A part narrower than this (m), as a rectangle of its area and perimeter, would stand as a thin wall over a lower one */
+const NARROW_M = 2.5;
 /** Polygons this near (m) touch */
 const TOUCH_M = 1e-6;
 
@@ -71,6 +74,14 @@ function around(polygon: ClipPolygon, reach: number): ClipPolygon[] {
     }
   }
   return shapes;
+}
+
+/** The width of the rectangle of the polygon's area and perimeter: about a strip's width, bent or not */
+function stripWidth(polygon: Polygon): number {
+  const area = polygonArea(polygon);
+  const half = [polygon.outer, ...polygon.holes].reduce((sum, ring) => sum + lineLength([...ring, ring[0]]), 0) / 2;
+  const d = half * half - 4 * area;
+  return d > 0 ? (half - Math.sqrt(d)) / 2 : Math.sqrt(area);
 }
 
 /** Whether a point of the polygon's outer ring is on one of the others' rings */
@@ -190,6 +201,68 @@ function partsNear(parts: MeasuredPart[]): (box: Rect) => MeasuredPart[] {
   };
 }
 
+/** Pieces of about one height: their polygons, and their tops by area */
+interface Group {
+  polygons: ClipPolygon[];
+  tops: { value: number; weight: number }[];
+}
+
+/**
+ * Gives the group what of the area lies within reach of it and touches it, or what of it touches: a sliver beyond
+ * another group's piece is that one's. Returns the rest.
+ */
+function giveNear(group: Group, area: ClipPolygon[], reach: number): ClipPolygon[] {
+  const [first, ...others] = group.polygons.flatMap((polygon) => around(polygon, reach));
+  if (area.length === 0 || first === undefined) {
+    return area;
+  }
+  let near = clipping.intersection(area, clipping.union(first, ...others));
+  const taken: ClipPolygon[] = [];
+  for (let found = true; found; ) {
+    found = false;
+    for (const polygon of near) {
+      if (touches(polygon, group.polygons)) {
+        group.polygons.push(polygon);
+        taken.push(polygon);
+        found = true;
+      }
+    }
+    near = near.filter((polygon) => !taken.includes(polygon));
+  }
+  return taken.length > 0 ? clipping.difference(area, ...taken) : area;
+}
+
+/**
+ * What of a group's polygons narrower than NARROW_M lies beside a lower group goes to it, the lowest first, and so
+ * does what is left of one that touches lower groups only, out of reach in a wedge; beside a higher one, it stays: a
+ * ledge, not a wall
+ */
+function lowerNarrow(groups: Group[]): void {
+  for (const [i, group] of groups.entries()) {
+    const [first, ...others] = group.polygons;
+    const merged = i > 0 && first ? clipping.union(first, ...others) : [];
+    const narrow = merged.filter((polygon) => polygons([polygon]).every((p) => stripWidth(p) < NARROW_M));
+    if (narrow.length === 0) {
+      continue;
+    }
+    const [lower, higher] = [groups.slice(0, i), groups.slice(i + 1)];
+    let rest: ClipPolygon[] = narrow;
+    for (const other of lower) {
+      rest = giveNear(other, rest, NARROW_M);
+    }
+    const kept: ClipPolygon[] = [];
+    for (const polygon of rest) {
+      const under = lower.find((other) => touches(polygon, other.polygons));
+      if (under && !higher.some((other) => touches(polygon, other.polygons))) {
+        under.polygons.push(polygon);
+      } else {
+        kept.push(polygon);
+      }
+    }
+    group.polygons = [...merged.filter((polygon) => !narrow.includes(polygon)), ...kept];
+  }
+}
+
 /**
  * The building's parts by the measured parts' heights, or undefined where it is not to be split; without slivers,
  * what no piece covers goes whole to the group nearest it
@@ -218,41 +291,26 @@ function split(b: Building, base: number, parts: MeasuredPart[], slivers: boolea
   }
   // the pieces in groups of one height, from the lowest
   pieces.sort((p, q) => p.top - q.top);
-  const groups: { polygons: ClipPolygon[]; tops: { value: number; weight: number }[] }[] = [];
+  const all: Group[] = [];
   for (const piece of pieces) {
-    const last = groups[groups.length - 1];
+    const last = all[all.length - 1];
     if (last && piece.top - last.tops[last.tops.length - 1].value <= SAME_M) {
       last.polygons.push(clip(piece.polygon));
       last.tops.push({ value: piece.top, weight: piece.area });
     } else {
-      groups.push({ polygons: [clip(piece.polygon)], tops: [{ value: piece.top, weight: piece.area }] });
+      all.push({ polygons: [clip(piece.polygon)], tops: [{ value: piece.top, weight: piece.area }] });
     }
+  }
+  lowerNarrow(all);
+  const groups = all.filter((group) => group.polygons.length > 0);
+  if (groups.length < 2) {
+    return undefined;
   }
   // what no piece covers goes to a group within SLIVER_M of it, the lowest first, and the rest to the group nearest it
   const covered = clipping.union(clip(pieces[0].polygon), ...pieces.slice(1).map((p) => clip(p.polygon)));
   let uncovered = clipping.difference(outline, covered);
   for (const group of slivers ? groups : []) {
-    if (uncovered.length === 0) {
-      break;
-    }
-    const [first, ...others] = group.polygons.flatMap((polygon) => around(polygon, SLIVER_M));
-    // only what touches the group, or what of it touches: a sliver beyond another group's piece is that one's
-    let near = clipping.intersection(uncovered, clipping.union(first, ...others));
-    const taken: ClipPolygon[] = [];
-    for (let found = true; found; ) {
-      found = false;
-      for (const polygon of near) {
-        if (touches(polygon, group.polygons)) {
-          group.polygons.push(polygon);
-          taken.push(polygon);
-          found = true;
-        }
-      }
-      near = near.filter((polygon) => !taken.includes(polygon));
-    }
-    if (taken.length > 0) {
-      uncovered = clipping.difference(uncovered, ...taken);
-    }
+    uncovered = giveNear(group, uncovered, SLIVER_M);
   }
   for (const rest of polygons(uncovered)) {
     const centre: Point = ringCentroid(rest.outer);

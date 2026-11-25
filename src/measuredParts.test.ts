@@ -37,6 +37,12 @@ function part(x: number, width: number, top: number, y = 0, depth = 10): Measure
 
 const area = (b: Building) => Math.abs(ringArea(b.polygon.outer));
 
+function bounds(p: Building | undefined) {
+  const xs = p?.polygon.outer.map(([x]) => x) ?? [];
+  const ys = p?.polygon.outer.map(([, y]) => y) ?? [];
+  return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+}
+
 test("an outline over parts of clearly different heights becomes an outline with parts of their heights", () => {
   // a hall of 9 m, a link of 5 m and a tower of 24 m in two parts of about one height
   const b = outline();
@@ -79,21 +85,31 @@ test("a sliver the parts leave along the outline goes to the part it runs along,
   const b = outline();
   const inset = (x: number, width: number, top: number) => part(x, width, top, 0.2, 9.6);
   const { parts } = splitByMeasuredParts([b], [inset(0.2, 27.8, 24), inset(28, 11.8, 6)]);
-  const bounds = (p: Building | undefined) => {
-    const xs = p?.polygon.outer.map(([x]) => x) ?? [];
-    const ys = p?.polygon.outer.map(([, y]) => y) ?? [];
-    return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
-  };
   const hall = bounds(parts.find((p) => p.height === 6));
   const tower = bounds(parts.find((p) => p.height === 24));
   assert.deepEqual([hall.maxX, hall.minY, hall.maxY], [40, 0, 10]);
   assert.deepEqual([tower.minX, tower.minY, tower.maxY], [0, 0, 10]);
   assert.ok(tower.maxX < 28.5, `the tower reaches ${tower.maxX}`);
   assert.ok(Math.abs(parts.reduce((sum, p) => sum + area(p), 0) - 400) < 1e-6);
-  // a sliver near the hall but beyond a narrow tower along the outline: the tower's, the hall in one piece
-  const across = splitByMeasuredParts([outline()], [part(0, 40, 24, 0.3, 0.6), part(0, 40, 6, 0.9, 9.1)]).parts;
-  assert.equal(across.length, 2);
-  assert.equal(bounds(across.find((p) => p.height === 24)).minY, 0);
+});
+
+test("a narrow part goes to a lower one beside it, not to stand over it as a thin wall, and stays a ledge before a higher one", () => {
+  // a rim 1.5 m deep along the south side at 21 m, a hall of 11 m behind its west half and a tower of 27 m behind the east
+  const { parts } = splitByMeasuredParts([outline()], [part(0, 40, 21, 0, 1.5), part(0, 20, 11, 1.5, 8.5), part(20, 20, 27, 1.5, 8.5)]);
+  assert.deepEqual(parts.map((p) => p.height).sort((x, y) => x - y), [11, 21, 27]);
+  const hall = bounds(parts.find((p) => p.height === 11));
+  const ledge = bounds(parts.find((p) => p.height === 21));
+  assert.deepEqual([hall.minX, hall.minY, hall.maxY], [0, 0, 10]);
+  assert.ok(ledge.minX >= 20 && ledge.minY === 0 && ledge.maxY === 1.5, `the ledge is ${JSON.stringify(ledge)}`);
+  assert.ok(Math.abs(parts.reduce((sum, p) => sum + area(p), 0) - 400) < 1e-6);
+  // a rim with a leg out of the hall's reach, touching it alone: none of it stays
+  const leg = { polygon: { outer: [[0, 6], [20, 6], [20, 7.5], [1.5, 7.5], [1.5, 10], [0, 10]] satisfies Point[], holes: [] }, top: BASE + 24 };
+  const legged = splitByMeasuredParts([outline()], [part(0, 20, 6, 0, 6), part(20, 20, 30), leg]).parts;
+  assert.deepEqual(legged.map((p) => p.height).sort((x, y) => x - y), [6, 30]);
+  // a narrow tower along the outline over a hall: only the hall stands, and the outline is left as it is
+  assert.equal(splitByMeasuredParts([outline()], [part(0, 40, 24, 0.3, 0.6), part(0, 40, 6, 0.9, 9.1)]).split, 0);
+  // a canopy before a taller part: a ledge
+  assert.deepEqual(splitByMeasuredParts([outline()], [part(0, 40, 4, 0, 2), part(0, 40, 20, 2, 8)]).parts.map((p) => p.height).sort((x, y) => x - y), [4, 20]);
 });
 
 test("an outline is left as it is when its parts are of about one height, cover too little of it, or it is no ordinary building", () => {
