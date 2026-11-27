@@ -612,7 +612,7 @@ export async function treeStage(world: OsmWorld, sources: Sources, treeSources: 
  */
 export function streetStage(world: OsmWorld, heightAt: HeightAt | undefined, after: Decked | undefined, within: Rect, logger: Logger): void {
   const { features, streetNodes } = world;
-  const implied = fillLitWays(features.lamps, features.roads);
+  const implied = fillLitWays(features.lamps, features.roads, features.rails);
   logger.log(`${implied} street lamps put along lit ways where OSM has none near`);
   const lamps = placeLamps(features.lamps, features.roads);
   logger.log(

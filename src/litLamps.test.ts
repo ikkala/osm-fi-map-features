@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Point } from "./geometry.ts";
 import { fillLitWays } from "./litLamps.ts";
-import type { Road, StreetLamp } from "./osm.ts";
+import type { Rail, Road, StreetLamp } from "./osm.ts";
 
 function road(kind: string, line: Point[], extra: Partial<Road> = {}): Road {
   return { osm: "w1", kind, width: 8, layer: 0, bridge: false, tunnel: false, line, lit: true, ...extra };
@@ -32,4 +32,15 @@ test("where OSM maps lamps along it, a lit way gets none more there; an unlit wa
   const half = [...mapped];
   assert.ok(fillLitWays(half, [road("footway", [[0, 0], [200, 0]], { width: 2 })]) >= 3);
   assert.ok(half.slice(mapped.length).every((l) => l.point[0] > 110 && Math.abs(l.point[1] + 1.5) < 1e-6), "past the mapped ones, beside the path's edge");
+});
+
+test("no lamp is put on another way or a rail's track beside the lit one", () => {
+  // a lit path along a street on its right, and a lit street with a tram's track along its right edge
+  const lamps: StreetLamp[] = [];
+  const path = road("footway", [[0, 0], [300, 0]], { width: 2 });
+  const street = road("residential", [[0, -6], [300, -6]], { osm: "w2", lit: undefined });
+  const tram: Rail = { osm: "w3", kind: "tram", layer: 0, bridge: false, tunnel: false, line: [[0, 100 - 5.5], [300, 100 - 5.5]] };
+  const lit = road("residential", [[0, 100], [300, 100]], { osm: "w4" });
+  assert.equal(fillLitWays(lamps, [path, street, lit], [tram]), 0);
+  assert.ok(fillLitWays([], [lit]) > 0, "without the track, the lit street gets its lamps");
 });
