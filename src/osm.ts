@@ -93,6 +93,8 @@ export interface Road extends AsBuilt {
   clearance?: number;
   /** Bridges: the room under the deck (min_height=*, m), when OSM tells */
   roomUnder?: number;
+  /** Lit at night (lit=* other than no or disused), which lamps along it light (see litLamps.ts) */
+  lit?: true;
 }
 
 export type Sidewalks = "both" | "left" | "right" | "none" | "separate";
@@ -391,6 +393,8 @@ export interface StreetLamp {
   height: number;
   /** Not in OSM: guessed from the mount and the street next to it (see lamps.ts) */
   heightEstimated?: boolean;
+  /** Not in OSM: put by a lit way where OSM has no lamp near (see litLamps.ts) */
+  implied?: true;
   /** When OSM tells it (lamp_mount, support, power=catenary_mast) */
   mount?: LampMount;
   /** Where the light faces: degrees counter-clockwise from east, toward the street next to it or OSM's direction */
@@ -897,6 +901,8 @@ export interface ParseResult {
   playgrounds: Polygon[];
   /** Pitches' outlines (leisure=pitch), still to get their boxes (pitches.ts) */
   pitches: PitchOutline[];
+  /** Other outlines floodlit (floodlit=yes or floodlight=yes: a stadium's stands), which light the pitches beside them (pitches.ts) */
+  floodlit: Polygon[];
   /** Problems worth reporting, such as multipolygons with rings that do not close */
   warnings: string[];
   /** The storeys (level=*) of the roads and rails that OSM tells them for, to tell where tunnels come out */
@@ -942,6 +948,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
   const bridgeOutlines: BridgeOutline[] = [];
   const playgrounds: Polygon[] = [];
   const pitches: PitchOutline[] = [];
+  const floodlit: Polygon[] = [];
   const passages: Passage[] = [];
   // tunnels and covered ways (arcades too) that may be passages through buildings tagged otherwise
   const maybePassages: { road: Road; passage: Passage; arcade: boolean }[] = [];
@@ -1002,6 +1009,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
           ...surfaceOf(road),
           ...bridgeLooks(road),
           ...clearances(road),
+          ...(litOf(road) && { lit: true as const }),
           line,
         };
         const storeys = storeysOf(road);
@@ -1046,7 +1054,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
         features.barriers.push(barrier(osm, kind, tags, line));
       }
       if (closed && points.length >= 3) {
-        addPolygonFeature(features, bridgeOutlines, playgrounds, pitches, osm, tags, polygon());
+        addPolygonFeature(features, bridgeOutlines, playgrounds, pitches, floodlit, osm, tags, polygon());
       }
     } else if (element.type === "relation" && tags.type === "multipolygon") {
       const osm = `r${element.id}`;
@@ -1056,7 +1064,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
       }
       for (const ring of outers) {
         const polygon = orientRings({ outer: ring, holes: holes.filter((hole) => pointInRing(hole[0], ring)) });
-        addPolygonFeature(features, bridgeOutlines, playgrounds, pitches, osm, tags, polygon);
+        addPolygonFeature(features, bridgeOutlines, playgrounds, pitches, floodlit, osm, tags, polygon);
       }
     }
   }
@@ -1122,6 +1130,7 @@ export function parseOsm(elements: OsmElement[], origin: GeoPoint): ParseResult 
     bridgeOutlines,
     playgrounds,
     pitches,
+    floodlit,
     warnings,
     levels,
     indoors: (p) => indoorEnds.has(pointKey(p)),
@@ -1143,15 +1152,27 @@ function pitchOutline(osm: string, tags: Tags, polygon: Polygon): PitchOutline {
     .map((sport) => sport.trim())
     .filter((sport) => sport !== "");
   const indoor = (tags.indoor !== undefined && tags.indoor !== "no") || tags.covered === "yes" || tags.location === "indoor" || tags.location === "underground";
-  return { osm, sports, ...(tags.surface && { surface: tags.surface }), indoor, polygon };
+  return { osm, sports, ...(tags.surface && { surface: tags.surface }), indoor, ...(floodlitOf(tags) && { floodlit: true as const }), polygon };
 }
 
-function addPolygonFeature(features: MapFeatures, bridgeOutlines: BridgeOutline[], playgrounds: Polygon[], pitches: PitchOutline[], osm: string, tags: Tags, polygon: Polygon): void {
+/** Floodlit: floodlit=* or floodlight=* other than no */
+function floodlitOf(tags: Tags): boolean {
+  return [tags.floodlit, tags.floodlight].some((value) => value !== undefined && value !== "no");
+}
+
+/** Lit at night: lit=* other than no or disused (yes, 24/7, automatic, sunset-sunrise, limited, ...) */
+function litOf(tags: Tags): boolean {
+  return tags.lit !== undefined && tags.lit !== "no" && tags.lit !== "disused";
+}
+
+function addPolygonFeature(features: MapFeatures, bridgeOutlines: BridgeOutline[], playgrounds: Polygon[], pitches: PitchOutline[], floodlit: Polygon[], osm: string, tags: Tags, polygon: Polygon): void {
   if (tags.leisure === "playground") {
     playgrounds.push(polygon);
   }
   if (tags.leisure === "pitch") {
     pitches.push(pitchOutline(osm, tags, polygon));
+  } else if (floodlitOf(tags)) {
+    floodlit.push(polygon);
   }
   if (tags.man_made === "bridge") {
     const { bridgeStructure, bridgeColour } = bridgeLooks({ ...tags, bridge: "yes" });

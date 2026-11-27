@@ -63,6 +63,22 @@ test("pitches outdoors mapped as rectangles get their sports and the box they fi
   assert.deepEqual([tennis.surface, tennis.top, ((tennis.angle * 180) / Math.PI).toFixed(1)], [undefined, undefined, "0.0"]);
 });
 
+test("a pitch tagged floodlit, or beside a floodlit stadium's stands, is floodlit; others are not", () => {
+  const response: OverpassResponse = {
+    elements: [
+      { type: "way", id: 1, tags: { leisure: "pitch", sport: "soccer", floodlit: "yes" }, geometry: rectangle(0, 0, 100, 60) },
+      // the stands along a pitch's side, tagged floodlight
+      { type: "way", id: 2, tags: { building: "stadium", floodlight: "yes" }, geometry: rectangle(300, 45, 110, 20) },
+      { type: "way", id: 3, tags: { leisure: "pitch", sport: "soccer" }, geometry: rectangle(300, 0, 100, 60) },
+      { type: "way", id: 4, tags: { leisure: "pitch", sport: "tennis", floodlit: "no" }, geometry: rectangle(600, 0, 36, 18) },
+    ],
+  };
+  const { features, pitches, floodlit } = parseWorld(response.elements, origin);
+  assert.equal(floodlit.length, 1, "the stands");
+  const boxes = pitchBoxes(pitches, [], features.buildings, floodlit);
+  assert.deepEqual(boxes.map((p) => [p.osm, p.floodlit]), [["w1", true], ["w3", true], ["w4", undefined]]);
+});
+
 test("a pitch or a paved area whose ground is level but for a little gets its median as its top; one on a slope does not", () => {
   const level = area("w1", [[0, 0], [40, 0], [40, 20], [0, 20]]);
   const slope = area("w2", [[100, 0], [140, 0], [140, 20], [100, 20]]);

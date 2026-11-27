@@ -29,6 +29,7 @@ import type { Ground, HeightAt } from "./ground.ts";
 import { taggedGambrels } from "./gambrelRoofs.ts";
 import { pointKey, simplifyLine, type Point, type Polygon, type Rect } from "./geometry.ts";
 import { placeLamps } from "./lamps.ts";
+import { fillLitWays } from "./litLamps.ts";
 import { landmarkQuery, moveLandmarksOffWays, parseLandmarks } from "./landmarks.ts";
 import { applyLaserShapes, type LaserRoofShape } from "./laserRoofShapes.ts";
 import { fetchLaserRoofs, LASER_ATTRIBUTION } from "./laserScanning.ts";
@@ -294,9 +295,9 @@ export function bedStage(world: OsmWorld, tunnelled: Tunnelled, decked: Decked, 
 }
 
 export function pitchStage(world: OsmWorld, logger: Logger): void {
-  const { features, pitches } = world;
-  features.pitches = pitchBoxes(pitches, features.areas, features.buildings);
-  logger.log(`${features.pitches.length} of ${pitches.length} pitches outdoors mapped as rectangles`);
+  const { features, pitches, floodlit } = world;
+  features.pitches = pitchBoxes(pitches, features.areas, features.buildings, floodlit);
+  logger.log(`${features.pitches.length} of ${pitches.length} pitches outdoors mapped as rectangles, ${features.pitches.filter((p) => p.floodlit).length} floodlit`);
 }
 
 /** The buildings with the register's heights, materials and years, and the parts with their outlines' */
@@ -611,6 +612,8 @@ export async function treeStage(world: OsmWorld, sources: Sources, treeSources: 
  */
 export function streetStage(world: OsmWorld, heightAt: HeightAt | undefined, after: Decked | undefined, within: Rect, logger: Logger): void {
   const { features, streetNodes } = world;
+  const implied = fillLitWays(features.lamps, features.roads, features.rails);
+  logger.log(`${implied} street lamps put along lit ways where OSM has none near`);
   const lamps = placeLamps(features.lamps, features.roads);
   logger.log(
     `${features.lamps.length} street lamps: ${lamps.heights} with heights and ${lamps.facing} facing guessed from the street ` +
