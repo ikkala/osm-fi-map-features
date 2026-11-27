@@ -138,7 +138,7 @@ Where to look:
   `src/underbridges.ts` (ways under a deck), `src/stairs.ts` (staircases' landings).
 - Railways and tramways: `src/trackbeds.ts`; platforms `src/platforms.ts`; pitches and level paved areas
   `src/pitches.ts`.
-- Trees `src/forests.ts` and `src/treeRegister.ts`, street lamps `src/lamps.ts`, crossings, traffic signals and
+- Trees `src/forests.ts` and `src/treeRegister.ts`, street lamps `src/lamps.ts` (and along lit ways `src/litLamps.ts`), crossings, traffic signals and
   gates `src/streets.ts`, fences and walls `src/barriers.ts`, playground equipment `src/playgrounds.ts`, bicycle
   parking `src/bicycleParking.ts`, landmarks `src/landmarks.ts`, `src/seamarks.ts` and `src/rides.ts`.
 - People walking and cycling along each way (`footfall`, `cycling`): `src/footfall.ts`, with its constants in

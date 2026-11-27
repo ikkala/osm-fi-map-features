@@ -4,7 +4,7 @@
 // sloping square) keeps the model's ground. A pitch outdoors mapped as a rectangle also goes to the tiles' pitches,
 // with its sports and the box it fills.
 import { bounds, type Area, type AreaKind, type Building } from "./osm.ts";
-import { boxCentre, orientedBox, pointInPolygon, RectGrid, ringArea, ringCentroid, type Point, type Polygon } from "./geometry.ts";
+import { boxCentre, distanceToRing, grownRect, inRect, orientedBox, pointInPolygon, RectGrid, ringArea, ringCentroid, type Point, type Polygon } from "./geometry.ts";
 import { groundInside } from "./platforms.ts";
 
 export interface Pitch {
@@ -22,6 +22,8 @@ export interface Pitch {
   width: number;
   /** Its area's top, when it is level (m above sea level) */
   top?: number;
+  /** Floodlit, by its own tags or a floodlit outline's beside it (a stadium's stands) */
+  floodlit?: true;
 }
 
 /** A pitch as parsed (osm.ts), before it gets its box */
@@ -31,6 +33,8 @@ export interface PitchOutline {
   surface?: string;
   /** Tagged as indoors or covered */
   indoor: boolean;
+  /** Tagged floodlit (floodlit=* or floodlight=*) */
+  floodlit?: true;
   polygon: Polygon;
 }
 
@@ -43,6 +47,8 @@ const OUTLIER_SHARE = 0.05;
 const RECTANGLE_SHARE = 0.85;
 /** A pitch shorter than this (m) is left out of the pitches */
 const MIN_LENGTH_M = 4;
+/** A floodlit outline (a stadium's stands) lights the pitches whose middle is this near it (m) */
+const FLOODLIT_REACH_M = 60;
 
 /** Sets `top` on the pitches and paved areas that are level. Returns how many got one. */
 export function setLevelTops(areas: Area[], heightAt: (e: number, n: number) => number | undefined): number {
@@ -68,7 +74,7 @@ export function setLevelTops(areas: Area[], heightAt: (e: number, n: number) => 
  * The pitches of the outlines outdoors (not tagged so, nor with their middle in a building) that are rectangles, each
  * with its area's top (setLevelTops first).
  */
-export function pitchBoxes(outlines: PitchOutline[], areas: Area[], buildings: Building[]): Pitch[] {
+export function pitchBoxes(outlines: PitchOutline[], areas: Area[], buildings: Building[], floodlit: Polygon[] = []): Pitch[] {
   if (outlines.length === 0) {
     return [];
   }
@@ -81,7 +87,10 @@ export function pitchBoxes(outlines: PitchOutline[], areas: Area[], buildings: B
     }
   }
   const pitches: Pitch[] = [];
-  for (const { osm, sports, surface, indoor, polygon } of outlines) {
+  // a floodlit outline lights a pitch within FLOODLIT_REACH_M of it
+  const lights = floodlit.map((polygon) => ({ polygon, box: grownRect(bounds(polygon.outer), FLOODLIT_REACH_M) }));
+  const lit = (point: Point) => lights.some(({ polygon, box }) => inRect(point, box) && (pointInPolygon(point, polygon) || distanceToRing(point, polygon.outer) <= FLOODLIT_REACH_M));
+  for (const { osm, sports, surface, indoor, floodlit: tagged, polygon } of outlines) {
     const outer = polygon.outer;
     const { angle, length, width } = orientedBox(outer);
     const middle = ringCentroid(outer);
@@ -92,7 +101,9 @@ export function pitchBoxes(outlines: PitchOutline[], areas: Area[], buildings: B
       continue;
     }
     const top = tops.get(osm);
-    pitches.push({ osm, sports, ...(surface && { surface }), point: boxCentre(outer, angle), angle, length, width, ...(top !== undefined && { top }) });
+    const point = boxCentre(outer, angle);
+    const floodlights = tagged === true || lit(point);
+    pitches.push({ osm, sports, ...(surface && { surface }), point, angle, length, width, ...(top !== undefined && { top }), ...(floodlights && { floodlit: true as const }) });
   }
   return pitches;
 }
