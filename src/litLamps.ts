@@ -1,7 +1,8 @@
 // Street lamps along the ways OSM tags lit (lit=*) where it maps no lamp near: a lamp beside the way, on its right
 // going along it, every LIT_SPACING_M where none stands within LAMP_NEAR_M, so that a lit street is lit even where its
 // lamps are not mapped. Tunnels, steps and indoor ways are left out, and so is a lamp that would stand on another
-// way, within its width and CLEAR_M (a tram's track beside the street, a carriageway beside a lit path). The lamps get
+// way at its way's layer, within its width and CLEAR_M (a tram's track beside the street, on the ground or on the
+// bridge they share, a carriageway beside a lit path). The lamps get
 // their heights and facing as OSM's do (lamps.ts).
 import { distancesAlong, distanceToSegment, grownRect, pointAt, RectGrid, type Point } from "./geometry.ts";
 import { bounds, DEFAULT_LAMP_HEIGHTS, type Rail, type Road, type StreetLamp } from "./osm.ts";
@@ -28,18 +29,20 @@ export function fillLitWays(lamps: StreetLamp[], roads: Road[], rails: Rail[] = 
   }
   // the ways and tracks on the ground a lamp would stand on: their segments in a grid, each with its way
   const over = bounds(lit.flatMap((road) => road.line));
-  const ways = new RectGrid<{ a: Point; b: Point; half: number; road?: Road }>(GRID_M, grownRect(over, GRID_M));
+  const ways = new RectGrid<{ a: Point; b: Point; half: number; layer: number; road?: Road }>(GRID_M, grownRect(over, GRID_M));
   const others = [
-    ...roads.filter((road) => !inTunnel(road) && !road.bridge).map((road) => ({ line: road.line, half: road.width / 2, road })),
-    ...rails.filter((rail) => !rail.tunnel && !rail.bridge).map((rail) => ({ line: rail.line, half: TRACK_HALF_M, road: undefined })),
+    ...roads.filter((road) => !inTunnel(road)).map((road) => ({ line: road.line, half: road.width / 2, layer: road.layer, road })),
+    ...rails.filter((rail) => !rail.tunnel).map((rail) => ({ line: rail.line, half: TRACK_HALF_M, layer: rail.layer, road: undefined })),
   ];
-  for (const { line, half, road } of others) {
+  for (const { line, half, layer, road } of others) {
     for (let i = 0; i + 1 < line.length; i++) {
       const [a, b] = [line[i], line[i + 1]];
-      ways.add(grownRect(bounds([a, b]), half + CLEAR_M), { a, b, half, ...(road && { road }) });
+      ways.add(grownRect(bounds([a, b]), half + CLEAR_M), { a, b, half, layer, ...(road && { road }) });
     }
   }
-  const onAnother = (p: Point, own: Road) => ways.at(p).some(({ a, b, half, road }) => road !== own && distanceToSegment(p, a, b) < half + CLEAR_M);
+  // another way at the lamp's way's layer (on the ground, or on the same bridge)
+  const onAnother = (p: Point, own: Road) =>
+    ways.at(p).some(({ a, b, half, layer, road }) => road !== own && layer === own.layer && distanceToSegment(p, a, b) < half + CLEAR_M);
   const cells = new Map<string, Point[]>();
   const key = (x: number, y: number) => `${x},${y}`;
   const add = (p: Point) => {

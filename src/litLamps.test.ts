@@ -43,4 +43,8 @@ test("no lamp is put on another way or a rail's track beside the lit one", () =>
   const lit = road("residential", [[0, 100], [300, 100]], { osm: "w4" });
   assert.equal(fillLitWays(lamps, [path, street, lit], [tram]), 0);
   assert.ok(fillLitWays([], [lit]) > 0, "without the track, the lit street gets its lamps");
+  // on a bridge they share, too; a track under it is no matter
+  const bridged = { ...lit, bridge: true, layer: 1 };
+  assert.equal(fillLitWays([], [bridged], [{ ...tram, bridge: true, layer: 1 }]), 0);
+  assert.ok(fillLitWays([], [bridged], [tram]) > 0);
 });
