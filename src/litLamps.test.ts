@@ -3,6 +3,7 @@ import { test } from "node:test";
 import type { Point } from "./geometry.ts";
 import { fillLitWays } from "./litLamps.ts";
 import type { Rail, Road, StreetLamp } from "./osm.ts";
+import { ROOM_SIDE_M, widthOf } from "./ways.ts";
 
 function road(kind: string, line: Point[], extra: Partial<Road> = {}): Road {
   return { osm: "w1", kind, width: 8, layer: 0, bridge: false, tunnel: false, line, lit: true, ...extra };
@@ -47,4 +48,26 @@ test("no lamp is put on another way or a rail's track beside the lit one", () =>
   const bridged = { ...lit, bridge: true, layer: 1 };
   assert.equal(fillLitWays([], [bridged], [{ ...tram, bridge: true, layer: 1 }]), 0);
   assert.ok(fillLitWays([], [bridged], [tram]) > 0);
+});
+
+test("a lit way under a railway's or a tramway's bridge gets no pole in the tracks' room, nor under a road's deck", () => {
+  const room = (rail: Rail) => widthOf(rail) / 2 + ROOM_SIDE_M;
+  const across = (osm: string, kind: string, x: number): Rail => ({ osm, kind, layer: 1, bridge: true, tunnel: false, line: [[x, -50], [x, 50]] });
+  // a lit street, and a lit path beside a track along it, both on the ground under the bridges
+  const street = road("residential", [[0, 0], [300, 0]]);
+  const rails = [across("w5", "rail", 75), across("w6", "tram", 165), across("w7", "light_rail", 255)];
+  const free = fillLitWays([], [street]);
+  const lamps: StreetLamp[] = [];
+  assert.equal(fillLitWays(lamps, [street], rails), free - rails.length);
+  for (const rail of rails) {
+    const x = rail.line[0][0];
+    assert.ok(lamps.every((l) => Math.abs(l.point[0] - x) >= room(rail)), `clear of ${rail.kind}: ${lamps.map((l) => l.point[0])}`);
+  }
+  const path = road("cycleway", [[0, 200], [300, 200]], { osm: "w8", width: 2.5 });
+  const along: Rail = { osm: "w9", kind: "light_rail", layer: 1, bridge: true, tunnel: false, line: [[0, 200 - 1.75], [300, 200 - 1.75]] };
+  assert.equal(fillLitWays([], [path], [along]), 0);
+  const deck = road("primary", [[105, 150], [105, 250]], { osm: "w10", bridge: true, layer: 1, lit: undefined });
+  const underDeck: StreetLamp[] = [];
+  assert.equal(fillLitWays(underDeck, [path, deck]), fillLitWays([], [path]) - 1);
+  assert.ok(underDeck.every((l) => Math.abs(l.point[0] - 105) >= deck.width / 2 + ROOM_SIDE_M));
 });
